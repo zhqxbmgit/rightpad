@@ -7,12 +7,13 @@ UDP receive -> packet decode -> sequence acceptance
                               -> diagnostic logging (default)
                               -> touch session -> RAW delta -> fixed sensitivity
                                  -> fractional accumulator -> relative SendInput (--raw-mouse)
+                              -> independent Single Tap recognition -> local LEFT DOWN/UP (--raw-mouse)
 ```
 
 C#, .NET 8, `net8.0-windows`. Both application and tests use only the .NET
-standard library plus Win32 SendInput through P/Invoke. RAW mouse mode has no
-motion filter, acceleration, gesture recognition, button events, output scheduler,
-settings UI, configuration file, discovery, or security system.
+standard library plus Win32 SendInput through P/Invoke. RAW mouse mode includes
+Single Tap left-click recognition. It has no motion filter, acceleration, drag,
+motion output scheduler, settings UI, configuration file, discovery, or security system.
 
 ## Build and run
 
@@ -94,9 +95,9 @@ that deadline. A new accepted packet rearms it. Timeout only logs and increments
 `inputTimeouts`: it does not clear sequence statistics, active touch session,
 previous position, or fractional residual. A held finger can remain stationary
 past 2 seconds and continue moving in the same session. This is the explicitly
-approved RAW-only-stage exception to the general timeout/session-reset design in
-the architecture/protocol documents. Real connection-state and future button
-safety handling are deferred; there is no heartbeat.
+approved diagnostic-only behavior described in the architecture/protocol documents.
+Single Tap release is local to Windows; real connection-state and future drag
+safety handling are deferred. There is no heartbeat.
 
 Raw console logging itself has overhead. This prototype verifies data transport
 and decoding; it is not a measurement of the final input system's performance.
@@ -136,6 +137,8 @@ LAN smoke tests are described below; ordinary regression tests never inject mous
 | Rightpad.Receiver/TouchSessionProcessor.cs | Active session, ordered position deltas, final UP delta |
 | Rightpad.Receiver/RawMotionProcessor.cs | Fixed axis gains, symmetric truncation, per-session residual |
 | Rightpad.Receiver/WindowsMouseOutput.cs | Relative SendInput, native layout and return/error checks |
+| Rightpad.Receiver/GestureProcessor.cs | Independent Single Tap candidate, all-sample bounds and event-time duration |
+| Rightpad.Receiver/LeftButtonController.cs | Nonblocking local click hold, serialized buttons and best-effort cleanup |
 | Rightpad.Receiver.Tests/Program.cs | Dependency-free test runner and assertions |
 | Rightpad.Receiver.Tests/PacketDecoderTests.cs | Literal fixtures, field and malformed tests |
 | Rightpad.Receiver.Tests/PacketStatisticsTests.cs | Sequence and count tests |
@@ -190,8 +193,67 @@ RAW mode omits routine packet/sample/per-datagram-stat formatting entirely. It l
 startup, invalid packets, sequence gaps/old packets, timeout and final statistics.
 Expected DOWN/UP duplicates are counted silently. Final `motion_stats` include
 processed MOVE/UP samples, ignored session packets, successful integer output events
-and signed X/Y totals; `mouse_stats` records successful native events and failed calls.
+and signed X/Y totals; `mouse_stats` records successful native movement events and failed movement calls.
 Timeout counters are diagnostic, not network-disconnect classifications.
+
+## Single Tap left click
+
+`--raw-mouse` enables Single Tap alongside the unchanged RAW movement path.
+Defaults verified from Moonlight Noir source: tap duration 300 ms, movement
+threshold 8 px per axis, click hold 25 ms. The old double-tap interval is 130 ms,
+recorded for future work only; Double Tap Drag and double-click recognition are
+not implemented. Two independent clicks may still be interpreted as a double click
+by Windows/the target application according to its own settings.
+
+```powershell
+dotnet run --project C:\rightpad\windows\Rightpad.Receiver\Rightpad.Receiver.csproj --configuration Release --no-build -- --raw-mouse --tap-max-duration-ms 300 --tap-movement-threshold-px 8 --click-hold-ms 25
+```
+
+The three options require `--raw-mouse`. Duration/hold accept positive int32 whole
+milliseconds; threshold accepts a finite positive number. Sensitivity stays 7/7
+unless explicitly overridden. There is no double-tap option or saved configuration.
+
+Each accepted DOWN stores its own gesture session, position and eventTimeNs.
+All MOVE samples are checked: `abs(x-downX) <= threshold` AND
+`abs(y-downY) <= threshold`. Exceeding either axis latches `confirmedMove` even if
+a later sample returns in bounds. A matching UP clicks only if still a candidate,
+UP is in bounds, and its nonnegative source-event duration is <= tapMaxDurationMs.
+Wrong-session MOVE/UP do not mutate the candidate. Existing packet acceptance
+removes duplicates, old packets and malformed data before either processing path.
+Gesture never suppresses, modifies, or rolls back RAW movement.
+
+Click sends LEFT DOWN immediately when idle and schedules LEFT UP using a one-shot
+`System.Threading.Timer`. It does not wait in the receiver and does not need another
+Android packet. Windows scheduling may make a 25 ms request last longer. Overlapping
+tap requests are serialized after the prior UP so every click retains its hold;
+pending clicks are discarded during shutdown. Button synchronization does not lock
+the motion path. Normal shutdown and exception unwinding dispose the controller
+and attempt release if held. Native failures log the button, return value and Win32
+error; timer failure wakes/cancels the receiver and exits nonzero. Cleanup retries
+UP best-effort, but forced termination or persistent native failure cannot guarantee
+release. Input timeout remains diagnostic only.
+
+Quiet mode adds startup parameters and final `gesture_stats` (tapCandidates,
+confirmedMoves, clicksTriggered) and `button_stats` (leftDownSuccess, leftUpSuccess,
+leftButtonFailures); no per-sample or per-tap logs. clicksTriggered counts requests;
+native down/up counters record actual successful insertion calls separately.
+
+The automatic runner includes the original 31 cases and Single Tap bounds/session/
+historical-sample cases, button fields/errors, asynchronous hold, overlapping clicks,
+cleanup, UDP progress during hold, exact motion independence and async failure exit.
+Real native tests must run as the current Windows interactive user, outside the
+Codex SendInput-restricted sandbox:
+
+```powershell
+dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj --configuration Release --no-build -- --sendinput-button-smoke
+dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj --configuration Release --no-build -- --android-tap-smoke
+```
+
+Both use an inert test window at the existing cursor position and assert actual
+LEFT DOWN/UP returns, not cursor displacement. The Android test listens on 50000
+for up to 25 seconds, expecting one ADB tap after `ANDROID_TAP_READY`; the phone
+must be awake with rightpad in front. It validates one click, packet acceptance,
+duplicates and native success. Human click feel and game compatibility remain pending.
 
 ## RAW automated checks
 

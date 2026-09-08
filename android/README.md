@@ -77,6 +77,19 @@ APK 输出：
 C:\rightpad\android\app\build\outputs\apk\debug\app-debug.apk
 ```
 
+开发阶段每次成功重新构建 APK 后，默认完成以下整个流程：
+
+```text
+Build
+→ adb install -r
+→ force/restart app
+→ launch com.rightpad.capture/.MainActivity
+→ verify foreground Activity
+```
+
+只要测试手机可通过 ADB 访问，就必须覆盖安装本次新构建的 APK，再重新启动应用并
+确认 MainActivity 位于前台。不能因为手机上已经安装或正在运行 rightpad 而跳过安装。
+
 可选静态检查命令：
 
 ```powershell
@@ -93,7 +106,7 @@ Set-Location C:\rightpad\android
 $adbPath = 'C:\Users\zhq\AppData\Local\Android\Sdk\platform-tools\adb.exe'
 & $adbPath devices -l
 & $adbPath install -r .\app\build\outputs\apk\debug\app-debug.apk
-& $adbPath shell am start -n com.rightpad.capture/.MainActivity
+& $adbPath shell am start -S -n com.rightpad.capture/.MainActivity
 & $adbPath logcat -v brief -s 'RightpadTouch:I' '*:S'
 ```
 

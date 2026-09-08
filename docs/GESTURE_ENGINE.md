@@ -4,10 +4,10 @@
 
 Gesture Engine converts touch timing behavior into mouse button actions.
 
-Current supported gestures:
+Current implementation:
 
-- Single tap → Left click
-- Double tap drag → Left button drag
+- Single tap → Left click: implemented; human validation pending.
+- Double tap drag → Left button drag: pending, future design only.
 
 The Gesture Engine does NOT control mouse movement.
 
@@ -67,9 +67,26 @@ Conditions:
 - Duration <= tapMaxDurationMs
 - Movement <= tapMovementThreshold
 
+The Windows `GestureProcessor` consumes decoded, sequence-accepted raw packets
+independently of `TouchSessionProcessor`. DOWN stores the session, original X/Y
+and Android eventTimeNs. Every MOVE sample, including historical samples in the
+middle of a packet, is checked in original order. Bounds are inclusive and
+axis-aligned: `abs(x - downX) <= 8` AND `abs(y - downY) <= 8` by default.
+Once either axis exceeds the threshold, `confirmedMove` stays true until the
+session ends or a new DOWN arrives; returning to the origin cannot restore a tap.
+UP must match the session, remain in bounds, and have a nonnegative event-time
+duration of at most 300 ms. Wrong-session MOVE/UP are ignored. Duplicate, old and
+malformed packets are excluded by the existing accepted-input gate.
+
+RAW movement, including small tap movement and UP's final delta, is not suppressed,
+rolled back, or altered. A qualifying UP consumes the candidate and requests one
+local LEFT DOWN followed by a timed LEFT UP. There is no double-tap recognition.
+
 ---
 
 # 3.2 Double Tap Drag
+
+Pending. The following describes a future feature, not current behavior.
 
 Purpose:
 
@@ -120,7 +137,8 @@ No additional hold delay is required.
 
 The following parameters belong to Windows Receiver.
 
-Initial values:
+Defaults verified read-only in Moonlight Noir `PreferenceConfiguration.java`
+and `TrackpadContext.java` (2026-09-08):
 
 ```text id="7wj4du"
 tapMaxDurationMs = 300
@@ -130,11 +148,17 @@ doubleTapIntervalMs = 130
 clickHoldMs = 25
 ```
 
-Advanced:
+Current movement parameter:
 
 ```text id="40w8na"
-tapMovementThreshold
+tapMovementThresholdPx = 8
 ```
+
+`doubleTapIntervalMs = 130` is recorded only as a future reference; no double-tap
+CLI parameter is implemented. Current Windows CLI options (require `--raw-mouse`):
+`--tap-max-duration-ms`, `--tap-movement-threshold-px`, `--click-hold-ms`.
+Durations must be positive int32 whole milliseconds; the threshold must be finite
+and positive. Defaults are 300 / 8 / 25. No settings file or UI is implemented.
 
 ---
 
@@ -262,7 +286,17 @@ This prevents accidental clicks during movement.
 
 # 7. Gesture State Machine
 
-Initial implementation:
+Current Single Tap state machine:
+
+```text
+IDLE -- DOWN --> candidate
+candidate -- any sample out of bounds --> confirmedMove (latched)
+candidate -- valid matching UP --> request click --> IDLE
+candidate / confirmedMove -- other matching UP --> IDLE
+any state -- new accepted DOWN --> new candidate
+```
+
+Future Double Tap Drag design (not implemented):
 
 ```text id="q7w9i8"
 IDLE
@@ -350,9 +384,24 @@ Only the button state changes.
 
 # 9. Button Safety
 
-The system must guarantee:
+Current Single Tap release is driven by a Windows-local one-shot
+`System.Threading.Timer` (default 25 ms); it needs no further Android packet and
+never synchronously waits in the UDP receiver. Timer scheduling can release later
+than the requested duration. Overlapping tap requests are serialized: each pending
+click starts after the previous LEFT UP, preserving each hold and button order.
 
-No stuck buttons.
+`LeftButtonController.Dispose` attempts LEFT UP if a button may still be held,
+including normal shutdown and exception unwinding. Native button errors are logged;
+an asynchronous timer failure cancels the receive loop and causes a nonzero exit.
+A failed UP receives a best-effort cleanup attempt; Dispose can attempt release
+again if still held. Forced process termination or a persistent native failure
+cannot be guaranteed recoverable.
+
+The 2-second input timeout remains diagnostic only and preserves motion/session
+state. Sender-disconnect detection and future drag stuck-button handling remain
+deferred; no heartbeat, CANCEL wire event, or connection state machine is added.
+
+Future button safety requirements:
 
 Possible causes:
 
@@ -394,6 +443,8 @@ Gesture parameters should be:
 - Stored on Windows Receiver
 - Adjustable without rebuilding Android
 - Saved locally
+
+Local persistence is future design; current tuning uses startup CLI arguments only.
 
 Android should not contain user tuning values.
 

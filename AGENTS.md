@@ -421,3 +421,38 @@ A simple, precise, predictable, high-quality gaming input system.
 The best solution is not the most complicated solution.
 
 The best solution is the simplest design that achieves the required input quality.
+
+---
+
+# 18. Android Build / Install / Launch Rule
+
+Whenever an Android build that produces the rightpad APK succeeds, Codex must
+automatically deploy and reopen the app if the configured test Android device is
+reachable through ADB.
+
+Required sequence:
+
+1. Complete the Android build successfully.
+2. Check ADB device availability.
+3. Install the newly built APK using overwrite/reinstall mode.
+4. Restart and launch `com.rightpad.capture/.MainActivity`.
+5. Verify that the Activity is running in the foreground.
+6. Only then report the Android task as ready or completed.
+
+For this project, the normal deployment commands are equivalent to:
+
+```text
+adb install -r <latest-debug-apk>
+adb shell am start -S -n com.rightpad.capture/.MainActivity
+```
+
+A successful Gradle build alone is not sufficient completion for an Android
+implementation task. Do not assume that an already-running app contains the
+newly built code, and do not skip overwrite installation merely because rightpad
+is already installed. Do not ask the user to run ADB commands that Codex can run.
+
+If no configured test device is reachable through ADB, explicitly report that
+installation and relaunch could not be performed. If Android requires a
+system-level installation confirmation that Codex cannot operate, stop only at
+that permission boundary, ask the user for that single confirmation, and then
+continue the remaining deployment and verification automatically.

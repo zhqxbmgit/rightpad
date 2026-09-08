@@ -270,7 +270,7 @@ internal static class UdpReceiverTests
         using var rebound = new UdpClient(receiver.LocalEndpoint);
     }
 
-    private sealed class ObservedOutput : TextWriter
+    internal sealed class ObservedOutput : TextWriter
     {
         private readonly List<string> lines = [];
         private readonly Channel<string> pending = Channel.CreateUnbounded<string>();

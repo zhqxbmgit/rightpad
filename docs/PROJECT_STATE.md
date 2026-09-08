@@ -24,7 +24,9 @@ Android real touch
 
 自动链路已经通过。
 
-当前正在等待/进行的核心验证是：真人手指实际控制 Windows 鼠标后的 RAW 手感评价。
+当前最新阶段已经包含：RAW Mouse + Single Tap。
+
+RAW Mouse 与 Single Tap 的真人验证均已通过。
 
 不要把当前 RAW baseline 描述成最终 Motion Engine。
 
@@ -212,6 +214,7 @@ No ACK / reliable UDP / FEC / retransmission protocol.
 - RawMotionProcessor
 - Fractional accumulator
 - SendInput relative mouse backend
+- Single Tap recognition and locally timed SendInput left click
 
 当前 Prototype backend：SendInput。
 
@@ -323,28 +326,42 @@ Codex 可以自动构建、测试、管理进程，但最终 Receiver 必须从�
 - normal stationary touch
 - disconnected sender
 
-当前不要增加 heartbeat。真正需要按钮 fail-safe 前再重新处理该问题。
+当前不要增加 heartbeat。Single Tap 的 LEFT UP 由 Windows 本地 timer 负责，
+正常关闭/异常清理会 best-effort 释放按钮；发送端断线识别与未来拖拽按钮安全仍 deferred。
 
 ---
 
 ## 15. Gesture Status
 
-Gesture Engine 尚未实现。
+Single Tap: Implemented — Human validation passed。
 
-未来已确定需求：
+Double Tap Drag: Pending。
 
-- Single Tap → Left Click
-- Double Tap Drag → second DOWN immediately holds left mouse button → normal Motion Engine movement → UP releases button
+当前 GestureProcessor 与 RAW Motion 独立消费 accepted raw packets。每个 MOVE
+sample 都检查相对 DOWN 的 X/Y 独立阈值（各自 <= 8 px）；任一 sample 越界后永久
+取消本次 Tap candidate。匹配 UP 还需在阈值内且 eventTimeNs 时长 <= 300 ms。
+微小 RAW 位移照常输出。LEFT DOWN 后由一次性 .NET timer 在约 25 ms 后 LEFT UP，
+不阻塞 UDP；重叠点击依次完成各自 hold。SendInput 失败会记录并停止 Receiver，
+清理时 best-effort LEFT UP；强制终止或持续注入失败无法保证释放。
+
+已确定需求及状态：
+
+- Single Tap → Left Click：已实现
+- Double Tap Drag → second DOWN immediately holds left mouse button → normal Motion Engine movement → UP releases button：待实现
 
 Windows Receiver 参数：
 
 ```text
 tapMaxDurationMs = 300
+tapMovementThresholdPx = 8
 doubleTapIntervalMs = 130
 clickHoldMs = 25
 ```
 
-Advanced: `tapMovementThreshold`。
+上述默认值已从 C:\zhq 的 PreferenceConfiguration.java / TrackpadContext.java
+只读核实；movement 使用 X/Y 独立判断，不是 Euclidean distance。
+`doubleTapIntervalMs = 130` 仅供未来参考，当前无对应参数或识别逻辑。
+当前 CLI：`--tap-max-duration-ms`、`--tap-movement-threshold-px`、`--click-hold-ms`。
 
 Gesture processing must not alter motion feel.
 
@@ -424,9 +441,8 @@ Completed:
 
 Immediate:
 
-1. Verify actual cursor movement in interactive Windows desktop
-2. Human RAW touch feel test at sensitivity 7 / 7
-3. Compare RAW directly against Moonlight Noir
+1. Compare RAW directly against Moonlight Noir if further motion evaluation is needed
+2. Continue monitoring Single Tap feel and accidental clicks during normal use
 
 Evaluate:
 
@@ -447,8 +463,7 @@ Only after RAW human feedback: decide whether Motion Laboratory / filter impleme
 Do not implement yet:
 
 - Motion filter
-- Gesture Engine
-- left-click / double-tap drag
+- Double Tap Drag (Single Tap left-click implemented)
 - Virtual HID
 - driver
 - game profiles

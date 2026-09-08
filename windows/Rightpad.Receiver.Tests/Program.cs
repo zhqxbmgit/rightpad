@@ -4,6 +4,11 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args.SequenceEqual(new[] { "--sendinput-button-smoke" }) || args.SequenceEqual(new[] { "--android-tap-smoke" }))
+        {
+            try { await ButtonSmokeTests.Run(args[0] == "--android-tap-smoke"); return 0; }
+            catch (Exception exception) { Console.WriteLine($"FAIL button smoke: {exception}"); return 1; }
+        }
         if (args.SequenceEqual(new[] { "--sendinput-smoke" }))
         {
             try { WindowsMouseOutputTests.Smoke(); return 0; }
@@ -14,7 +19,7 @@ internal static class Program
             try { await WindowsMouseOutputTests.AndroidSmoke(); return 0; }
             catch (Exception exception) { Console.WriteLine($"FAIL Android mouse smoke: {exception}"); return 1; }
         }
-        if (args.Length != 0) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--sendinput-smoke | --android-mouse-smoke]"); return 1; }
+        if (args.Length != 0) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
             ("fixed bytes / endian / uint64 nanoseconds", Sync(PacketDecoderTests.FixedBytes)),
@@ -47,7 +52,28 @@ internal static class Program
             ("UDP accepted-only motion / session isolation", UdpReceiverTests.MotionGate),
             ("UDP timeout retains session / position / residual", UdpReceiverTests.MotionSurvivesTimeout),
             ("UDP quiet logging / final statistics", UdpReceiverTests.QuietLogging),
-            ("UDP output failure stops and cleans up", UdpReceiverTests.MotionFailure)
+            ("UDP output failure stops and cleans up", UdpReceiverTests.MotionFailure),
+            ("tap stationary DOWN/UP", Sync(GestureProcessorTests.Stationary)),
+            ("tap small movement / axis-inclusive boundary", Sync(GestureProcessorTests.SmallMovement)),
+            ("tap X exceeded", Sync(GestureProcessorTests.XExceeded)),
+            ("tap Y exceeded", Sync(GestureProcessorTests.YExceeded)),
+            ("tap return to origin remains rejected", Sync(GestureProcessorTests.ReturnToOrigin)),
+            ("tap duration / nanosecond boundary / backward time", Sync(GestureProcessorTests.Duration)),
+            ("tap UP exceeded", Sync(GestureProcessorTests.UpExceeded)),
+            ("tap wrong-session MOVE", Sync(GestureProcessorTests.WrongMove)),
+            ("tap wrong-session UP", Sync(GestureProcessorTests.WrongUp)),
+            ("tap new DOWN / explicit cleanup", Sync(GestureProcessorTests.NewDown)),
+            ("tap middle historical sample exceeded", Sync(GestureProcessorTests.MiddleSample)),
+            ("tap CLI defaults / overrides / invalid values", Sync(GestureProcessorTests.Arguments)),
+            ("button native fields / return values / errors", Sync(LeftButtonControllerTests.NativeFields)),
+            ("button asynchronous hold timing", LeftButtonControllerTests.Timing),
+            ("button Dispose / stale timer cleanup", LeftButtonControllerTests.Cleanup),
+            ("button overlapping clicks", LeftButtonControllerTests.Overlap),
+            ("button failures / best-effort release", LeftButtonControllerTests.Failures),
+            ("UDP gesture gate / exact motion independence", GestureIntegrationTests.GateAndMotionIndependence),
+            ("UDP nonblocking click hold / timeout retention", GestureIntegrationTests.NonblockingAndTimeout),
+            ("UDP normal / exceptional shutdown button cleanup", GestureIntegrationTests.ShutdownCleanup),
+            ("UDP async LEFT UP failure stops idle receiver", GestureIntegrationTests.AsyncFailureStopsIdleReceiver)
         ];
 
         int failed = 0;

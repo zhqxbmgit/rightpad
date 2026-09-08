@@ -13,6 +13,7 @@ internal sealed class UdpReceiver : IDisposable
     private readonly RawSampleLogger logger;
     private readonly TimeSpan inputTimeout;
     private readonly TouchSessionProcessor? motion;
+    private readonly GestureProcessor? gesture;
     private readonly bool detailedLogging;
 
     public IPEndPoint LocalEndpoint { get; }
@@ -21,13 +22,14 @@ internal sealed class UdpReceiver : IDisposable
 
     // Endpoint and timeout injection are for loopback tests, not user configuration.
     public UdpReceiver(IPEndPoint endpoint, TextWriter output, TimeSpan? timeout = null,
-        TouchSessionProcessor? motion = null, bool detailedLogging = true)
+        TouchSessionProcessor? motion = null, bool detailedLogging = true, GestureProcessor? gesture = null)
     {
         inputTimeout = timeout ?? InputTimeout;
         if (inputTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
         socket = new UdpClient(endpoint);
         LocalEndpoint = (IPEndPoint)socket.Client.LocalEndPoint!;
         this.motion = motion;
+        this.gesture = gesture;
         this.detailedLogging = detailedLogging;
         logger = new RawSampleLogger(output, detailedLogging);
     }
@@ -80,6 +82,7 @@ internal sealed class UdpReceiver : IDisposable
                     {
                         lastAccepted = receiveTime;
                         motion?.Process(packet);
+                        gesture?.Process(packet);
                     }
                     logger.Packet(receiveTime.TotalMilliseconds, received.RemoteEndPoint, packet, observation);
                 }
@@ -92,6 +95,7 @@ internal sealed class UdpReceiver : IDisposable
         }
         finally
         {
+            gesture?.Reset();
             motion?.Reset();
             socket.Dispose();
             logger.Stats(Statistics);
@@ -109,6 +113,7 @@ internal sealed class UdpReceiver : IDisposable
 
     public void Dispose()
     {
+        gesture?.Reset();
         socket.Dispose();
         motion?.Reset();
     }
