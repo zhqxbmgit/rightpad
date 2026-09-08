@@ -9,6 +9,7 @@ Android Touch Digitizer → MotionEvent → Historical + Current Samples
 ```
 
 应用使用 Java 和 Android 原生 Activity/View，只有一个空白触摸区域。
+rightpad 在前台运行时会保持屏幕唤醒，离开前台后恢复系统默认超时行为。
 每条原始样本同时输出到 Logcat，并按原始顺序记录到应用私有目录中的 CSV。
 没有第三方运行时依赖、测试框架、统计界面、设置、服务、运动处理、
 手势识别或鼠标输出。

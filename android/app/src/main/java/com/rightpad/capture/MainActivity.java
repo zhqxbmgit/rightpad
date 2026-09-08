@@ -3,6 +3,7 @@ package com.rightpad.capture;
 import android.app.Activity;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.WindowManager;
 
 import java.io.IOException;
 
@@ -16,6 +17,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         try {
             recordWriter = new TouchRecordWriter(getFilesDir());
         } catch (IOException exception) {

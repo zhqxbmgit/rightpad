@@ -76,6 +76,11 @@ Do not add:
 - Gyroscope input
 - Accelerometer input
 
+While the rightpad Android Activity is in the foreground, prevent automatic
+screen timeout / screen-off. Do not keep the device awake after rightpad leaves
+the foreground. Do not use WakeLock or background services unless explicitly
+approved.
+
 ---
 
 # 4. Input Behavior Requirements

@@ -121,6 +121,8 @@ Security is intentionally out of scope.
 - Protocol v1 encoder
 - UDP Sender
 
+Foreground keep-screen-on: Implemented。
+
 Android minSdk：34。
 
 原因：正式输入使用 `MotionEvent.getEventTimeNanos()` 和 `getHistoricalEventTimeNanos()`，不维护 eventTimeMs 兼容路径。
