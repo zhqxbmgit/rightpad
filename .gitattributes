@@ -1,0 +1,2 @@
+measurements/**/android-logcat.txt -text -diff
+measurements/**/android-wifi-after.txt -text -diff

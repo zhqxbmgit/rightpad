@@ -163,6 +163,17 @@ Do not add:
 
 # 7. Architecture Rules
 
+## Security intentionally out of scope
+
+rightpad is a personal-use system for one user, one Android phone, and one
+Windows 11 PC on a trusted local network. Do not implement authentication,
+pairing, PINs, encryption, TLS/DTLS, tokens, certificates, signatures, HMAC,
+anti-replay systems, multi-user permissions, or security handshakes.
+Do not add first-sender locking or source authentication/isolation.
+
+Packet length/version/field validation, malformed packet rejection, and
+timeout/stuck-input fail-safes remain required reliability measures.
+
 ## Android Responsibility
 
 Android is only an input sensor.

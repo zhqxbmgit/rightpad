@@ -1,0 +1,450 @@
+{
+  "includedSessions": {
+    "1": "A",
+    "2": "B",
+    "3": "C",
+    "4": "D"
+  },
+  "excludedSessions": [
+    5,
+    6
+  ],
+  "tests": {
+    "A": {
+      "sessionId": 1,
+      "android": {
+        "totalSamples": 2580,
+        "historical": 1293,
+        "current": 1287,
+        "durationSeconds": 12.475201,
+        "positiveIntervalMs": {
+          "count": 2579,
+          "mean": 4.837224117875143,
+          "median": 4.2135,
+          "p95": 7.9767627999999995,
+          "p99": 8.65033274,
+          "max": 184.199,
+          "min": 0.034899
+        },
+        "zeroIntervals": 0,
+        "negativeIntervals": 0,
+        "activeMovementIntervals": 2570,
+        "activeMovementSeconds": 11.409989865999986,
+        "activeSampleRateHz": 225.2412167041624,
+        "moveWindowSeconds": 12.270211,
+        "moveWindowSampleRateHz": 210.0208382724633
+      },
+      "protocol": {
+        "logicalPackets": 1287,
+        "movePackets": 1285,
+        "movePacketRateHz": 104.68547396103745,
+        "activeMovePacketRateHz": 114.23019015544796,
+        "logicalPacketRateHz": 103.0845114239041,
+        "moveSampleCount": {
+          "count": 1285,
+          "mean": 2.006225680933852,
+          "median": 2.0,
+          "p95": 2.0,
+          "p99": 3.0,
+          "max": 3.0,
+          "min": 1.0
+        },
+        "moveSampleCountHistogram": {
+          "1": 8,
+          "2": 1261,
+          "3": 16
+        }
+      },
+      "windows": {
+        "acceptedPackets": 1287,
+        "acceptedReceiveIntervalMs": {
+          "count": 1286,
+          "mean": 9.659957153965783,
+          "median": 8.325000000000728,
+          "p95": 11.14747499999612,
+          "p99": 80.3002950000021,
+          "max": 157.5466000000015,
+          "min": 0.23839999999472639
+        },
+        "moveReceiveIntervalMs": {
+          "count": 1284,
+          "mean": 9.548576012461059,
+          "median": 8.321600000002945,
+          "p95": 11.128990000002519,
+          "p99": 29.887225000005955,
+          "max": 157.5466000000015,
+          "min": 0.23839999999472639
+        }
+      },
+      "jitterProxy": {
+        "definition": "adjacent accepted MOVE arrival interval minus source interval; not one-way latency",
+        "sourceIntervalMs": {
+          "count": 1284,
+          "mean": 9.552423676012463,
+          "median": 8.314477,
+          "p95": 11.119580199999994,
+          "p99": 26.03801687000402,
+          "max": 141.418048,
+          "min": 4.596662
+        },
+        "variationMs": {
+          "count": 1284,
+          "mean": -0.0038476635514029713,
+          "median": -0.034256499999558265,
+          "p95": 2.666748299999406,
+          "p99": 4.840772220002348,
+          "max": 19.230600000001488,
+          "min": -12.265127999998125
+        },
+        "minVariationMs": -12.265127999998125,
+        "absoluteVariationMs": {
+          "count": 1284,
+          "mean": 1.2006343551400867,
+          "median": 0.7715469999965254,
+          "p95": 3.3807400000010293,
+          "p99": 6.530641000001046,
+          "max": 19.230600000001488,
+          "min": 0.0003350000016197896
+        },
+        "arrivalUnder1msWhileSourceAtLeast4ms": 5,
+        "delayedThenCatchupPairsOver4ms": 12
+      },
+      "reliability": {
+        "receivedDatagrams": 1291,
+        "sequenceGapEstimate": 0,
+        "duplicatePackets": 4,
+        "oldPackets": 0,
+        "invalidPackets": 0
+      }
+    },
+    "B": {
+      "sessionId": 2,
+      "android": {
+        "totalSamples": 2064,
+        "historical": 1027,
+        "current": 1037,
+        "durationSeconds": 10.374212,
+        "positiveIntervalMs": {
+          "count": 2063,
+          "mean": 5.028701890450796,
+          "median": 4.217,
+          "p95": 8.1357798,
+          "p99": 31.416733019999977,
+          "max": 109.423,
+          "min": 0.018534
+        },
+        "zeroIntervals": 0,
+        "negativeIntervals": 0,
+        "activeMovementIntervals": 2059,
+        "activeMovementSeconds": 10.14800996099999,
+        "activeSampleRateHz": 202.89692342764562,
+        "moveWindowSeconds": 10.259140423,
+        "moveWindowSampleRateHz": 200.89402377020178
+      },
+      "protocol": {
+        "logicalPackets": 1037,
+        "movePackets": 1035,
+        "movePacketRateHz": 100.88248993280267,
+        "activeMovePacketRateHz": 101.94591843655694,
+        "logicalPacketRateHz": 99.86300646256313,
+        "moveSampleCount": {
+          "count": 1035,
+          "mean": 1.992270531400966,
+          "median": 2.0,
+          "p95": 2.0,
+          "p99": 2.659999999999968,
+          "max": 3.0,
+          "min": 1.0
+        },
+        "moveSampleCountHistogram": {
+          "1": 19,
+          "2": 1005,
+          "3": 11
+        }
+      },
+      "windows": {
+        "acceptedPackets": 1037,
+        "acceptedReceiveIntervalMs": {
+          "count": 1036,
+          "mean": 9.995544691119688,
+          "median": 8.299850000003062,
+          "p95": 13.386625000006461,
+          "p99": 86.61491500000233,
+          "max": 128.2954999999929,
+          "min": 0.319100000000617
+        },
+        "moveReceiveIntervalMs": {
+          "count": 1034,
+          "mean": 9.911410058027073,
+          "median": 8.299850000003062,
+          "p95": 13.234340000003419,
+          "p99": 86.04364699999812,
+          "max": 128.2954999999929,
+          "min": 0.319100000000617
+        }
+      },
+      "jitterProxy": {
+        "definition": "adjacent accepted MOVE arrival interval minus source interval; not one-way latency",
+        "sourceIntervalMs": {
+          "count": 1034,
+          "mean": 9.912522982591874,
+          "median": 8.3146165,
+          "p95": 12.811374749999993,
+          "p99": 77.49550242999973,
+          "max": 116.725245,
+          "min": 4.474569
+        },
+        "variationMs": {
+          "count": 1034,
+          "mean": -0.0011129245648029084,
+          "median": -0.04582550000204311,
+          "p95": 3.173698499999551,
+          "p99": 6.583314999998837,
+          "max": 20.061899999998516,
+          "min": -12.506396000001747
+        },
+        "minVariationMs": -12.506396000001747,
+        "absoluteVariationMs": {
+          "count": 1034,
+          "mean": 1.3859826750484483,
+          "median": 0.8705449999993364,
+          "p95": 4.238184849993998,
+          "p99": 7.821854850001504,
+          "max": 20.061899999998516,
+          "min": 0.003141999998183209
+        },
+        "arrivalUnder1msWhileSourceAtLeast4ms": 5,
+        "delayedThenCatchupPairsOver4ms": 20
+      },
+      "reliability": {
+        "receivedDatagrams": 1041,
+        "sequenceGapEstimate": 0,
+        "duplicatePackets": 4,
+        "oldPackets": 0,
+        "invalidPackets": 0
+      }
+    },
+    "C": {
+      "sessionId": 3,
+      "android": {
+        "totalSamples": 2344,
+        "historical": 1174,
+        "current": 1170,
+        "durationSeconds": 10.980344,
+        "positiveIntervalMs": {
+          "count": 2343,
+          "mean": 4.686446436192921,
+          "median": 4.2075,
+          "p95": 7.9530650000000005,
+          "p99": 8.51890428,
+          "max": 357.5415,
+          "min": 0.006829
+        },
+        "zeroIntervals": 0,
+        "negativeIntervals": 0,
+        "activeMovementIntervals": 2335,
+        "activeMovementSeconds": 9.897719572000012,
+        "activeSampleRateHz": 235.91292751974495,
+        "moveWindowSeconds": 10.6137765,
+        "moveWindowSampleRateHz": 220.56239831317345
+      },
+      "protocol": {
+        "logicalPackets": 1170,
+        "movePackets": 1168,
+        "movePacketRateHz": 110.04134147023757,
+        "activeMovePacketRateHz": 117.90902838241628,
+        "logicalPacketRateHz": 106.4629669161549,
+        "moveSampleCount": {
+          "count": 1168,
+          "mean": 2.0051369863013697,
+          "median": 2.0,
+          "p95": 2.0,
+          "p99": 2.0,
+          "max": 3.0,
+          "min": 2.0
+        },
+        "moveSampleCountHistogram": {
+          "2": 1162,
+          "3": 6
+        }
+      },
+      "windows": {
+        "acceptedPackets": 1170,
+        "acceptedReceiveIntervalMs": {
+          "count": 1169,
+          "mean": 9.39083926432848,
+          "median": 8.346799999999348,
+          "p95": 10.83659999999217,
+          "p99": 17.04790800000308,
+          "max": 368.305400000012,
+          "min": 0.26459999999497086
+        },
+        "moveReceiveIntervalMs": {
+          "count": 1167,
+          "mean": 9.088614138817482,
+          "median": 8.345799999995506,
+          "p95": 10.68408000000054,
+          "p99": 16.906530000000494,
+          "max": 368.305400000012,
+          "min": 0.26459999999497086
+        }
+      },
+      "jitterProxy": {
+        "definition": "adjacent accepted MOVE arrival interval minus source interval; not one-way latency",
+        "sourceIntervalMs": {
+          "count": 1167,
+          "mean": 9.087493724078831,
+          "median": 8.313955,
+          "p95": 9.399900000000004,
+          "p99": 16.62802372,
+          "max": 366.845495,
+          "min": 4.315006
+        },
+        "variationMs": {
+          "count": 1167,
+          "mean": 0.0011204147386467296,
+          "median": 0.004100000013014693,
+          "p95": 2.4568459000013103,
+          "p99": 4.139130239999026,
+          "max": 6.17952599999213,
+          "min": -8.04827700000503
+        },
+        "minVariationMs": -8.04827700000503,
+        "absoluteVariationMs": {
+          "count": 1167,
+          "mean": 1.0764509065980614,
+          "median": 0.7406000000028872,
+          "p95": 3.2377251999920835,
+          "p99": 4.663767960008928,
+          "max": 8.04827700000503,
+          "min": 0.0019000000029336661
+        },
+        "arrivalUnder1msWhileSourceAtLeast4ms": 1,
+        "delayedThenCatchupPairsOver4ms": 7
+      },
+      "reliability": {
+        "receivedDatagrams": 1174,
+        "sequenceGapEstimate": 0,
+        "duplicatePackets": 4,
+        "oldPackets": 0,
+        "invalidPackets": 0
+      }
+    },
+    "D": {
+      "sessionId": 4,
+      "android": {
+        "totalSamples": 623,
+        "historical": 308,
+        "current": 315,
+        "durationSeconds": 11.156245,
+        "positiveIntervalMs": {
+          "count": 622,
+          "mean": 17.936085209003213,
+          "median": 4.211,
+          "p95": 8.138513099999999,
+          "p99": 371.90461707999185,
+          "max": 2106.5615,
+          "min": 0.006893
+        },
+        "zeroIntervals": 0,
+        "negativeIntervals": 0,
+        "activeMovementIntervals": 613,
+        "activeMovementSeconds": 2.6906381229999994,
+        "activeSampleRateHz": 227.8269956706475,
+        "moveWindowSeconds": 9.083037,
+        "moveWindowSampleRateHz": 68.25910760905191
+      },
+      "protocol": {
+        "logicalPackets": 315,
+        "movePackets": 313,
+        "movePacketRateHz": 34.3906359589151,
+        "activeMovePacketRateHz": 114.66767811128076,
+        "logicalPacketRateHz": 28.145670877611597,
+        "moveSampleCount": {
+          "count": 313,
+          "mean": 1.9840255591054312,
+          "median": 2.0,
+          "p95": 2.0,
+          "p99": 2.0,
+          "max": 3.0,
+          "min": 1.0
+        },
+        "moveSampleCountHistogram": {
+          "1": 8,
+          "2": 302,
+          "3": 3
+        }
+      },
+      "windows": {
+        "acceptedPackets": 315,
+        "acceptedReceiveIntervalMs": {
+          "count": 314,
+          "mean": 35.482883757961766,
+          "median": 8.385300000001735,
+          "p95": 17.106370000004944,
+          "p99": 1040.8931489999993,
+          "max": 2130.4505999999965,
+          "min": 0.2342999999964377
+        },
+        "moveReceiveIntervalMs": {
+          "count": 312,
+          "mean": 29.065607692307683,
+          "median": 8.384550000002491,
+          "p95": 16.56669499999552,
+          "p99": 513.3976190000017,
+          "max": 2130.4505999999965,
+          "min": 0.2342999999964377
+        }
+      },
+      "jitterProxy": {
+        "definition": "adjacent accepted MOVE arrival interval minus source interval; not one-way latency",
+        "sourceIntervalMs": {
+          "count": 312,
+          "mean": 29.077682692307683,
+          "median": 8.316424000000001,
+          "p95": 15.875502199999984,
+          "p99": 516.9743897199985,
+          "max": 2115.762757,
+          "min": 4.785098
+        },
+        "variationMs": {
+          "count": 312,
+          "mean": -0.012075000000010742,
+          "median": -0.0821740000019675,
+          "p95": 2.8113821500114455,
+          "p99": 5.65597471999699,
+          "max": 18.407675000003337,
+          "min": -10.733143000005844
+        },
+        "minVariationMs": -10.733143000005844,
+        "absoluteVariationMs": {
+          "count": 312,
+          "mean": 1.3358174230766091,
+          "median": 0.8149069999973806,
+          "p95": 3.7233801500060504,
+          "p99": 10.6403967200051,
+          "max": 18.407675000003337,
+          "min": 0.001023000010313524
+        },
+        "arrivalUnder1msWhileSourceAtLeast4ms": 3,
+        "delayedThenCatchupPairsOver4ms": 3
+      },
+      "reliability": {
+        "receivedDatagrams": 319,
+        "sequenceGapEstimate": 0,
+        "duplicatePackets": 4,
+        "oldPackets": 0,
+        "invalidPackets": 0
+      }
+    }
+  },
+  "fullRunReceiver": {
+    "sequenceGapEstimate": "0",
+    "invalidPackets": "0",
+    "receivedPackets": "3858",
+    "acceptedPackets": "3834",
+    "acceptedSamples": "7657",
+    "oldPackets": "0",
+    "duplicatePackets": "24"
+  }
+}

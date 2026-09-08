@@ -221,7 +221,13 @@ Responsible for:
 - MOVE tracking
 - UP handling
 - Session IDs
-- Reset after timeout
+- Timeout diagnostics and statistics
+
+The current Prototype uses a 2-second input timeout for diagnostics only. A
+timeout does not clear the active touch session, previous X/Y position, or
+fractional residual. A stationary held finger may produce no new MotionEvent,
+so packet absence alone cannot distinguish stationary touch from a disconnected
+sender.
 
 Example:
 

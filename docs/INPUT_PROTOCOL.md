@@ -43,7 +43,9 @@ The protocol is designed for:
 
 # 3. Transport
 
-Preferred transport:
+Protocol v1 transport (frozen): UDP, receiver port 50000.
+
+Transport:
 
 ```text id="m4f8qp"
 UDP
@@ -102,7 +104,9 @@ The Windows receiver must own input processing.
 
 # 6. Packet Types
 
-The protocol has three logical event types.
+Protocol v1 has exactly three event types: DOWN = 1, MOVE = 2, UP = 3.
+DOWN and UP each contain exactly one sample; MOVE contains at least one.
+CANCEL is not part of Protocol v1.
 
 ---
 
@@ -191,7 +195,9 @@ Incorrect output:
 
 # 8. Packet Structure
 
-The exact binary layout may change, but the logical structure is:
+Protocol v1 binary layout is frozen. Version is 1. All multi-byte fields use
+Little Endian. Fields are packed without alignment padding. One UDP datagram
+contains one complete packet, with no trailing bytes or additional fields.
 
 ```c id="h79v0q"
 PacketHeader
@@ -215,7 +221,7 @@ Each sample:
 ```c id="iqw0p8"
 TouchSample
 {
-    uint64_t timestamp;
+    uint64_t timestampNs;
 
     float x;
 
@@ -227,7 +233,31 @@ TouchSample
 
 # 9. Timestamp
 
-Timestamp is required.
+`timestampNs` is required: unsigned 64-bit event time in nanoseconds, not
+milliseconds. The implemented Android UDP Sender uses
+`MotionEvent.getEventTimeNanos()` for current samples and
+`MotionEvent.getHistoricalEventTimeNanos(...)` for historical samples. Android
+`TouchSample`, CSV, Logcat diagnostics, and Protocol v1 all use
+`eventTimeNs` / `timestampNs`; there is no `eventTimeMs` compatibility path.
+
+The 12-byte PacketHeader is followed by sampleCount 16-byte TouchSamples:
+
+| Byte offset | Field | Type / size |
+|---|---|---|
+| 0 | version | uint8 / 1 byte |
+| 1 | eventType | uint8 / 1 byte |
+| 2 | sampleCount | uint16 / 2 bytes |
+| 4 | sessionId | uint32 / 4 bytes |
+| 8 | sequence | uint32 / 4 bytes |
+| 12 + 16 * i | sample[i].timestampNs | uint64 / 8 bytes |
+| 20 + 16 * i | sample[i].x | IEEE 754 float32 / 4 bytes |
+| 24 + 16 * i | sample[i].y | IEEE 754 float32 / 4 bytes |
+
+Exact packet size: `12 + sampleCount * 16` bytes.
+Reject unsupported versions/events, invalid sample counts, length mismatches,
+and non-finite coordinates. Preserve sample order and repeated timestamps.
+Receiver-local receive time is diagnostic metadata, not a protocol field;
+unsynchronized Android and Windows clocks cannot directly measure one-way latency.
 
 Purpose:
 
@@ -260,7 +290,19 @@ Detect:
 - Duplicate packets
 - Out-of-order packets
 
-The receiver should record packet statistics.
+The receiver should record packet statistics. Sequence is uint32 and increases
+across touch sessions during one sender run. Repeated copies of the same packet
+retain its sequence number. The current Prototype uses ordinary unsigned
+comparison and intentionally does not handle uint32 wraparound. Restart the
+Receiver to establish a new baseline after restarting the Sender.
+
+The first valid packet establishes a baseline. Forward jumps contribute to a
+cumulative sequence-gap estimate, not an exact final network-loss count.
+Equal sequences are duplicates; lower sequences are old/out-of-order (possibly
+older duplicates). These do not advance the baseline or contribute new samples.
+Late packets do not subtract from the gap estimate. There is no retransmission
+or reordering layer. Remote IP/port is diagnostic only; no sender locking or
+other-source rejection is implemented. Statistics assume the intended single sender.
 
 ---
 
@@ -329,27 +371,22 @@ Do not build a general reliability layer.
 
 # 12. Receiver Timeout Safety
 
-The receiver must have a safety timeout.
+The current Prototype has a 2-second input timeout. It is diagnostic only: the
+receiver emits a diagnostic and increments the timeout statistic.
 
-If no valid input arrives for a configured period:
+A timeout does not change TouchSession or motion state. In particular, it does
+not clear the active session, previous X/Y position, or fractional residual.
+A stationary held finger may produce no new MotionEvent, so packet absence alone
+cannot reliably distinguish:
 
-Actions:
+- Stationary touch
+- Sender disconnect
 
-- Cancel active touch session
-- Release left mouse button
-- Reset gesture state
-
-Example:
-
-```text id="l2e4e7"
-Wi-Fi disconnect
-
-↓
-
-Release input safely
-```
-
-This prevents stuck input states.
+After Gesture or mouse-button output is implemented, a stuck-button fail-safe
+will still be required. That work is **DEFERRED** because Protocol v1 currently
+does not provide enough information to make the distinction above reliably.
+This document does not prescribe an unapproved connection-state mechanism or
+wire event.
 
 ---
 
@@ -449,17 +486,14 @@ Do not add unused fields in version 1.
 
 # 17. Security
 
-Initial scope:
-
-Local trusted network.
-
-Do not implement initially:
-
-- Accounts
-- Cloud authentication
-- Complex encryption systems
-
-Security features may be considered after core input quality is proven.
+Security is intentionally out of scope: one user, one Android phone, one
+Windows 11 PC, personal use on a trusted local network. Do not implement
+authentication, pairing, PINs, encryption, TLS/DTLS, tokens, certificates,
+signatures, HMAC, anti-replay, multi-user permissions, or security handshakes.
+Do not lock onto the first sender or reject sources by IP/port.
+Length/version/field validation and malformed packet rejection remain current
+reliability requirements. Timeout diagnostics are implemented; the future
+stuck-input fail-safe remains a deferred reliability requirement.
 
 ---
 
