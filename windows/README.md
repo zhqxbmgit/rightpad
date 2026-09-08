@@ -153,6 +153,15 @@ Each directory has its own csproj; tests reference the application project.
 dotnet run --project C:\rightpad\windows\Rightpad.Receiver\Rightpad.Receiver.csproj --configuration Release --no-build -- --raw-mouse
 ```
 
+### Android Redeploy / Receiver Restart
+
+During development, whenever the Android app is reinstalled or its Sender process
+is restarted, restart Rightpad.Receiver before testing the touchpad again. The
+fresh Receiver must establish a new runtime input baseline and listen on UDP
+50000. For RAW Mouse, Gesture, or other SendInput testing, launch it in the current
+Windows user's interactive desktop session, with the same active SessionId as
+explorer.exe.
+
 Default sensitivityX is 7.0 and default sensitivityY is 7.0. Optional finite positive startup values:
 
 ```powershell

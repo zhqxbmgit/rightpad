@@ -424,35 +424,62 @@ The best solution is the simplest design that achieves the required input qualit
 
 ---
 
-# 18. Android Build / Install / Launch Rule
+# 18. Android Build / Deploy / Restart / Receiver Recovery Rule
 
-Whenever an Android build that produces the rightpad APK succeeds, Codex must
-automatically deploy and reopen the app if the configured test Android device is
-reachable through ADB.
+Whenever a rightpad Android APK build succeeds and the configured test Android
+device is reachable through ADB, Codex must complete the full deployment and
+runtime recovery sequence.
 
 Required sequence:
 
-1. Complete the Android build successfully.
-2. Check ADB device availability.
-3. Install the newly built APK using overwrite/reinstall mode.
-4. Restart and launch `com.rightpad.capture/.MainActivity`.
-5. Verify that the Activity is running in the foreground.
-6. Only then report the Android task as ready or completed.
+1. Build the Android APK successfully.
+2. Check that the configured Android device is available through ADB.
+3. Overwrite/reinstall the newly built APK.
+4. Stop the old Android app instance.
+5. Relaunch `com.rightpad.capture/.MainActivity`.
+6. Verify that MainActivity is resumed and in the foreground.
+7. Stop any existing Rightpad.Receiver instance from the previous Android/Sender run.
+8. Start a fresh Windows Receiver instance.
+9. Run the Receiver in the current Windows user's interactive desktop session,
+   with the same active SessionId as explorer.exe, not in the restricted Codex
+   SendInput sandbox.
+10. Verify that the Receiver is listening on UDP 50000.
+11. Verify that the Android UDP Sender is active and reports no sender error or
+    queue overflow.
+12. Verify that the fresh Receiver accepts the new Sender run, establishes a
+    fresh sequence/runtime baseline, and receives valid packets.
+13. If the current task includes mouse or gesture output, perform a minimal
+    end-to-end functional smoke check that Codex can execute.
+14. Only after the Android app and Windows Receiver are both restored and the
+    end-to-end path is functional may the Android task be reported as ready or
+    completed.
 
-For this project, the normal deployment commands are equivalent to:
+For this project, Android deployment normally includes commands equivalent to:
 
 ```text
 adb install -r <latest-debug-apk>
 adb shell am start -S -n com.rightpad.capture/.MainActivity
 ```
 
-A successful Gradle build alone is not sufficient completion for an Android
-implementation task. Do not assume that an already-running app contains the
-newly built code, and do not skip overwrite installation merely because rightpad
-is already installed. Do not ask the user to run ADB commands that Codex can run.
+A successful Gradle build alone is not completion. A successful APK installation
+alone is not completion. Relaunching only the Android app while leaving an old
+Receiver running is not sufficient. Do not assume that an existing Receiver can
+continue across an Android app reinstall or Sender restart.
 
-If no configured test device is reachable through ADB, explicitly report that
-installation and relaunch could not be performed. If Android requires a
-system-level installation confirmation that Codex cannot operate, stop only at
-that permission boundary, ask the user for that single confirmation, and then
-continue the remaining deployment and verification automatically.
+Current Prototype behavior:
+
+- Android Sender runtime state is recreated when the app process restarts.
+- Receiver keeps sequence/session runtime state for its own process lifetime.
+- Therefore, after an Android reinstall or restart, the development workflow
+  must start a fresh Receiver so it establishes a fresh input baseline.
+
+This is the current Prototype lifecycle rule, not a permanent Protocol v1
+limitation. Only an explicitly approved future sender-restart detection or
+reconnect design may replace it. Do not add a handshake, heartbeat, sequence-reset
+protocol, or reconnect mechanism as a workaround.
+
+Do not ask the user to run commands that Codex can run. If no configured test
+device is reachable through ADB, explicitly report that deployment and runtime
+recovery could not be completed. If Android requires a system-level installation
+confirmation that Codex cannot operate, stop only at that permission boundary,
+ask the user for that single confirmation, and then continue automatically.

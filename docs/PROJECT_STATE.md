@@ -305,6 +305,22 @@ Access Denied
 
 Codex 可以自动构建、测试、管理进程，但最终 Receiver 必须从可注入当前交互桌面的上下文运行。
 
+### Android Redeploy Lifecycle
+
+当前已验证的开发环境恢复流程：
+
+```text
+Android APK reinstall / app restart
+→ restart Windows Receiver in the interactive desktop session
+→ establish a fresh sequence/runtime baseline
+→ verify UDP 50000 and end-to-end input
+```
+
+Android Sender 的运行时状态随 App 进程重建，而 Receiver 在自身进程生命周期内保留
+sequence/session 运行时状态。因此当前 Prototype 每次 Android 重新部署或 Sender 重启后，
+开发测试环境必须启动一个新 Receiver。这是 Development Runtime Rule，不是 Protocol v1
+新字段或新的网络机制；当前没有 sender-restart detection、reconnect protocol 或 heartbeat。
+
 ---
 
 ## 14. Timeout Status

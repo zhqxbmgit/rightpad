@@ -85,10 +85,17 @@ Build
 → force/restart app
 → launch com.rightpad.capture/.MainActivity
 → verify foreground Activity
+→ restart Windows Rightpad.Receiver
+→ verify UDP 50000
+→ verify fresh sequence/runtime baseline
+→ end-to-end smoke
 ```
 
 只要测试手机可通过 ADB 访问，就必须覆盖安装本次新构建的 APK，再重新启动应用并
-确认 MainActivity 位于前台。不能因为手机上已经安装或正在运行 rightpad 而跳过安装。
+确认 MainActivity 位于前台。然后必须停止上一轮 Android/Sender 对应的旧 Receiver，
+在 Windows 当前用户交互桌面 Session 启动新 Receiver，并验证 UDP 50000、fresh input
+baseline 和端到端输入。不能因为手机上已经安装或正在运行 rightpad 而跳过安装，
+也不能只重启 Android App 后继续沿用旧 Receiver。
 
 可选静态检查命令：
 
