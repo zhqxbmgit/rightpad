@@ -136,7 +136,12 @@ internal static class Program
             ("startup disable deletes only rightpad value", Sync(StartupTests.DisableDeletesOnlyRightpadValue)),
             ("startup disable absent is safe", Sync(StartupTests.DisableAbsentIsSafe)),
             ("startup write failure leaves runtime running", StartupTests.WriteFailureDoesNotAffectRuntime),
-            ("startup command quoting and Unicode path", Sync(StartupTests.CommandQuotingHandlesSpacesAndUnicode))
+            ("startup command quoting and Unicode path", Sync(StartupTests.CommandQuotingHandlesSpacesAndUnicode)),
+            ("tray Closing hides without runtime/UDP cleanup", Sync(TrayApplicationBehaviorTests.ClosingHidesWithoutCleanup)),
+            ("tray explicit Exit allows Closing", Sync(TrayApplicationBehaviorTests.ExplicitExitAllowsClosing)),
+            ("tray Exit runtime/settings/resource cleanup", TrayApplicationBehaviorTests.ExitCleansUp),
+            ("tray restore hidden window", Sync(TrayApplicationBehaviorTests.RestoreHidden)),
+            ("tray restore minimized window", Sync(TrayApplicationBehaviorTests.RestoreMinimized))
         ];
 
         int failed = 0;

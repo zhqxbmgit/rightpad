@@ -18,6 +18,14 @@ UI source of truth. A GUI-only named Mutex prevents a login-started Receiver and
 a later manual launch from competing for UDP 50000. Human Windows reboot and
 sign-in acceptance passed.
 
+The WPF Receiver now has the frozen minimal tray behavior: the title-bar X hides
+only MainWindow, leaving the ReceiverRuntime, UDP 50000, Protocol v2 presence,
+RAW/Single Tap and the GUI mutex alive. Tray Open/double-click restores and
+activates the window; tray Exit is the sole explicit application exit path and
+performs runtime cleanup, final settings flush, tray disposal and shutdown.
+Minimize remains the standard taskbar minimize, and login startup still shows
+the window normally.
+
 Start with Windows automated verification (2026-09-09): Release build passed with
 0 warnings/errors and all 110 Windows tests passed. Real WPF Enable/Disable/Enable
 confirmed the exact HKCU command, deletion and final On state. The final fresh
@@ -554,6 +562,7 @@ Completed:
 - Phase 4 implementation — RAW Mouse Baseline
 - WPF Receiver UI v1 implementation — single-process GUI, automatic Start, runtime settings, persistence and diagnostics; accepted as the first formal UI baseline
 - Start with Windows implementation — current-user HKCU Run toggle with Registry source-of-truth state and GUI single-instance guard; real Windows reboot/login acceptance passed
+- Minimal Receiver tray lifecycle — X hides without stopping input, Open restores, and tray Exit performs the existing orderly shutdown
 
 ---
 

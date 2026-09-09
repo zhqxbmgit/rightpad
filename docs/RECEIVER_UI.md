@@ -21,8 +21,11 @@ project, external MVVM/DI packages, service, IPC or second product process.
 Double-click Rightpad.Receiver.exe: load settings, show MainWindow on **Motion**,
 then automatically start its internal ReceiverRuntime. No CLI or scheduler is
 needed for normal use. Minimize keeps receiving; page changes do not start or
-stop input. Closing awaits Stop and final settings flush, then exits. No tray
-or start-with-Windows feature.
+stop input. The title-bar X hides MainWindow to a system tray icon while the
+ReceiverRuntime and UDP listener continue unchanged. Double-clicking the icon or
+choosing **Open rightpad Receiver** restores and activates the window. Only the
+tray **Exit** command stops the runtime, flushes settings, disposes the tray icon
+and shuts down the application. Standard minimize continues to use the taskbar.
 
 Existing UDP -> decoder -> sequence acceptance is retained. Accepted packets
 feed TouchSessionProcessor / RawMotionProcessor and independent GestureProcessor.
@@ -168,7 +171,9 @@ Existing decoder/receive allocations are not reworked for this UI feature.
 
 Three main ViewModels share settings and stats across pages. A small NumericField
 model handles editing; NumericEditor code-behind handles only input interaction.
-MainWindow handles navigation, the UI timer and awaited close coordination.
+MainWindow handles navigation, the UI timer and the minimal tray integration.
+A small testable behavior object distinguishes X-to-hide from explicit Exit and
+restores hidden or minimized windows without changing ReceiverRuntime state.
 
 ## Windows login startup
 
@@ -205,7 +210,7 @@ write receiver.log (`--dev-log-dir`, default LocalAppData/rightpad/diagnostics).
 InteractiveToken/Limited Scheduled Task starts GUI with --dev-log-dir, retains the
 process handle, waits for exit, and records receiver.log / identity / PID / exit.
 Status checks user, explorer SessionId, Medium integrity, Default desktop and UDP
-50000. Stop requests normal window close before a verified forced fallback.
+50000. Normal product exit is the tray **Exit** command.
 No Codex-shell persistent child, watchdog or product scheduler. Product login
 startup is the separate HKCU Run value and never calls or modifies this launcher.
 
@@ -227,7 +232,8 @@ human visual and input-feel acceptance.
 
 No FIR/Second Order/filter, extra gestures, drag, right click, scroll, HID/driver,
 profiles, discovery/multi-device, generic reconnect frameworks, cloud/account/plugins,
-updates, tray, charts/log viewer, theme selector or custom title bar.
+tray notifications/telemetry/runtime controls, updates, charts/log viewer, theme
+selector or custom title bar.
 
 ## Implementation verification (2026-09-09)
 

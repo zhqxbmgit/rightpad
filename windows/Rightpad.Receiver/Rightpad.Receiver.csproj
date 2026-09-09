@@ -2,6 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <StartupObject>Rightpad.Receiver.Program</StartupObject>
     <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -9,5 +10,6 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Rightpad.Receiver.Tests" />
+    <Using Remove="System.Windows.Forms" />
   </ItemGroup>
 </Project>

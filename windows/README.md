@@ -15,8 +15,12 @@ or Codex is needed for daily use.
 - Motion: RAW text and independently editable X/Y sensitivity.
 - Tap: duration, axis-aligned movement threshold and click hold.
 - Diagnostics: actual Receiver counters/state only.
-- Minimize keeps receiving; closing stops input, releases buttons best-effort,
-  flushes pending settings and exits. Page changes never restart input.
+- Minimize keeps receiving and remains a normal taskbar minimize. The title-bar X
+  hides MainWindow to the system tray without stopping ReceiverRuntime or releasing
+  UDP 50000. Double-click the tray icon or choose **Open rightpad Receiver** to
+  restore and activate the window. Tray **Exit** stops input, releases buttons
+  best-effort, flushes pending settings, disposes the tray icon and exits. Page
+  changes never restart input.
 
 Full UI contract: [RECEIVER_UI.md](../docs/RECEIVER_UI.md).
 
@@ -45,6 +49,8 @@ stale or different executable displays Off. Enabling repairs the value and
 disabling deletes only this value. Failures are nonmodal and never stop input.
 The setting is not stored in settings.json. A GUI-only named Mutex prevents a
 second manual GUI launch from creating another runtime or binding UDP 50000.
+Hiding to the tray retains that mutex. Start with Windows remains independent:
+login startup continues to show MainWindow normally rather than starting hidden.
 The 2026-09-09 implementation check passed a warning-free Release build and all
 110 Windows tests, real WPF Enable/Disable/Enable with final On, GUI Stop/Start,
 200% DPI minimum layout, second-instance rejection, Protocol v2 recovery and
@@ -218,10 +224,12 @@ Use the independent launcher if Windows itself needs to be started or updated.
 - Runtime/ReceiverRuntime.cs owns runs; RuntimeStatsSnapshot is the UI read model.
 - Settings contains immutable settings/store and JSON/debounce persistence.
 - Startup contains the small HKCU Run access boundary and source-of-truth logic.
-- App/MainWindow, four Views, NumericEditor and DarkTheme form the WPF surface.
+- App/MainWindow, the framework-provided WinForms NotifyIcon, four Views,
+  NumericEditor and DarkTheme form the WPF surface.
 - MainViewModel, SettingsViewModel, StartupViewModel and RuntimeStatsViewModel share page state.
 - Existing tests remain, plus settings/runtime/settings-boundary regression files.
 
 No filter, FIR/Second Order, Double Tap Drag, right click, scroll, HID/driver,
 profiles/discovery/multi-device, generic reconnect frameworks, cloud/accounts/plugins,
-tray, updates, graphs/log viewer, theme selector or custom title bar.
+tray notifications/telemetry/runtime controls, updates, graphs/log viewer, theme
+selector or custom title bar.
