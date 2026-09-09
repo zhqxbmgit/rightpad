@@ -443,12 +443,15 @@ Required sequence:
 4. Stop the old Android app instance.
 5. Relaunch `com.rightpad.capture/.MainActivity`.
 6. Verify that MainActivity is resumed and in the foreground.
-7. Stop any existing Rightpad.Receiver instance from the previous Android/Sender run.
-8. Start a fresh Windows Receiver instance.
+7. Stop the previous independent Rightpad.Receiver using
+   `windows/tools/RightpadReceiverTask.ps1 -Mode Stop`.
+8. Start a fresh independent Windows Receiver using the same launcher with
+   `-Mode Start` (which ensures the approved task definition).
 9. Run the Receiver in the current Windows user's interactive desktop session,
    with the same active SessionId as explorer.exe, not in the restricted Codex
    SendInput sandbox.
-10. Verify that the Receiver is listening on UDP 50000.
+10. Verify the current user, explorer SessionId, Medium integrity, Default desktop,
+    and UDP 50000 listener using the launcher `-Mode Status`.
 11. Verify that the Android UDP Sender is active and reports no sender error or
     queue overflow.
 12. Verify that the fresh Receiver accepts the new Sender run, establishes a
@@ -458,6 +461,19 @@ Required sequence:
 14. Only after the Android app and Windows Receiver are both restored and the
     end-to-end path is functional may the Android task be reported as ready or
     completed.
+
+Persistent / user-facing Rightpad.Receiver must NOT be launched as a direct or
+indirect persistent child of the Codex execution shell. Codex execution jobs may
+use Windows Job Objects with KILL_ON_JOB_CLOSE, which can terminate Receiver when
+the Codex host is replaced or cleaned up.
+
+Use the project-approved independent interactive Windows task launcher:
+`windows/tools/RightpadReceiverTask.ps1`. It uses the `Rightpad Receiver Dev`
+Scheduled Task, current-user InteractiveToken, Limited / LUA run level, and no
+triggers. Do not fall back to plain Start-Process from the Codex shell for a
+Receiver that must remain alive after the tool command returns. Runtime logs stay
+under ignored `windows/test-results/receiver-runtime/`. This is a development
+launch mechanism, not a product service, watchdog, or automatic startup feature.
 
 For this project, Android deployment normally includes commands equivalent to:
 

@@ -19,12 +19,49 @@ motion output scheduler, settings UI, configuration file, discovery, or security
 
 From the repository root in PowerShell, with .NET 8 SDK installed:
 
+`RightpadReceiverTask.ps1` is a development-only independent Receiver launcher
+for Codex automation and development testing. It is not the final product UI or
+a Windows Service. After the final user-facing GUI Receiver is available, normal
+daily use will not depend on this Task Scheduler launcher.
+
+If the dev Receiver is already running, use the launcher `-Mode Stop` before
+rebuilding its Release files, then `-Mode Start` after the successful build.
+
 ```powershell
 dotnet build C:\rightpad\windows\Rightpad.Receiver\Rightpad.Receiver.csproj --configuration Release
-dotnet run --project C:\rightpad\windows\Rightpad.Receiver\Rightpad.Receiver.csproj --configuration Release --no-build
+& C:\rightpad\windows\tools\RightpadReceiverTask.ps1 -Mode Start
+& C:\rightpad\windows\tools\RightpadReceiverTask.ps1 -Mode Status
 ```
 
-The console listens on IPv4 `0.0.0.0:50000`. Press Ctrl+C to cancel a pending
+Persistent / user-facing development RAW Receiver must use this independent
+launcher, not `Start-Process Receiver` (or an indirect persistent child) from the
+Codex execution shell. The old launch method experimentally inherited a Windows
+Job with `KILL_ON_JOB_CLOSE`; host replacement/cleanup can therefore end its runtime.
+
+The single script provides `Ensure`, `Start`, `Stop`, `Status`, and internal `Run`.
+`Start` ensures the fixed `Rightpad Receiver Dev` Scheduled Task, stops its own
+previous runtime if present, and starts a fresh Receiver. `Ensure` only registers
+or checks the task. Use `Stop` to stop it explicitly; `Status` reports identity,
+UDP ownership and log paths. `Run` is only allowed as the scheduler action.
+
+The task uses the current logged-in user, InteractiveToken, Limited / LUA, no
+triggers, no stored password, no execution time limit and no automatic restart.
+The Receiver must match explorer's user/session, Medium integrity and Default
+desktop. A failed validation is reported, never replaced by a Codex child launch.
+The task runs the existing Release EXE in its build directory with only
+`--raw-mouse`, preserving the binary's defaults (currently 7/7 and 300/8/25).
+No executable copy, service, installation directory or configuration file is added.
+
+Runtime evidence is ignored under `windows/test-results/receiver-runtime/`: a
+per-run start record, Receiver PID/creation time when observed, stdout/stderr, and
+exit time/code when the waiting wrapper observes exit. Explicit `Stop` stops the
+task, cleans only its verified residual Receiver if necessary, and records the
+observed forced exit in `stop.json`. Forced termination need not produce normal
+Receiver shutdown statistics; a host/OS loss can also prevent an exit record.
+Stop only when input is idle. The launcher does not mask failures with a watchdog.
+
+The Receiver listens on IPv4 `0.0.0.0:50000`. In a human-owned diagnostic console,
+press Ctrl+C to cancel a pending
 receive, print final statistics, close the socket and exit. A bind error (for
 example an occupied port) is reported with a nonzero exit code. Windows 11 is
 checked at application startup. No firewall rules are installed or changed.
@@ -150,7 +187,7 @@ Each directory has its own csproj; tests reference the application project.
 ## RAW mouse mode
 
 ```powershell
-dotnet run --project C:\rightpad\windows\Rightpad.Receiver\Rightpad.Receiver.csproj --configuration Release --no-build -- --raw-mouse
+& C:\rightpad\windows\tools\RightpadReceiverTask.ps1 -Mode Start
 ```
 
 ### Android Redeploy / Receiver Restart
@@ -159,10 +196,13 @@ During development, whenever the Android app is reinstalled or its Sender proces
 is restarted, restart Rightpad.Receiver before testing the touchpad again. The
 fresh Receiver must establish a new runtime input baseline and listen on UDP
 50000. For RAW Mouse, Gesture, or other SendInput testing, launch it in the current
-Windows user's interactive desktop session, with the same active SessionId as
-explorer.exe.
+Windows user's interactive desktop session through `RightpadReceiverTask.ps1`
+(`Stop`, then `Start`), with the same active SessionId as explorer.exe. Do not
+leave it attached to the Codex execution Job.
 
-Default sensitivityX is 7.0 and default sensitivityY is 7.0. Optional finite positive startup values:
+Default sensitivityX is 7.0 and default sensitivityY is 7.0. The following direct
+CLI examples are for a human-owned interactive console only, not a persistent
+Codex launch; stop the scheduled runtime first. Optional finite positive values:
 
 ```powershell
 dotnet run --project C:\rightpad\windows\Rightpad.Receiver\Rightpad.Receiver.csproj --configuration Release --no-build -- --raw-mouse --sensitivity-x 5 --sensitivity-y 6

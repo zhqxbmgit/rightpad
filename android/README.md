@@ -86,7 +86,7 @@ Build
 → force/restart app
 → launch com.rightpad.capture/.MainActivity
 → verify foreground Activity
-→ restart Windows Rightpad.Receiver
+→ restart Windows Rightpad.Receiver via the independent interactive task launcher
 → verify UDP 50000
 → verify fresh sequence/runtime baseline
 → end-to-end smoke
@@ -94,7 +94,8 @@ Build
 
 只要测试手机可通过 ADB 访问，就必须覆盖安装本次新构建的 APK，再重新启动应用并
 确认 MainActivity 位于前台。然后必须停止上一轮 Android/Sender 对应的旧 Receiver，
-在 Windows 当前用户交互桌面 Session 启动新 Receiver，并验证 UDP 50000、fresh input
+使用 `windows/tools/RightpadReceiverTask.ps1 -Mode Stop` / `-Mode Start`，
+在 Windows 当前用户交互桌面 Session 独立启动新 Receiver，并验证 UDP 50000、fresh input
 baseline 和端到端输入。不能因为手机上已经安装或正在运行 rightpad 而跳过安装，
 也不能只重启 Android App 后继续沿用旧 Receiver。
 
@@ -218,8 +219,8 @@ Debug APK 可通过 `run-as` 检查私有目录。以下命令只读取手机文
 
 目标常量为 UdpTouchSender.RECEIVER_IPV4 = "192.168.110.248"，端口 50000。
 这是本次 Windows 到 Xiaomi 14 的局域网 IPv4。PC 地址变化后需要修改常量并重建；
-没有自动发现或配置系统。启动 Receiver 后再启动 Android；
-Sender 重启后也应重启 Receiver，以建立新的 sequence 基准。
+没有自动发现或配置系统。Android 重新部署或 Sender 重启后，
+通过独立交互任务 launcher 重启 Receiver，以建立新的 sequence 基准。
 
 每个 DOWN/UP 编码一个样本，MOVE 将全部 historical + current 编为一个逻辑包，
 顺序与 CSV/Logcat 相同。CANCEL 只在本地记录并终止采集，不发送任何替代事件。
@@ -239,9 +240,9 @@ Activity 销毁时丢弃待发包并关闭 socket、唤醒线程；暂停仅停�
 每个逻辑包的发送份数和错误；packet_sent 仅证明系统接受发送，交付以 Receiver 为准。
 
 运行 tests/Test-ProtocolV1Encoder.ps1（JAVA_HOME 指向 JDK）执行编码测试，
-再运行 gradlew.bat assembleDebug lintDebug。在另一个终端启动正式 Receiver：
-dotnet run --project ..\windows\Rightpad.Receiver --configuration Release。
-安装、启动 Android 后，可用 adb shell input tap 600 1200 和
+再运行 gradlew.bat assembleDebug lintDebug。安装、重启 Android 后，通过
+`..\windows\tools\RightpadReceiverTask.ps1 -Mode Stop` / `-Mode Start` 重启正式 RAW Receiver。
+双端恢复后，可用 adb shell input tap 600 1200 和
 adb shell input swipe 500 1500 650 700 1500 自动验证链路。
 
 固定字节测试与 Windows Decoder 测试共用的已知 44 字节 MOVE 示例逐字节对照，

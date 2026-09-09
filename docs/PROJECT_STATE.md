@@ -307,13 +307,40 @@ Access Denied
 
 Codex 可以自动构建、测试、管理进程，但最终 Receiver 必须从可注入当前交互桌面的上下文运行。
 
+### Independent Receiver Development Runtime
+
+Receiver development runtime: Task Scheduler interactive user launch。
+
+Status: Independent launcher adopted。
+
+正式开发入口为 `windows/tools/RightpadReceiverTask.ps1`，任务名为
+`Rightpad Receiver Dev`。使用当前用户 InteractiveToken、Limited / LUA、与
+explorer 相同的交互 Session、Medium integrity 和 Default desktop；无触发器、
+无自动重启。运行现有 Release 二进制，仅传 `--raw-mouse`；日志保留在 ignored
+`windows/test-results/receiver-runtime/`。持久 Receiver 不再作为 Codex shell 子进程启动。
+
+该脚本是供 Codex 自动测试和开发阶段使用的 development-only launcher，不是最终产品
+UI，也不是 Windows Service。最终用户 GUI Receiver 完成后，日常使用不依赖此
+Task Scheduler launcher。
+
+Reason: Codex Start-Process runtime was experimentally confirmed to inherit a
+KILL_ON_JOB_CLOSE Job。
+
+- High confidence: old launch method had Codex Job lifetime dependency。
+- Medium confidence: this dependency caused the previously observed Receiver
+  disappearance。缺少旧 PID 的精确退出时间、exit code 和直接终止证据，不能写成
+  历史故障已 100% 证明；当前也没有证据证明虚拟网卡是根因。
+
+这是开发运行生命周期修复；Protocol v1、Network Frozen、Motion、Gesture 和
+diagnostic-only timeout 均未改变。
+
 ### Android Redeploy Lifecycle
 
 当前已验证的开发环境恢复流程：
 
 ```text
 Android APK reinstall / app restart
-→ restart Windows Receiver in the interactive desktop session
+→ stop old / start fresh Receiver via the independent interactive task launcher
 → establish a fresh sequence/runtime baseline
 → verify UDP 50000 and end-to-end input
 ```
