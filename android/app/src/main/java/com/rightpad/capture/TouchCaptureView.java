@@ -91,7 +91,7 @@ final class TouchCaptureView extends View {
         for (TouchSample sample : samples) {
             recordSample(sample, event.getHistorySize());
         }
-        // CANCEL remains a local fact; Protocol v1 has no CANCEL or synthetic UP.
+        // CANCEL remains a local fact; Protocol v2 has no CANCEL or synthetic UP.
         if (action != TouchSample.Action.CANCEL) udpSender.submit(samples);
     }
 

@@ -11,6 +11,12 @@ internal sealed class RuntimeStatsViewModel : ObservableModel
     private string remoteIp = "—", endpoint = "Not listening", session = "None", lastAccepted = "Never";
     private string mouseBackend = "SendInput", error = "";
     private long gap, old, duplicate, invalid, timeouts;
+    private string lastSeen = "Never";
+    private long heartbeats, presenceTimeouts, outdatedRuns;
+    public string LastSeen { get => lastSeen; private set => Set(ref lastSeen, value); }
+    public long Heartbeats { get => heartbeats; private set => Set(ref heartbeats, value); }
+    public long PresenceTimeouts { get => presenceTimeouts; private set => Set(ref presenceTimeouts, value); }
+    public long OutdatedRuns { get => outdatedRuns; private set => Set(ref outdatedRuns, value); }
     public string Status { get => status; private set => Set(ref status, value); }
     public string SamplesHz { get => samplesHz; private set => Set(ref samplesHz, value); }
     public string PacketsHz { get => packetsHz; private set => Set(ref packetsHz, value); }
@@ -32,17 +38,22 @@ internal sealed class RuntimeStatsViewModel : ObservableModel
         ReceiverState.Starting => "Starting…",
         ReceiverState.Stopping => "Stopping…",
         ReceiverState.Error => "Error",
-        ReceiverState.Stopped => "Stopped",
-        _ when s.LastAcceptedAtTicks == 0 => "Waiting",
-        _ when Stopwatch.GetElapsedTime(s.LastAcceptedAtTicks, now).TotalSeconds <= 1 => "Receiving",
-        _ => "Ready · Idle"
+        ReceiverState.Stopped => "Receiver Stopped",
+        _ when s.Presence?.RunId is null => "Waiting for Android",
+        _ when s.Presence.Connected && Stopwatch.GetElapsedTime(s.Presence.LastSeenAtTicks, now) < UdpReceiver.PresenceTimeout => "Connected",
+        _ => "Disconnected"
     };
 
     public void Refresh(RuntimeStatsSnapshot s, long now)
     {
         Status = Activity(s, now);
         RuntimeState = s.RuntimeState.ToString();
-        RemoteIp = s.LastRemoteIp ?? "—";
+        RemoteIp = s.Presence?.RemoteIp ?? "—";
+        LastSeen = s.Presence?.RunId is null ? "Never" :
+            FormatAge(Math.Max(0, Stopwatch.GetElapsedTime(s.Presence.LastSeenAtTicks, now).TotalSeconds));
+        Heartbeats = s.HeartbeatPackets;
+        PresenceTimeouts = s.PresenceTimeouts;
+        OutdatedRuns = s.OutdatedRunPackets;
         Endpoint = s.RuntimeState == ReceiverState.Running ? "0.0.0.0:50000" : "Not listening";
         Session = s.ActiveTouchSessionId < 0 ? "None" : $"Active · {s.ActiveTouchSessionId}";
         LastAccepted = s.LastAcceptedAtTicks == 0 ? "Never" :

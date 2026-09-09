@@ -108,4 +108,31 @@ internal static class LeftButtonControllerTests
         Check(logs.Any(s => s.StartsWith("left_button_error:")) &&
               logs.Any(s => s.StartsWith("left_button_cleanup_error:")), "all failures logged");
     }
+
+    public static async Task CancelAndRace()
+    {
+        int downs = 0, ups = 0;
+        using var button = new LeftButtonController(() => downs++, () => ups++, _ => { }, () => { }, 200);
+        button.Click(); button.Click(); button.Click();
+        button.CancelPendingAndRelease(); button.CancelPendingAndRelease();
+        Equal(1, downs, "queued clicks canceled"); Equal(1, ups, "held button released once");
+        button.Click();
+        // Simulate an already queued old Timer callback after a new click starts.
+        typeof(LeftButtonController).GetMethod("ReleaseDue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(button, null);
+        Equal(1, ups, "stale callback cannot release new click early");
+        await Task.Delay(300);
+        Equal(2, downs, "only new click survives"); Equal(2, ups, "new click released at own deadline");
+        button.CancelPendingAndRelease();
+    }
+
+    public static void CancelFailure()
+    {
+        int wakeups = 0, ups = 0;
+        using var button = new LeftButtonController(() => { }, () => { ups++; throw new Win32Exception(5); }, _ => { }, () => wakeups++, 200);
+        button.Click();
+        Throws<Win32Exception>(button.CancelPendingAndRelease);
+        Check(button.Failure is Win32Exception, "cleanup failure retained as receiver error");
+        Equal(1, wakeups, "failure wakes idle receiver"); Check(ups >= 2, "best effort release attempted");
+    }
 }

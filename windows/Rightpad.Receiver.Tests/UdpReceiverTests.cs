@@ -173,7 +173,7 @@ internal static class UdpReceiverTests
             await running.WaitAsync(TimeSpan.FromSeconds(5));
         }
         Check(moves.SequenceEqual(new[] { (1, 0), (1, 0), (1, 0) }), "accepted-only per-sample output");
-        Equal(3L, motion.IgnoredSessionPackets, "orphan MOVE and foreign MOVE/UP");
+        Equal(2L, motion.IgnoredSessionPackets, "unknown-run MOVE is dropped before motion; foreign MOVE/UP ignored");
         Equal(2L, receiver.Statistics.DuplicatePackets, "duplicate DOWN/MOVE");
         Equal(1L, receiver.Statistics.OldPackets, "old DOWN");
         Equal(1L, receiver.Statistics.InvalidPackets, "malformed whole packet excluded");

@@ -5,7 +5,7 @@
     <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="22,0">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-          <Ellipse Width="9" Height="9" Margin="0,0,9,0"><Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="{StaticResource MutedBrush}"/><Style.Triggers><DataTrigger Binding="{Binding Stats.Status}" Value="Receiving"><Setter Property="Fill" Value="{StaticResource GreenBrush}"/></DataTrigger><DataTrigger Binding="{Binding Stats.Status}" Value="Error"><Setter Property="Fill" Value="#E99986"/></DataTrigger></Style.Triggers></Style></Ellipse.Style></Ellipse>
+          <Ellipse Width="9" Height="9" Margin="0,0,9,0"><Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="{StaticResource MutedBrush}"/><Style.Triggers><DataTrigger Binding="{Binding Stats.Status}" Value="Connected"><Setter Property="Fill" Value="{StaticResource GreenBrush}"/></DataTrigger><DataTrigger Binding="{Binding Stats.Status}" Value="Disconnected"><Setter Property="Fill" Value="#E36B6B"/></DataTrigger><DataTrigger Binding="{Binding Stats.Status}" Value="Receiver Stopped"><Setter Property="Fill" Value="#7D8590"/></DataTrigger><DataTrigger Binding="{Binding Stats.Status}" Value="Error"><Setter Property="Fill" Value="#E99986"/></DataTrigger></Style.Triggers></Style></Ellipse.Style></Ellipse>
           <TextBlock Text="{Binding Stats.Status}" AutomationProperties.AutomationId="GlobalStatus"/>
         </StackPanel>
         <TextBlock FontSize="20"><Run FontWeight="SemiBold" Text="rightpad"/><Run Foreground="{StaticResource MutedBrush}" Text=" Receiver"/></TextBlock>

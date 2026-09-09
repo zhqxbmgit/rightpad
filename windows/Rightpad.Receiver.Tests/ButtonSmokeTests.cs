@@ -33,7 +33,10 @@ internal static class ButtonSmokeTests
         target.CheckPointer();
         await Adb("shell", "input", "tap", "600", "1000");
         await Task.Delay(200);
-        Console.WriteLine("GUI_ANDROID_INJECTED smallSwipe=10px tap=1 target=inert; verify GUI runtime native summaries separately.");
+        Equal(1, target.InjectedDowns, "GUI emitted exactly one native LEFT DOWN");
+        Equal(1, target.InjectedUps, "GUI emitted exactly one native LEFT UP");
+        Check(target.InjectedMoves > 0, "GUI emitted native movement");
+        Console.WriteLine($"GUI_ANDROID_E2E smallSwipe=10px tap=1 nativeMoves={target.InjectedMoves} nativeDowns={target.InjectedDowns} nativeUps={target.InjectedUps} target=inert");
     }
 
     // These entry points inject real buttons only when explicitly requested.
@@ -96,12 +99,28 @@ internal static class ButtonSmokeTests
         private readonly Thread thread;
         private readonly nint window;
         private uint threadId;
+        private int injectedDowns, injectedUps, injectedMoves;
+        public int InjectedDowns => Volatile.Read(ref injectedDowns);
+        public int InjectedUps => Volatile.Read(ref injectedUps);
+        public int InjectedMoves => Volatile.Read(ref injectedMoves);
+        private readonly HookProc hookProc;
         public ClickTarget()
         {
+            hookProc = (code, message, data) =>
+            {
+                if (code >= 0 && (Marshal.PtrToStructure<MouseHook>(data).Flags & 1) != 0)
+                {
+                    if (message == 0x0201) Interlocked.Increment(ref injectedDowns);
+                    if (message == 0x0202) Interlocked.Increment(ref injectedUps);
+                    if (message == 0x0200) Interlocked.Increment(ref injectedMoves);
+                }
+                return CallNextHookEx(0, code, message, data);
+            };
             var ready = new TaskCompletionSource<nint>(TaskCreationOptions.RunContinuationsAsynchronously);
             thread = new Thread(() =>
             {
                 nint handle = 0;
+                nint hook = 0;
                 try
                 {
                     threadId = GetCurrentThreadId();
@@ -109,6 +128,8 @@ internal static class ButtonSmokeTests
                     handle = CreateWindowExW(0x08000088, "STATIC", "rightpad button smoke target",
                         0x90000000, p.X - 150, p.Y - 80, 300, 160, 0, 0, 0, 0);
                     if (handle == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+                    hook = SetWindowsHookExW(14, hookProc, GetModuleHandleW(null), 0);
+                    if (hook == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
                     ready.TrySetResult(handle);
                     while (GetMessageW(out var msg, 0, 0, 0) > 0)
                     {
@@ -117,7 +138,7 @@ internal static class ButtonSmokeTests
                     }
                 }
                 catch (Exception e) { ready.TrySetException(e); }
-                finally { if (handle != 0) DestroyWindow(handle); }
+                finally { if (hook != 0) UnhookWindowsHookEx(hook); if (handle != 0) DestroyWindow(handle); }
             }) { IsBackground = true, Name = "RightpadSmokeTarget" };
             thread.Start();
             window = ready.Task.GetAwaiter().GetResult();
@@ -132,6 +153,12 @@ internal static class ButtonSmokeTests
             thread.Join(TimeSpan.FromSeconds(5));
         }
         [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
+        [StructLayout(LayoutKind.Sequential)] private struct MouseHook { public Point Point; public uint MouseData, Flags, Time; public nuint ExtraInfo; }
+        private delegate nint HookProc(int code, nuint message, nint data);
+        [DllImport("user32.dll", SetLastError = true)] private static extern nint SetWindowsHookExW(int id, HookProc callback, nint module, uint threadId);
+        [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(nint hook);
+        [DllImport("user32.dll")] private static extern nint CallNextHookEx(nint hook, int code, nuint message, nint data);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern nint GetModuleHandleW(string? name);
         [StructLayout(LayoutKind.Sequential)] private struct Msg
         {
             public nint Hwnd; public uint Message; public nuint WParam; public nint LParam;

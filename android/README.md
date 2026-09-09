@@ -1,11 +1,11 @@
 # Android Touch Capture Prototype
 
-验证原始触摸采集、记录与 Protocol v1 UDP 传输：
+验证原始触摸采集、记录与 Protocol v2 UDP 传输：
 
 ```text
 Android Touch Digitizer → MotionEvent → Historical + Current Samples
                        → TouchSample → Logcat / CSV
-                                     → Protocol v1 Encoder → UDP → Windows Receiver
+                                     → Protocol v2 Encoder → UDP → Windows Receiver
 ```
 
 应用使用 Java 和 Android 原生 Activity/View，只有一个空白触摸区域。
@@ -31,10 +31,12 @@ rightpad 在前台运行时会保持屏幕唤醒，离开前台后恢复系统�
 | `TouchSample.java` | 不可变原始采样数据 |
 | `TouchSampleLogger.java` | 输出采样日志及会话内相邻采样间隔 |
 | `TouchRecordWriter.java` | 按采集顺序将原始样本写入应用私有目录中的 CSV |
-| `ProtocolV1Encoder.java` | 将同一事件的原始样本编码为冻结的 Little Endian 数据包 |
+| `ProtocolV2Encoder.java` | 精确的 v2 Touch / 10-byte heartbeat Little Endian 编码 |
 | `UdpTouchSender.java` | 单线程、有界 FIFO、单 socket 发送，DOWN/UP 各发送三份相同数据 |
-| `tests/ProtocolV1EncoderTest.java` | 无框架的固定字节及字段有效性测试 |
-| `tests/Test-ProtocolV1Encoder.ps1` | 用 JDK 编译和执行编码测试 |
+| `HeartbeatSchedule.java` | 500 ms deadline 算术；暂停禁用，超期不 burst |
+| `tests/ProtocolV2EncoderTest.java` | 无框架的固定字节、高位 runId 及字段有效性测试 |
+| `tests/UdpTouchSenderTest.java` | 真实 loopback socket 的生命周期、sequence、心跳不饥饿测试 |
+| `tests/Test-ProtocolV2Encoder.ps1` | 用 JDK 编译并执行 encoder 和 Sender 测试；Log stub 不进入 APK |
 | `tests/Verify-SenderE2e.ps1` | 逐条对比真机 CSV、Logcat、Receiver 日志及重复包统计 |
 | `.gitignore` | 忽略构建产物、IDE 文件及本机路径配置 |
 | `README.md` | 构建、安装和人工验收说明 |
@@ -86,18 +88,18 @@ Build
 → force/restart app
 → launch com.rightpad.capture/.MainActivity
 → verify foreground Activity
-→ restart Windows Rightpad.Receiver via the independent interactive task launcher
+→ keep current v2 WPF Receiver / Runtime running
 → verify UDP 50000
-→ verify fresh sequence/runtime baseline
+→ verify Disconnected/Connected and new senderRunId / sequence 0 baseline
 → end-to-end smoke
 ```
 
 只要测试手机可通过 ADB 访问，就必须覆盖安装本次新构建的 APK，再重新启动应用并
-确认 MainActivity 位于前台。然后必须停止上一轮 Android/Sender 对应的旧 Receiver，
-使用 `windows/tools/RightpadReceiverTask.ps1 -Mode Stop` / `-Mode Start`，
-在 Windows 当前用户交互桌面 Session 独立启动新 Receiver，并验证 UDP 50000、fresh input
-baseline 和端到端输入。不能因为手机上已经安装或正在运行 rightpad 而跳过安装，
-也不能只重启 Android App 后继续沿用旧 Receiver。
+确认 MainActivity 位于前台。保持当前 v2 WPF PID 和 Receiver Runtime RunId 不变，
+验证连接状态、新 Sender baseline、UDP 50000 和端到端 RAW / Single Tap。
+不能因为手机上已经安装或正在运行 rightpad 而跳过安装。只有 Windows 程序本身需
+启动/更新时，才使用 `windows/tools/RightpadReceiverTask.ps1` 独立交互 launcher；
+不得通过重启 Receiver 掩盖 Android Sender 恢复问题。
 
 可选静态检查命令：
 
@@ -148,7 +150,7 @@ session=1 pointer=0 action=UP source=current x=123.25 y=363.0 eventTimeNs=102000
 - `historySize`：本次 MotionEvent 含有的历史样本数，不包括当前样本。
 - `dtNs`：同会话内当前采样事件时间减去前一条采样事件时间；新会话第一条为 NA。
 - `pointer`：Android 指针 ID。采集过程中不切换到其他手指。
-- `session`：当前 View 生命周期内递增的触摸编号，同步作为 Protocol v1 的 sessionId。
+- `session`：当前 View 生命周期内递增的触摸编号，同步作为 Protocol v2 的 sessionId。
 
 每个 MOVE 先按 Android 提供的顺序记录全部历史样本，再记录当前样本。
 一次 MOVE 若 `historySize=N`，应有 N 条 historical 和一条 current。
@@ -219,8 +221,8 @@ Debug APK 可通过 `run-as` 检查私有目录。以下命令只读取手机文
 
 目标常量为 UdpTouchSender.RECEIVER_IPV4 = "192.168.110.248"，端口 50000。
 这是本次 Windows 到 Xiaomi 14 的局域网 IPv4。PC 地址变化后需要修改常量并重建；
-没有自动发现或配置系统。Android 重新部署或 Sender 重启后，
-通过独立交互任务 launcher 重启 Receiver，以建立新的 sequence 基准。
+没有自动发现或配置系统。Android 重新部署或 Sender 重启后，现有 v2 Receiver
+通过新 senderRunId 自动建立 Touch sequence 基准，保持自身进程和 Runtime 不变。
 
 每个 DOWN/UP 编码一个样本，MOVE 将全部 historical + current 编为一个逻辑包，
 顺序与 CSV/Logcat 相同。CANCEL 只在本地记录并终止采集，不发送任何替代事件。
@@ -232,20 +234,29 @@ DOWN/UP 各发送三份完全相同的字节（同一 sequence），MOVE 只发�
 队列满时丢弃最旧的待发送逻辑包并记录 queue_overflow droppedSequence。
 这包括可能丢弃 DOWN/UP；三份冗余不保证交付，也不恢复队列已丢弃的包。
 CSV/Logcat 仍保留全部原始样本。发送错误记录日志，无 ACK 或重传协议。
-Activity 销毁时丢弃待发包并关闭 socket、唤醒线程；暂停仅停止本地采集，
-不会伪造 UP。Receiver 原有 2 秒 timeout 仍只是诊断，没有 heartbeat。
+Activity.onCreate 创建 Sender，使用 ThreadLocalRandom.nextLong 生成一次完整 64-bit
+senderRunId，不持久化。onResume 启用心跳并立即唤醒发送线程；onPause 禁用心跳、
+清空待发 Touch 和停止本地采集，保持同一 Sender/runId/sequence，不伪造 UP。
+onDestroy 才关闭 socket。真正重建 Sender 才换 runId 并让 sequence 从 0 开始。
+
+现有线程使用 timed poll 等待 Touch 或 500 ms heartbeat deadline，直接同一个 socket
+发送心跳，心跳不进入 Touch queue。忙时仍检查 deadline；超期仅发一次，不补发历史。
+Touch header 为 20 bytes；HEARTBEAT 恰为 10 bytes，只有 version=2/type=4/runId。
+心跳没有 sequence，只发一份。Receiver 由心跳或 accepted Touch 续 2000 ms presence；
+超时清旧输入并显示 Disconnected。原有 Touch silence 2 秒诊断独立保留。
+没有新增设置、权限、线程池、第二 socket、Foreground Service 或 WakeLock。
 
 唯一新增权限是 UDP 必需的 android.permission.INTERNET（普通权限，无授权弹窗）。
 没有存储权限、网络状态权限或第三方依赖。筛选 RightpadUdp 可查看启动、
 每个逻辑包的发送份数和错误；packet_sent 仅证明系统接受发送，交付以 Receiver 为准。
 
-运行 tests/Test-ProtocolV1Encoder.ps1（JAVA_HOME 指向 JDK）执行编码测试，
+运行 tests/Test-ProtocolV2Encoder.ps1（JAVA_HOME 指向 JDK）执行编码及 Sender 测试，
 再运行 gradlew.bat assembleDebug lintDebug。安装、重启 Android 后，通过
-`..\windows\tools\RightpadReceiverTask.ps1 -Mode Stop` / `-Mode Start` 重启正式 RAW Receiver。
+当前保持运行的 v2 WPF 自动接受新 Sender run，检查 PID / Runtime RunId 不变。
 双端恢复后，可用 adb shell input tap 600 1200 和
 adb shell input swipe 500 1500 650 700 1500 自动验证链路。
 
-固定字节测试与 Windows Decoder 测试共用的已知 44 字节 MOVE 示例逐字节对照，
+固定字节测试与 Windows Decoder 测试共用的已知 52 字节 MOVE 示例逐字节对照，
 覆盖 header offset、Little Endian、uint64 时间戳及 float32 位模式，另检查 DOWN/UP、
 重复时间戳、多个样本和非法输入。测试只依赖 JDK，不引入框架。
 ADB 注入可以验证真机上的采集/传输链路，不能替代真实手指 Motion Dataset。

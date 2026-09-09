@@ -71,7 +71,7 @@ for ($sequence = 0; $sequence -lt $expectedPackets.Count; $sequence++) {
     for ($copy = 0; $copy -lt $copies; $copy++) {
         if ($datagram -ge $packets.Count) { throw 'Missing UDP datagram' }
         $packet = $packets[$datagram++]
-        Assert-Equal '1' $packet.Header.version 'version'
+        Assert-Equal '2' $packet.Header.version 'version'
         Assert-Equal ([string]$sequence) $packet.Header.sequence 'logical sequence'
         Assert-Equal $expected.Session $packet.Header.sessionId 'session'
         Assert-Equal $expected.Action $packet.Header.eventType 'event type'
@@ -99,7 +99,7 @@ $sent = @($logcat | Where-Object { $_ -match 'RightpadUdp.*packet_sent' } | ForE
 Assert-Equal $expectedPackets.Count $sent.Count 'sender logical packets'
 for ($i = 0; $i -lt $sent.Count; $i++) {
     Assert-Equal ([string]$i) $sent[$i].sequence 'sender sequence'
-    Assert-Equal (12 + 16 * $expectedPackets[$i].Samples.Count) ([int]$sent[$i].bytes) 'packet byte length'
+    Assert-Equal (20 + 16 * $expectedPackets[$i].Samples.Count) ([int]$sent[$i].bytes) 'packet byte length'
     $copies = if ($expectedPackets[$i].Action -eq 'MOVE') { 1 } else { 3 }
     Assert-Equal $copies ([int]$sent[$i].copies) 'redundancy copies'
 }

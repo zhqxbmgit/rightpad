@@ -7,7 +7,7 @@ namespace Rightpad.Receiver.Tests;
 internal static class TouchSessionProcessorTests
 {
     internal static TouchPacket Packet(TouchEventType type, uint session, params TouchSample[] samples) =>
-        new(new PacketHeader(1, type, (ushort)samples.Length, session, 0), samples);
+        new(new PacketHeader(2, type, (ushort)samples.Length, session, 0), samples);
 
     public static void DeltasAndUp()
     {

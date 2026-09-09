@@ -142,10 +142,11 @@ internal static class RuntimeTests
     {
         long t = Stopwatch.Frequency * 10;
         var s = new RuntimeStatsSnapshot(1, ReceiverState.Running);
-        Equal("Waiting", RuntimeStatsViewModel.Activity(s, t), "waiting");
-        s = s with { LastAcceptedAtTicks = t };
-        Equal("Receiving", RuntimeStatsViewModel.Activity(s, t + Stopwatch.Frequency / 2), "receiving");
-        Equal("Ready · Idle", RuntimeStatsViewModel.Activity(s with { InputTimeoutCount = 1 }, t + 3 * Stopwatch.Frequency), "timeout not disconnect");
+        Equal("Waiting for Android", RuntimeStatsViewModel.Activity(s, t), "waiting");
+        s = s with { LastAcceptedAtTicks = t, Presence = new(1, t, true, "127.0.0.1") };
+        Equal("Connected", RuntimeStatsViewModel.Activity(s, t + Stopwatch.Frequency / 2), "connected");
+        Equal("Connected", RuntimeStatsViewModel.Activity(s with { InputTimeoutCount = 1 }, t + Stopwatch.Frequency), "touch timeout not disconnect");
+        Equal("Disconnected", RuntimeStatsViewModel.Activity(s, t + 2 * Stopwatch.Frequency), "presence expires");
         var vm = new RuntimeStatsViewModel();
         vm.Refresh(s, t);
         vm.Refresh(s with { AcceptedSamples = 100, ReceivedPackets = 50 }, t + Stopwatch.Frequency / 2);

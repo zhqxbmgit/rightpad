@@ -19,10 +19,13 @@ or Codex is needed for daily use.
 
 Full UI contract: [RECEIVER_UI.md](../docs/RECEIVER_UI.md).
 
-Header states are Stopped, Starting…, Waiting, Receiving, Ready · Idle,
-Stopping… and Error. Receiving means accepted input within about a second,
-not a verified network connection. Stationary touch does not become Disconnected.
-The existing two-second timeout is diagnostic only and preserves touch state.
+Header states are Receiver Stopped, Starting…, Waiting for Android, Connected,
+Disconnected, Stopping… and Error. Connected is green and stays stable during
+touch or idle heartbeats; Disconnected/Error are red, other states gray.
+Current-run heartbeat or accepted Touch renews a local monotonic 2000 ms presence
+deadline. Expiry clears old input once, while retaining senderRunId/sequence.
+The independent two-second Touch silence timeout remains diagnostic only.
+Overview Last Seen shows presence age or Never. No runId is shown in the UI.
 
 Runtime defaults are 7/7 sensitivity and Single Tap 300 ms / 8 px / 25 ms.
 Valid edits apply without Apply, Save or restart. Sensitivity is sampled once
@@ -99,17 +102,26 @@ GUI errors stop only the internal runtime and leave an Error/retry view.
 ## Frozen input behavior
 
 [INPUT_PROTOCOL.md](../docs/INPUT_PROTOCOL.md) is authoritative:
-UDP 50000, version 1, DOWN=1/MOVE=2/UP=3, little-endian 12-byte header plus
-16 bytes per sample. DOWN/UP have one sample, MOVE has one or more. No CANCEL
-wire event, handshake, heartbeat, reorder buffer or reconnect protocol.
+UDP 50000, version 2 only, DOWN=1/MOVE=2/UP=3, little-endian 20-byte header plus
+16 bytes per sample. senderRunId is uint64 at offset 2, count/session/sequence
+at offsets 10/12/16. DOWN/UP have one sample, MOVE has one or more. HEARTBEAT=4
+is exactly 10 bytes (version/type/runId), sent once every 500 ms while foreground.
+No CANCEL wire event, handshake, reorder buffer or generic reconnect framework.
 The decoder rejects malformed lengths, version/events/counts and non-finite
 coordinates; original sample order and uint64 nanoseconds are retained.
 
 Sequence ordering is ordinary uint32 comparison across touch sessions:
-first valid establishes baseline, greater is accepted, forward gaps accumulate
+first valid current-run Touch establishes baseline, greater is accepted, forward gaps accumulate
 delta-1, equal is duplicate, lower is old. No wraparound support. Only accepted
 packets enter motion/gesture. Remote addresses are diagnostics only, with no
 sender locking or source authentication.
+
+Unknown senderRunId switches only on fully validated HEARTBEAT/DOWN. A runtime-local
+HashSet permanently retires previous IDs for that runtime. Switching clears input
+and Touch sequence baseline; new sequence 0 is accepted without restarting WPF,
+ReceiverRuntime or socket. Counters/settings survive. Retired packets cannot alter
+presence, IP, sequence or output. Presence timeout preserves the sequence baseline;
+subsequent orphan MOVE/UP can prove presence but cannot move/click until a new DOWN.
 
 | Counter | Meaning |
 |---|---|
@@ -119,6 +131,9 @@ sender locking or source authentication.
 | sequenceGapEstimate | Cumulative forward gaps, not final loss |
 | duplicatePackets / oldPackets | Equal / lower than last accepted sequence |
 | inputTimeouts | Once after each rearmed two-second accepted-input silence |
+| heartbeatPackets | Valid current-run heartbeats; no Touch/sample/sequence contribution |
+| outdatedRunPackets | Decoded datagrams from a retired run |
+| presenceTimeouts | Once per current-run presence expiry, independently of inputTimeouts |
 
 UI Hz uses counter deltas over real Stopwatch time, sampled at 5 Hz with an
 approximately one-second history. This is received throughput, not hardware scan
@@ -162,7 +177,7 @@ mouse/tap checks own UDP 50000 for bounded 15/25-second runs, so stop the GUI
 listener first. Start the unchanged phone app and inject a small swipe/tap after
 the readiness signal. These verify plumbing, not human gaming feel.
 
-For GUI E2E, `Rightpad.Receiver.Tests.exe --gui-android-smoke` uses the already-running GUI and an inert click target for a 10 px swipe and one tap. It owns no UDP listener; verify the GUI native summaries after Stop. Android must be awake with rightpad foreground.
+For GUI E2E, `Rightpad.Receiver.Tests.exe --gui-android-smoke` uses the already-running GUI and an inert click target for a 10 px swipe and one tap. A test-only native hook verifies injected movement and exactly one LEFT DOWN/UP without stopping the Receiver. It owns no UDP listener. Android must be awake with rightpad foreground. Development touch_start/touch_end log lines also expose sender sequence and cumulative RAW/click counters.
 
 For GUI E2E, use the independent launcher, edit real controls, verify settings
 round-trip/default restoration, exercise GUI Stop/Start and inspect per-run
@@ -170,11 +185,11 @@ motion/button summaries. A small native UI Automation check needs no added
 framework. Real-finger RAW and Single Tap human validation passed before WPF;
 this UI migration still awaits user visual/live-tuning/feel acceptance.
 
-After Android Sender restart or reinstall, restart the Receiver via Stop/Start
-of the independent launcher and verify a fresh baseline, foreground Android,
-sender errors/overflow through development evidence, UDP and native output.
-No Android rebuild is needed for Windows-only UI work. Sender restart detection
-remains deferred; the GUI does not add a reconnect mechanism.
+After Android Sender restart or reinstall, keep the existing v2 WPF Receiver
+running. Verify Disconnected/Connected, a new senderRunId and sequence 0 acceptance,
+unchanged WPF PID/Runtime RunId, foreground Android, no Sender error/overflow,
+UDP and native RAW/Single Tap. Pause/resume keeps the same Sender run and sequence.
+Use the independent launcher if Windows itself needs to be started or updated.
 
 ## Implementation files
 
@@ -187,5 +202,5 @@ remains deferred; the GUI does not add a reconnect mechanism.
 - Existing tests remain, plus settings/runtime/settings-boundary regression files.
 
 No filter, FIR/Second Order, Double Tap Drag, right click, scroll, HID/driver,
-profiles/discovery/multi-device, heartbeat/reconnect, cloud/accounts/plugins,
+profiles/discovery/multi-device, generic reconnect frameworks, cloud/accounts/plugins,
 tray/autostart, updates, graphs/log viewer, theme selector or custom title bar.

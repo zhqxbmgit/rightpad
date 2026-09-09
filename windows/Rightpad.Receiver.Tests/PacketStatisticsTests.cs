@@ -8,7 +8,7 @@ internal static class PacketStatisticsTests
     private static SequenceObservation Receive(PacketStatistics stats, uint sequence, uint session = 1, ushort count = 1)
     {
         stats.RecordReceived();
-        return stats.Observe(new PacketHeader(1, TouchEventType.Move, count, session, sequence));
+        return stats.Observe(new PacketHeader(2, TouchEventType.Move, count, session, sequence));
     }
 
     public static void Continuous()

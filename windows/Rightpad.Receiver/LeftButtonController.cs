@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Rightpad.Receiver;
 
 internal sealed class LeftButtonController : IDisposable
@@ -11,6 +13,7 @@ internal sealed class LeftButtonController : IDisposable
     private bool held, disposed;
     private readonly Queue<int> pendingClicks = new();
     private Exception? failure;
+    private long releaseAt;
 
     public Exception? Failure { get { lock (gate) return failure; } }
 
@@ -46,6 +49,7 @@ internal sealed class LeftButtonController : IDisposable
     {
         held = true; // Even an ambiguous DOWN failure gets a best-effort UP.
         down();
+        releaseAt = Stopwatch.GetTimestamp() + (long)(clickHoldMs * (double)Stopwatch.Frequency / 1000);
         timer.Change(clickHoldMs, Timeout.Infinite);
     }
 
@@ -54,6 +58,13 @@ internal sealed class LeftButtonController : IDisposable
         lock (gate)
         {
             if (disposed || failure is not null || !held) return;
+            // A queued callback from a cancelled click must not shorten a newer click.
+            double remainingMs = (releaseAt - Stopwatch.GetTimestamp()) * 1000.0 / Stopwatch.Frequency;
+            if (remainingMs > 0)
+            {
+                timer.Change(TimeSpan.FromMilliseconds(Math.Ceiling(remainingMs)), Timeout.InfiniteTimeSpan);
+                return;
+            }
             try
             {
                 up();
@@ -75,6 +86,19 @@ internal sealed class LeftButtonController : IDisposable
         logError($"left_button_error: {exception.Message}");
         ReleaseBestEffort();
         onFailure(); // Wake the receiving loop even when no new packet arrives.
+    }
+
+    public void CancelPendingAndRelease()
+    {
+        lock (gate)
+        {
+            if (disposed) return;
+            pendingClicks.Clear();
+            timer.Change(Timeout.Infinite, Timeout.Infinite);
+            if (!held) return;
+            try { up(); held = false; }
+            catch (Exception exception) { Fail(exception); throw; }
+        }
     }
 
     private void ReleaseBestEffort()

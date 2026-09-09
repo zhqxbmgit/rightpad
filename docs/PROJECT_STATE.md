@@ -6,14 +6,53 @@ Updated: 2026-09-09
 
 当前阶段：
 
-WPF Receiver UI v1 — Implemented and accepted as the first formal UI baseline
+Protocol v2 — senderRunId, foreground heartbeat and explicit connection state.
+WPF Receiver UI v1 is the committed/accepted foundation (`358a2729`).
+Protocol v2 connection behavior and RAW/Single Tap regression have completed
+human acceptance.
+
+Protocol v2 automated/device verification (2026-09-09):
+
+- Windows Release build: 0 warnings / 0 errors; 100/100 tests passed.
+- Android assembleDebug/lintDebug passed: lint 0 errors, 7 existing-scope warnings;
+  testDebugUnitTest has NO-SOURCE. Explicit JDK tests passed 16 encoder checks and
+  4 Sender/schedule/socket groups, including high-bit runId and >300 MOVE packets
+  with timely heartbeat. No extra production thread/socket/setting/permission.
+- Foreground idle: 605.6 seconds, 577 UI observations, all Connected. Heartbeats
+  58 → 1265 (+1207), Touch Samples 0 Hz, Gap/Old/Invalid 0 throughout; no new
+  Presence Timeout (1 → 1). The earlier timeout was initial device screen-off
+  before the controlled foreground interval; waking resumed the same Sender.
+- Home/background → Disconnected; resume → Connected using the same Sender
+  `9A5068F45BF0D03C`, Touch sequence continued from 27 to 28.
+- Force-stop/reopen → new Sender `438C2DBE6A585FC6`; first DOWN sequence 0 accepted.
+  WPF PID 26036 and Receiver Runtime RunId 1 stayed unchanged across all checks.
+- Active DOWN then background: session became None on presence expiry; resume
+  and old Android MOVE/UP produced no new Touch end. New DOWN and native input
+  worked. Receiver-side orphan MOVE/UP/residual/gesture cleanup is also tested
+  deterministically, independently of Android capture cleanup.
+- Four GUI/real-device smoke rounds observed native movement and exactly one
+  injected LEFT DOWN/LEFT UP per tap. Each swipe produced +70 RAW X counts;
+  cumulative clicks 4. Two swipes injected during Android Activity entry had
+  nonconstant raw Y in Android logs, producing +45/+36 Y counts respectively;
+  these were raw source coordinates, not an inherited Receiver position jump.
+- Overview/Diagnostics inspected at minimum 860×600 DIP, 200% DPI; Last Seen and
+  added counters fit. Runtime settings remain RAW 7/7, Single Tap 300/8/25.
+- Independent launcher identity: current user, explorer SessionId 1, Medium
+  integrity, Default desktop; UDP 50000 owned by the same PID. Android remains
+  resumed/awake with no Sender error or queue overflow in the v2 run logs.
+- Evidence is local under ignored windows/test-results/: gui/v2-idle.csv,
+  gui/v2-lifecycle.log, v2-windows-tests.log and receiver-runtime/20260909-134949-940-25320.
+  No commit/push at verification time. Human acceptance subsequently confirmed:
+  Connected/Disconnected lamp, foreground/background transition, Sender restart
+  recovery without Windows restart, RAW feel, Single Tap, and no recovery jump.
+  Original v1 text verified unchanged.
 
 目前完整链路已经实现：
 
 ```text
 Android real touch
 → MotionEvent historical/current samples
-→ Protocol v1 UDP
+→ Protocol v2 UDP (run identity + presence)
 → Windows Receiver
 → Touch session processing
 → RAW relative delta
@@ -120,7 +159,7 @@ Security is intentionally out of scope.
 - Touch session tracking
 - Logcat diagnostics
 - CSV Touch Dataset Recorder
-- Protocol v1 encoder
+- Protocol v2 encoder, runtime senderRunId, foreground heartbeat
 - UDP Sender
 
 Foreground keep-screen-on: Implemented。
@@ -150,18 +189,23 @@ Historical sample extraction 已证明是必要基础能力，不能删除。
 
 ---
 
-## 7. Protocol v1 — Frozen
+## 7. Protocol v2 — Current; v1 retained as history
 
 - Transport: UDP
 - Port: 50000
-- Version: 1
-- Events: DOWN = 1, MOVE = 2, UP = 3
+- Version: 2 only; production rejects v1
+- Events: DOWN = 1, MOVE = 2, UP = 3, HEARTBEAT = 4
 - Byte order: Little Endian
-- Header: `uint8 version`, `uint8 eventType`, `uint16 sampleCount`, `uint32 sessionId`, `uint32 sequence`
-- Header size: 12 bytes
+- Touch header: `uint8 version`, `uint8 packetType`, `uint64 senderRunId`, `uint16 sampleCount`, `uint32 sessionId`, `uint32 sequence`
+- Touch header size: 20 bytes; run/count/session/sequence offsets 2/10/12/16
 - Sample: `uint64 timestampNs`, `float32 x`, `float32 y`
 - Sample size: 16 bytes
-- Packet size: `12 + sampleCount * 16`
+- Touch packet size: `20 + sampleCount * 16`
+- HEARTBEAT: exactly 10 bytes, version/type/runId only; one copy every 500 ms foreground
+- Presence: valid current heartbeat or accepted Touch; local monotonic timeout 2000 ms
+- New Sender creation gets random uint64 runId and sequence 0; pause/resume retains both
+- New-run HEARTBEAT/DOWN resets input baseline, preserving WPF/Runtime/socket/settings/counters
+- Runtime-local retired ID set prevents old runs from switching back
 - DOWN: 1 sample
 - MOVE: 1 or more samples
 - UP: 1 sample
@@ -174,7 +218,12 @@ No ACK / reliable UDP / FEC / retransmission protocol.
 
 ---
 
-## 8. Network Status — Frozen
+## 8. Network Status — Simple transport retained
+
+Transport architecture remains intentionally simple; Protocol v2 presence/run
+identity added for explicit connection state and sender-restart recovery.
+This does not reopen network optimization. v1 measurements below remain historical
+evidence; the full v1 layout is preserved in INPUT_PROTOCOL.md.
 
 真实 Android → 5 GHz Wi-Fi → Windows 测试结果：
 
@@ -197,7 +246,7 @@ No ACK / reliable UDP / FEC / retransmission protocol.
 - retransmission
 - clock synchronization
 
-因此：**NETWORK LAYER IS FROZEN.**
+因此：**TRANSPORT OPTIMIZATION REMAINS OUT OF SCOPE.**
 
 除非未来实测出现具体问题，不继续优化网络层。
 
@@ -210,7 +259,7 @@ No ACK / reliable UDP / FEC / retransmission protocol.
 已实现：
 
 - UDP receive
-- Protocol v1 decode
+- Protocol v2 decode, sender-run admission and presence cleanup
 - malformed packet rejection
 - sequence statistics
 - raw sample diagnostics
@@ -333,8 +382,8 @@ KILL_ON_JOB_CLOSE Job。
   disappearance。缺少旧 PID 的精确退出时间、exit code 和直接终止证据，不能写成
   历史故障已 100% 证明；当前也没有证据证明虚拟网卡是根因。
 
-这是开发运行生命周期修复；Protocol v1、Network Frozen、Motion、Gesture 和
-diagnostic-only timeout 均未改变。
+上述独立 launcher 修复发生在 v1 阶段，当时没有修改 Protocol、Motion、Gesture 和
+diagnostic-only timeout。当前 v2 继续保留相同独立进程启动规则。
 
 ### Android Redeploy Lifecycle
 
@@ -342,15 +391,15 @@ diagnostic-only timeout 均未改变。
 
 ```text
 Android APK reinstall / app restart
-→ stop old / start fresh Receiver via the independent interactive task launcher
-→ establish a fresh sequence/runtime baseline
+→ keep current v2 WPF Receiver PID / Runtime RunId
+→ observe Disconnected / Connected and new senderRunId / sequence 0 acceptance
 → verify UDP 50000 and end-to-end input
 ```
 
-Android Sender 的运行时状态随 App 进程重建，而 Receiver 在自身进程生命周期内保留
-sequence/session 运行时状态。因此当前 Prototype 每次 Android 重新部署或 Sender 重启后，
-开发测试环境必须启动一个新 Receiver。这是 Development Runtime Rule，不是 Protocol v1
-新字段或新的网络机制；当前没有 sender-restart detection、reconnect protocol 或 heartbeat。
+Android Sender 的运行时状态随 App 进程重建；新 senderRunId 使现有 Receiver 自动
+清理旧输入并重建 sequence baseline。不能重启 WPF 来掩盖 Sender restart。
+onPause/onResume 保持 Sender 和 sequence，仅停/启 heartbeat。仅 Windows 本身需
+启动或更新时使用独立交互 launcher，持续进程不得依赖 Codex shell Job 生命周期。
 
 ---
 
@@ -368,13 +417,11 @@ sequence/session 运行时状态。因此当前 Prototype 每次 Android 重新�
 
 原因：正常手指静止按住超过 2 秒可能没有任何 MotionEvent。
 
-目前无法仅凭 packet absence 区分：
-
-- normal stationary touch
-- disconnected sender
-
-当前不要增加 heartbeat。Single Tap 的 LEFT UP 由 Windows 本地 timer 负责，
-正常关闭/异常清理会 best-effort 释放按钮；发送端断线识别与未来拖拽按钮安全仍 deferred。
+Touch silence 与 presence timeout 独立。前台无 Touch 时 heartbeat 继续证明在线；
+当前 run 连续 2000 ms 无 heartbeat 或 accepted Touch 才一次性 Disconnected。
+这时清 session/previous/residual/gesture/pending click/held button，保留 current run 和
+sequence。恢复后的旧 MOVE/UP 不输出；新 DOWN 正常。Single Tap 仍由本地 timer
+释放；CancelPendingAndRelease 处理 run change/断线清理与 timer 竞态，失败为 Error。
 
 ---
 
@@ -516,7 +563,7 @@ Do not implement yet:
 - driver
 - game profiles
 - network optimization
-- heartbeat
+- generic reconnect / handshake frameworks
 - device discovery
 - virtual gamepad buttons
 

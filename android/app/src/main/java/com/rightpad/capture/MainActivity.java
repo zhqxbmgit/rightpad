@@ -29,7 +29,14 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        udpSender.setForeground(true);
+    }
+
+    @Override
     protected void onPause() {
+        udpSender.setForeground(false);
         captureView.stopCapture("activity_paused");
         super.onPause();
     }

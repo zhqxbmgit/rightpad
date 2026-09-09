@@ -443,10 +443,12 @@ Required sequence:
 4. Stop the old Android app instance.
 5. Relaunch `com.rightpad.capture/.MainActivity`.
 6. Verify that MainActivity is resumed and in the foreground.
-7. Stop the previous independent Rightpad.Receiver using
-   `windows/tools/RightpadReceiverTask.ps1 -Mode Stop`.
-8. Start a fresh independent Windows Receiver using the same launcher with
-   `-Mode Start` (which ensures the approved task definition).
+7. Keep the current Protocol v2 WPF Receiver process and Receiver Runtime running.
+   Do not restart Windows to recover from an Android Sender restart.
+8. Verify Disconnected/Connected transitions and admission of the new senderRunId.
+   If Windows itself needs an initial launch or binary update, use
+   `windows/tools/RightpadReceiverTask.ps1 -Mode Start` after the required build;
+   complete subsequent Android recovery checks without restarting that Receiver.
 9. Run the Receiver in the current Windows user's interactive desktop session,
    with the same active SessionId as explorer.exe, not in the restricted Codex
    SendInput sandbox.
@@ -454,8 +456,9 @@ Required sequence:
     and UDP 50000 listener using the launcher `-Mode Status`.
 11. Verify that the Android UDP Sender is active and reports no sender error or
     queue overflow.
-12. Verify that the fresh Receiver accepts the new Sender run, establishes a
-    fresh sequence/runtime baseline, and receives valid packets.
+12. Verify that the existing Receiver accepts the new Sender run and its Touch
+    sequence 0 baseline, with unchanged WPF PID and Receiver Runtime RunId.
+    Settings, socket and cumulative Receiver statistics must survive.
 13. If the current task includes mouse or gesture output, perform a minimal
     end-to-end functional smoke check that Codex can execute.
 14. Only after the Android app and Windows Receiver are both restored and the
@@ -483,21 +486,28 @@ adb shell am start -S -n com.rightpad.capture/.MainActivity
 ```
 
 A successful Gradle build alone is not completion. A successful APK installation
-alone is not completion. Relaunching only the Android app while leaving an old
-Receiver running is not sufficient. Do not assume that an existing Receiver can
-continue across an Android app reinstall or Sender restart.
+alone is not completion. Verify foreground, presence, new Sender acceptance and
+functional E2E on the existing v2 Receiver after Android restart/reinstallation.
 
-Current Prototype behavior:
+Current Protocol v2 behavior (validated 2026-09-09):
 
-- Android Sender runtime state is recreated when the app process restarts.
-- Receiver keeps sequence/session runtime state for its own process lifetime.
-- Therefore, after an Android reinstall or restart, the development workflow
-  must start a fresh Receiver so it establishes a fresh input baseline.
+- Android creates one random 64-bit senderRunId per UdpTouchSender runtime.
+- onPause stops heartbeat/capture without destroying Sender or resetting sequence;
+  onResume immediately enables heartbeat using the same runId and sequence.
+- Sender recreation gives a new runId and Touch sequence starts at zero.
+- Receiver admits an unknown run only on a fully valid HEARTBEAT or DOWN, retires
+  the prior ID for its Runtime lifetime, and resets only the input baseline.
+- Heartbeat (500 ms) or accepted current-run Touch renews monotonic presence.
+  A 2000 ms presence timeout clears stale input once, keeping runId/sequence.
+- Android restarts no longer require restarting WPF or ReceiverRuntime.
 
-This is the current Prototype lifecycle rule, not a permanent Protocol v1
-limitation. Only an explicitly approved future sender-restart detection or
-reconnect design may replace it. Do not add a handshake, heartbeat, sequence-reset
-protocol, or reconnect mechanism as a workaround.
+The v1 development workaround requiring a fresh Receiver has been replaced by
+the explicitly approved v2 run/presence behavior. The independent interactive
+launcher / Codex Job lifetime rule remains mandatory. Practicality First: add
+only functionality solving a current demonstrated problem. This change does not
+authorize handshake frameworks, reconnect managers, TCP/ACK/reliable UDP,
+retransmission/FEC, discovery, pairing/security, config sync, extra transport
+threads/sockets or network optimization.
 
 Do not ask the user to run commands that Codex can run. If no configured test
 device is reachable through ADB, explicitly report that deployment and runtime

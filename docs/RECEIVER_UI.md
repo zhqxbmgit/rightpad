@@ -3,6 +3,15 @@
 Implemented 2026-09-09. WPF visual/feel acceptance by the user remains separate
 from automated verification. AGENTS.md remains authoritative.
 
+Protocol v2 connection update verified 2026-09-09: 100 Windows tests passed;
+605.6 seconds foreground idle stayed Connected without new presence timeouts.
+Android background/resume and force-stop/reopen recovered with the same WPF PID
+and Receiver Runtime; real native RAW/Single Tap checks passed. Overview and
+Diagnostics fit at the minimum 860×600 DIP on 200% DPI. The user subsequently
+accepted the Connected/Disconnected lamp, foreground/background behavior,
+restart recovery, unchanged RAW feel, Single Tap and no recovery jump. Detailed
+evidence is in PROJECT_STATE.md; v1 records below remain historical.
+
 ## Product and architecture
 
 Windows 11 only, C#, .NET 8, WPF. Existing Rightpad.Receiver is a WinExe; the
@@ -38,12 +47,12 @@ Four UserControls selected by a ListBox / ReceiverPage enum / ContentControl:
 
 | Page | Contents |
 |---|---|
-| Overview | Connection: status, last accepted Android IP, listener, sample/packet Hz, Gap/Old/Invalid. Receiver: runtime state and one Start/Stop button. |
+| Overview | Connection: status, current presence Android IP, Last Seen, listener, sample/packet Hz, Gap/Old/Invalid. Receiver: runtime state and one Start/Stop button. |
 | Motion (default) | Read-only RAW; Sensitivity X/Y numeric editors. No slider or mode dropdown. |
 | Tap | Tap settings: duration, movement threshold, click hold. No Enabled row or toggle. |
-| Diagnostics | Input/Transport: sample/packet Hz, Gap/Old/Invalid/Duplicate/Timeout. Receiver: state, backend, touch session, last accepted age, last remote IP. |
+| Diagnostics | Input/Transport: sample/packet Hz, Gap/Old/Invalid/Duplicate/Input Timeout, Heartbeat Packets, Presence Timeouts, Outdated Run Packets. Receiver: state, backend, touch session, last accepted age, last remote IP. |
 
-Device model, Sender Errors and Queue Overflow do not appear: Protocol v1 has
+Device model, Sender Errors and Queue Overflow do not appear: Protocol v2 has
 no source for these values. No N/A placeholders, fake zero counters, graphs,
 packet viewer, Settings/About pages or unimplemented controls.
 
@@ -51,17 +60,18 @@ packet viewer, Settings/About pages or unimplemented controls.
 
 | Header | Meaning |
 |---|---|
-| Stopped | Internal runtime stopped, no listener. |
+| Receiver Stopped (gray) | Internal runtime stopped, no listener. |
 | Starting… | Establishing a fresh runtime. |
-| Waiting | Listening, no accepted packet yet in this Run. |
-| Receiving (green) | Accepted packet within approximately one second. |
-| Ready · Idle | This Run has accepted input, but not within the last second. |
+| Waiting for Android (gray) | Listening, no admissible sender run yet. |
+| Connected (green) | Current-run heartbeat or accepted Touch within 2000 ms. |
+| Disconnected (red) | Established sender run has no presence for 2000 ms. |
 | Stopping… | Cancellation and cleanup in progress. |
-| Error | Actual bind, receive or mouse output failure; GUI stays open. |
+| Error (red) | Actual bind, receive or mouse output failure; GUI stays open. |
 
-These are local observations, not a handshake or proof that Android is online.
-Silence never displays Disconnected. The one-second indicator does not change
-the frozen two-second diagnostic-only timeout or input session/residual state.
+Connected stays stable during Touch and idle heartbeat reception. Last Seen is
+the local Stopwatch presence age (for example 0.3 s ago), or Never. Presence
+expiry clears session/residual/gesture/pending and held button input. The separate
+two-second Touch silence timeout remains diagnostic-only. Starting/Stopping are gray.
 Touch Session describes local state only. `0.0.0.0:50000` is a listener, not an
 address for Android to target. Start/Stop transitions disable the operation;
 errors leave a Start retry in Overview and a concise global error message.
@@ -138,11 +148,13 @@ the last unflushed edit survives.
 One global 200 ms DispatcherTimer pulls a RuntimeStatsSnapshot and updates UI
 properties. RuntimeState, RunId, last accepted Stopwatch ticks, cumulative received
 and accepted packets/samples, Gap/Old/Duplicate/Invalid/Timeout, touch session,
-last remote IP, backend and real error are observed. Numeric counters use atomic
+last remote IP, backend, real error, SenderPresence, HeartbeatPackets,
+OutdatedRunPackets and PresenceTimeouts are observed. SenderPresence publishes
+one immutable reference containing run identity/time/connected/IP. Numeric counters use atomic
 operations. Snapshot fields are independent observations, not a transaction.
 
 Sample Hz = accepted sample delta / real Stopwatch interval. UDP Hz = all received
-datagram delta / real interval, including duplicates and malformed packets. A
+datagram delta / real interval, including heartbeats, duplicates and malformed packets. A
 roughly one-second history is used; delayed UI ticks use actual elapsed time.
 Rates reset for new RunId and show a dash while stopped. These are received
 throughput, not Android hardware scan rate. Gap is cumulative forward sequence
@@ -179,9 +191,11 @@ Status checks user, explorer SessionId, Medium integrity, Default desktop and UD
 50000. Stop requests normal window close before a verified forced fallback.
 No Codex-shell persistent child, watchdog, product scheduler or automatic startup.
 
-Sender restart remains deferred: do not add reset detection or reconnect. During
-development restart the Receiver after Android restart/redeployment as AGENTS.md
-requires. GUI Stop/Start only resets local runtime; it does not detect Sender runs.
+Protocol v2 Sender restart is recognized by senderRunId on valid HEARTBEAT/DOWN.
+Android restart/redeployment retains the existing WPF PID, Runtime RunId, socket,
+settings and cumulative counters; only the sender input baseline is replaced.
+Retired runs cannot switch back. Android pause/resume keeps senderRunId/sequence.
+The independent interactive launcher requirement remains unchanged.
 
 ## Verification and non-goals
 
@@ -194,7 +208,7 @@ additional to unit/loopback tests; the first formal UI baseline has completed
 human visual and input-feel acceptance.
 
 No FIR/Second Order/filter, extra gestures, drag, right click, scroll, HID/driver,
-profiles, discovery/multi-device, heartbeat/reconnect, cloud/account/plugins,
+profiles, discovery/multi-device, generic reconnect frameworks, cloud/account/plugins,
 updates, tray/startup, charts/log viewer, theme selector or custom title bar.
 
 ## Implementation verification (2026-09-09)

@@ -82,7 +82,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             if (gesture is not null)
                 output.WriteLine(FormattableString.Invariant($"gesture: singleTap=enabled tapMaxDurationMs={initial.TapMaxDurationMs} tapMovementThresholdPx={initial.TapMovementThresholdPx} clickHoldMs={initial.ClickHoldMs}"));
             var receiver = new UdpReceiver(endpoint ?? new(IPAddress.Any, UdpReceiver.Port), output,
-                motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings);
+                motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings,
+                cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease);
             Volatile.Write(ref run.Receiver, receiver);
             Volatile.Write(ref run.State, (int)ReceiverState.Running);
             run.Started.TrySetResult(true);
@@ -123,6 +124,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         return new(run.Id, state, r.LastAcceptedAtTicks, s.ReceivedPackets, s.AcceptedPackets,
             s.AcceptedSamples, s.SequenceGapEstimate, s.OldPackets, s.DuplicatePackets,
             s.InvalidPackets, r.InputTimeouts, state == ReceiverState.Running ? r.ActiveTouchSessionId : -1,
-            r.LastRemoteIp, rawMouse ? "SendInput" : "None (diagnostics)", Volatile.Read(ref run.Error));
+            r.LastRemoteIp, rawMouse ? "SendInput" : "None (diagnostics)", Volatile.Read(ref run.Error),
+            r.Presence, s.HeartbeatPackets, s.OutdatedRunPackets, r.PresenceTimeouts);
     }
 }

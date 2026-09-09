@@ -1,9 +1,10 @@
 namespace Rightpad.Receiver;
 
-internal enum TouchEventType : byte { Down = 1, Move = 2, Up = 3 }
+internal enum TouchEventType : byte { Down = 1, Move = 2, Up = 3, Heartbeat = 4 }
 
 internal readonly record struct PacketHeader(
-    byte Version, TouchEventType EventType, ushort SampleCount, uint SessionId, uint Sequence);
+    byte Version, TouchEventType EventType, ushort SampleCount, uint SessionId, uint Sequence,
+    ulong SenderRunId = 0);
 
 internal readonly record struct TouchSample(ulong TimestampNs, float X, float Y);
 

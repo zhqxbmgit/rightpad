@@ -205,6 +205,7 @@ Only responsible for:
 - UDP receiving
 - Packet parsing
 - Basic validation
+- Protocol v2 sender-run admission, retired-run rejection and presence deadlines
 
 It should not contain:
 
@@ -226,8 +227,25 @@ Responsible for:
 The current Prototype uses a 2-second input timeout for diagnostics only. A
 timeout does not clear the active touch session, previous X/Y position, or
 fractional residual. A stationary held finger may produce no new MotionEvent,
-so packet absence alone cannot distinguish stationary touch from a disconnected
-sender.
+so Touch absence alone cannot distinguish stationary touch from a disconnected
+sender. Protocol v2 independently uses heartbeat or accepted Touch presence with
+a local monotonic 2000 ms deadline. Presence expiry clears session, previous
+position, residual, gesture and pending/held button input but keeps the run's
+sequence baseline. A new senderRunId admitted by HEARTBEAT/DOWN also clears that
+baseline. Runtime, socket, cumulative counters and settings remain alive.
+
+Android retains one Sender thread, one socket and one Touch queue. It generates
+one random 64-bit runId per Sender creation; onResume/onPause enables/disables
+500 ms heartbeats without rebuilding the Sender. A timed poll services heartbeat
+deadlines outside the Touch queue. No new transport, service, manager, reply or
+user setting. See INPUT_PROTOCOL.md: Protocol v2 CURRENT; v1 remains historical.
+
+Receiver owns this processing on its existing sequential background input path.
+An immutable presence snapshot and atomic counters are read by WPF at 5 Hz;
+packet/heartbeat handling never calls Dispatcher. Expiry also runs while the
+socket is idle, without relying on UI polling. Practicality First: this extension
+serves explicit connection state and Sender restart recovery only; transport
+optimization remains out of scope.
 
 Example:
 

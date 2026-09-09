@@ -37,7 +37,7 @@ internal static class RuntimeSettingsTests
     {
         var output = new List<int>();
         var session = new TouchSessionProcessor((x, _) => output.Add(x));
-        TouchPacket Packet(TouchEventType type, float x) => new(new(1, type, 1, 1, 0), [new(0, x, 0)]);
+        TouchPacket Packet(TouchEventType type, float x) => new(new(2, type, 1, 1, 0), [new(0, x, 0)]);
         session.Process(Packet(TouchEventType.Down, 0), .6, 1);
         session.Process(Packet(TouchEventType.Move, 1), .6, 1);
         Equal(0, output.Count, "residual only");
@@ -49,7 +49,7 @@ internal static class RuntimeSettingsTests
     {
         var holds = new List<int>();
         var gesture = new GestureProcessor(holds.Add, RuntimeSettings.Default);
-        TouchPacket Packet(TouchEventType type, uint session, ulong time, float x) => new(new(1, type, 1, session, 0), [new(time, x, 0)]);
+        TouchPacket Packet(TouchEventType type, uint session, ulong time, float x) => new(new(2, type, 1, session, 0), [new(time, x, 0)]);
         gesture.Process(Packet(TouchEventType.Down, 1, 0, 0), 300, 8, 25);
         gesture.Process(Packet(TouchEventType.Up, 1, 200_000_000, 7), 50, .5, 31);
         Check(holds.SequenceEqual(new[] { 31 }), "DOWN duration/threshold retained; request hold current");

@@ -1,5 +1,113 @@
 # rightpad Input Protocol Design
 
+## Protocol v2 — CURRENT (2026-09-09)
+
+Production Android and Windows use v2 only. v1 is rejected; there is no dual
+stack. The original v1 definition below is preserved as historical measurement
+context. This section supersedes its production lifecycle and presence rules.
+
+Transport remains one-way UDP on port 50000. All multibyte fields are little
+endian. No ACK, handshake, reliable UDP, retransmission, FEC, discovery, pairing,
+authentication, clock synchronization, jitter buffer or interpolation is added.
+
+### Touch layout
+
+| Offset | Type | Field |
+|---:|---|---|
+| 0 | uint8 | version = 2 |
+| 1 | uint8 | packetType: DOWN = 1, MOVE = 2, UP = 3 |
+| 2 | uint64 | senderRunId |
+| 10 | uint16 | sampleCount |
+| 12 | uint32 | sessionId |
+| 16 | uint32 | sequence |
+| 20 | TouchSample[] | Original sample order |
+
+Each sample is uint64 timestampNs, float32 x, float32 y (16 bytes). Touch size
+must equal `20 + 16 * sampleCount`. DOWN/UP require one sample; MOVE requires at
+least one. DOWN/UP retain three identical copies per logical packet; MOVE one.
+CANCEL remains local only. Finite coordinates, complete fields and exact length
+are validated before any run, presence, sequence or input state changes.
+
+### Heartbeat layout
+
+Exactly 10 bytes: uint8 version = 2, uint8 packetType = 4, uint64 senderRunId.
+There is no sequence, session, count, timestamp or payload. Send one copy.
+The internal heartbeat interval is 500 ms and presence timeout is 2000 ms;
+neither is a user setting or persisted JSON field.
+
+### Android runtime
+
+UdpTouchSender generates `ThreadLocalRandom.current().nextLong()` once when
+created in Activity.onCreate. Its complete 64-bit pattern is transmitted without
+signed conversion loss. It is transient run identity, not a device ID or security
+mechanism. A new Sender starts Touch sequence at zero. Each logical Touch advances
+it once; copies and heartbeat never advance it. No uint32 wraparound handling.
+
+onResume enables heartbeat and immediately wakes the existing sender thread.
+onPause disables heartbeat, clears queued Touch and stops local capture, keeping
+the Sender, runId and sequence. onDestroy closes it. Activity/process recreation
+creates a new Sender/runId. No foreground service, WakeLock or additional socket.
+
+The existing single thread/socket/Touch queue uses timed poll until the next
+heartbeat deadline. Heartbeat is sent directly on that socket, outside the Touch
+queue, even under continuous Touch load. Late scheduling sends one current
+heartbeat and schedules the next 500 ms later; no catch-up burst.
+
+### Run admission and sequence
+
+ReceiverRuntime owns one current run and an in-memory HashSet of retired IDs.
+Retired IDs live until that ReceiverRuntime ends, with no persistence or expiry.
+After full decode, only an unknown run's HEARTBEAT or DOWN can establish/switch
+the current run. Unknown MOVE/UP are ignored. Retired packets are discarded before
+updating presence, remote IP, sequence or input; count OutdatedRunPackets.
+
+A switch retires the previous ID and clears Touch sequence baseline, session,
+previous position, fractional residual, gesture candidate, queued clicks, held
+left button, touch-silence deadline/latch and previous presence. The first new
+Touch establishes a baseline, including sequence 0 after an old sequence 18000.
+The socket, Receiver process/runtime, settings and cumulative counters survive.
+Within one run, equal sequence is duplicate and lower is old; neither is accepted.
+
+### Presence and cleanup
+
+A valid current heartbeat or sequence-accepted current Touch records local
+`Stopwatch.GetTimestamp()` as lastPresenceAt. Android timestamps and wall clocks
+do not determine connection state. There is no initial-heartbeat grace state.
+
+Before any admissible run: Waiting for Android. Recent presence (< 2000 ms):
+Connected. At 2000 ms without presence: Disconnected, once per episode. Clear
+session, position, residual, gesture candidate and pending/held button input;
+retain current runId and its sequence baseline. Heartbeat or accepted Touch
+reconnects. MOVE/UP after this cleanup cannot resume the old session or generate
+motion/click; a new DOWN is required for input. Run change and disconnect call
+LeftButtonController.CancelPendingAndRelease, which cancels queued clicks,
+releases held LEFT DOWN best-effort, is idempotent and protects a new click from
+stale timer callbacks. A failed LEFT UP remains an actual Receiver Error.
+
+The independent 2-second Touch silence timeout remains diagnostic-only: it does
+not clear input while heartbeats prove presence. A stationary held finger can
+therefore retain its session/residual. Both timeout counters and deadlines remain
+separate, even though their current durations match. The receive loop performs
+expiry and cleanup independently of WPF polling or new datagrams.
+
+### Statistics and GUI
+
+ReceivedPackets and UDP Hz include all UDP datagrams, including heartbeats.
+Accepted packets/samples and Touch Samples Hz count only accepted Touch.
+Gap/Old/Duplicate make decisions only on current-run Touch and retain cumulative
+totals across sender switches. Accepted heartbeats increment HeartbeatPackets;
+retired packets increment OutdatedRunPackets; disconnect episodes increment
+PresenceTimeouts. Heartbeat cannot create sample counts, gaps or duplicates.
+
+WPF reads snapshots at 5 Hz. Gray: Receiver Stopped, Waiting for Android,
+Starting, Stopping. Green: Connected. Red: Disconnected, Error. Touch does not
+change Connected wording. Last Seen is local presence age, or Never. Overview
+and Diagnostics expose actual counters, without runId/device metadata or logs.
+
+---
+
+## Protocol v1 — HISTORICAL DEFINITION (preserved)
+
 ## 1. Purpose
 
 This document defines communication between:

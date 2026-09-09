@@ -4,6 +4,12 @@ internal sealed class PacketStatistics
 {
     private long receivedPackets, invalidPackets, acceptedPackets, acceptedSamples;
     private long sequenceGapEstimate, duplicatePackets, oldPackets;
+    private long heartbeatPackets, outdatedRunPackets;
+    public long HeartbeatPackets => Interlocked.Read(ref heartbeatPackets);
+    public long OutdatedRunPackets => Interlocked.Read(ref outdatedRunPackets);
+    public void RecordHeartbeat() => Interlocked.Increment(ref heartbeatPackets);
+    public void RecordOutdatedRun() => Interlocked.Increment(ref outdatedRunPackets);
+    public void ResetSequence() => LastSequence = null;
     public long ReceivedPackets => Interlocked.Read(ref receivedPackets);
     public long InvalidPackets => Interlocked.Read(ref invalidPackets);
     public long AcceptedPackets => Interlocked.Read(ref acceptedPackets);
@@ -18,6 +24,8 @@ internal sealed class PacketStatistics
 
     public SequenceObservation Observe(PacketHeader header)
     {
+        if (header.EventType == TouchEventType.Heartbeat)
+            throw new ArgumentException("Heartbeat has no touch sequence.", nameof(header));
         uint? previous = LastSequence;
         long? delta = previous.HasValue ? (long)header.Sequence - previous.Value : null;
         if (delta == 0)
@@ -31,7 +39,7 @@ internal sealed class PacketStatistics
             return new("old", previous, delta, false);
         }
 
-        // Ordinary uint32 ordering only. Restart the receiver after a sender restart.
+        // Ordinary uint32 ordering within one sender run; run changes reset only the baseline.
         if (delta > 1) Interlocked.Add(ref sequenceGapEstimate, delta.Value - 1);
         LastSequence = header.Sequence;
         Interlocked.Increment(ref acceptedPackets);

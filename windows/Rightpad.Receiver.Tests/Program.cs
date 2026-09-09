@@ -105,7 +105,28 @@ internal static class Program
             ("settings accepted packet boundary", RuntimeSettingsTests.PacketBoundary),
             ("settings residual / position retained", Sync(RuntimeSettingsTests.Residual)),
             ("settings Tap DOWN snapshot", Sync(RuntimeSettingsTests.TapDownSnapshot)),
-            ("settings queued Click Hold durations", RuntimeSettingsTests.QueuedHold)
+            ("settings queued Click Hold durations", RuntimeSettingsTests.QueuedHold),
+            ("v2 heartbeat bytes / high-bit run", Sync(PresenceTests.HeartbeatBytes)),
+            ("v2 malformed heartbeat", Sync(PresenceTests.MalformedHeartbeat)),
+            ("first heartbeat establishes run", Sync(PresenceTests.FirstHeartbeat)),
+            ("first DOWN establishes run", Sync(PresenceTests.FirstDown)),
+            ("unknown MOVE / UP ignored", Sync(PresenceTests.UnknownMoveUp)),
+            ("new run sequence zero / motion reset", Sync(PresenceTests.RestartBaseline)),
+            ("retired run never returns", Sync(PresenceTests.RetiredNeverReturns)),
+            ("malformed run cannot switch", Sync(PresenceTests.MalformedCannotSwitch)),
+            ("touch renews presence", Sync(PresenceTests.TouchRenews)),
+            ("heartbeat idle / separate touch timeout", Sync(PresenceTests.HeartbeatIdleAndTouchTimeout)),
+            ("exact presence timeout / recovery", Sync(PresenceTests.ExactTimeoutAndRecovery)),
+            ("disconnect clears session / residual / gesture", Sync(PresenceTests.DisconnectResetsInput)),
+            ("old / duplicate cannot renew presence", Sync(PresenceTests.OldDuplicateDoNotRenew)),
+            ("heartbeat statistics independence", Sync(PresenceTests.Stats)),
+            ("run cancels candidate", Sync(PresenceTests.RunCancelsCandidate)),
+            ("connection UI / Last Seen", Sync(PresenceTests.Ui)),
+            ("presence expires without UI / traffic", PresenceTests.IdleLoopExpiresWithoutUi),
+            ("button cancel queue / release / stale callback", LeftButtonControllerTests.CancelAndRace),
+            ("button cancel failure propagates", Sync(LeftButtonControllerTests.CancelFailure)),
+            ("run/disconnect held and queued button cleanup", PresenceTests.ButtonCleanupIntegration),
+            ("run cleanup LEFT UP failure becomes Runtime Error", PresenceTests.CleanupFailureIsRuntimeError)
         ];
 
         int failed = 0;
