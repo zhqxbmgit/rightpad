@@ -166,8 +166,7 @@ function Show-Status {
         ExecutablePath = if ($p) { $p.Path } else { $receiverPath }
         Identity = if ($p) { Get-DesktopIdentity $p } else { $null }
         Udp50000 = @(Get-Port | Select-Object LocalAddress, LocalPort, OwningProcess)
-        Stdout = if ($run) { Join-Path $run.Directory 'stdout.log' } else { $null }
-        Stderr = if ($run) { Join-Path $run.Directory 'stderr.log' } else { $null }
+        RuntimeLog = if ($run) { Join-Path $run.Directory 'receiver.log' } else { $null }
     }
 }
 
@@ -182,6 +181,12 @@ function Stop-Runtime {
         @{ Pid = $p.Id; StartUtc = $p.StartTime.ToUniversalTime().ToString('o') } |
             ConvertTo-Json | Set-Content -LiteralPath (Join-Path $run.Directory 'receiver.json') -Encoding UTF8
     }
+    # A WPF close awaits input cleanup and settings flush. Force only our verified
+    # runtime if its window is unresponsive; never terminate an unrelated process.
+    if ($p -and $p.MainWindowHandle -ne 0) {
+        $null = $p.CloseMainWindow()
+        $null = $p.WaitForExit(5000)
+    }
     $task.Stop(0)
     if ($p) {
         if (!$p.WaitForExit(5000)) {
@@ -191,7 +196,7 @@ function Stop-Runtime {
             if (!$p.WaitForExit(5000)) { throw 'Receiver did not exit.' }
         }
         @{ ExitUtc = [DateTime]::UtcNow.ToString('o'); ExitCode = $p.ExitCode;
-           Pid = $p.Id; Reason = 'Explicit task Stop (forced; normal shutdown logs are not guaranteed)' } |
+           Pid = $p.Id; Reason = 'Explicit development Stop; requested window close before forced fallback' } |
             ConvertTo-Json | Set-Content -LiteralPath (Join-Path $run.Directory 'stop.json') -Encoding UTF8
     }
     if (Get-OwnedReceiver $run) { throw 'Receiver remains after Stop.' }
@@ -228,11 +233,18 @@ switch ($Mode) {
         $run | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runDirectory 'start.json') -Encoding UTF8
         $exitCode = 1
         try {
-            # Do not interpret native stderr as a PowerShell terminating error.
-            $ErrorActionPreference = 'Continue'
-            $global:LASTEXITCODE = 1 # Preserve failure if native process creation itself fails.
-            & $receiverPath --raw-mouse 1> (Join-Path $runDirectory 'stdout.log') 2> (Join-Path $runDirectory 'stderr.log')
-            $exitCode = $LASTEXITCODE
+            # WinExe does not supply a console or shell wait semantics. The
+            # independent scheduler wrapper owns the process handle and logs.
+            $start = New-Object Diagnostics.ProcessStartInfo
+            $start.FileName = $receiverPath
+            $start.WorkingDirectory = Split-Path $receiverPath -Parent
+            $start.UseShellExecute = $false
+            $start.Arguments = '--dev-log-dir "{0}"' -f $runDirectory
+            $receiver = [Diagnostics.Process]::Start($start)
+            @{ Pid = $receiver.Id; StartUtc = $receiver.StartTime.ToUniversalTime().ToString('o') } |
+                ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runDirectory 'receiver.json') -Encoding UTF8
+            $receiver.WaitForExit()
+            $exitCode = $receiver.ExitCode
         } finally {
             $ErrorActionPreference = 'Stop'
             @{ ExitUtc = [DateTime]::UtcNow.ToString('o'); ExitCode = $exitCode } |
@@ -262,9 +274,10 @@ switch ($Mode) {
         if ($p.Path -ne $receiverPath -or $info.User -ne $identity.Name -or $info.SessionId -eq 0 -or
             $info.SessionId -notin $info.ExplorerSessionIds -or $info.IntegritySid -ne 'S-1-16-8192' -or
             $info.Desktop -ne 'Default') { throw "Receiver context failed validation: $($info | ConvertTo-Json -Compress)" }
-        $stdout = Get-Content -LiteralPath (Join-Path $run.Directory 'stdout.log') -Raw
-        if ($stdout -notmatch 'mode=raw_mouse' -or $stdout -notmatch 'listening: udp=0.0.0.0:50000' -or
-            (Get-Item -LiteralPath (Join-Path $run.Directory 'stderr.log')).Length -gt 0) {
+        $stdout = Get-Content -LiteralPath (Join-Path $run.Directory 'receiver.log') -Raw
+        if ($stdout -notmatch 'application: mode=gui defaultPage=Motion' -or
+            $stdout -notmatch 'mode=raw_mouse' -or $stdout -notmatch 'listening: udp=0.0.0.0:50000' -or
+            $stdout -match 'receiver_error:') {
             throw 'Receiver startup logs failed validation; inspect runtime logs.'
         }
         Show-Status

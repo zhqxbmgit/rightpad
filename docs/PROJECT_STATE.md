@@ -1,12 +1,12 @@
 # rightpad Project State
 
-Updated: 2026-09-08
+Updated: 2026-09-09
 
 ## 1. Current Phase
 
 当前阶段：
 
-RAW Mouse Baseline — Human Feel Validation
+WPF Receiver UI v1 — Implemented and accepted as the first formal UI baseline
 
 目前完整链路已经实现：
 
@@ -24,7 +24,9 @@ Android real touch
 
 自动链路已经通过。
 
-当前最新阶段已经包含：RAW Mouse + Single Tap。
+当前最新阶段已经包含：单进程 WPF Receiver UI v1 + RAW Mouse + Single Tap。
+
+WPF v1：Release build / 79 项自动测试通过；真实 GUI 参数持久化、运行中倍率更新、GUI Start/Stop、Android swipe/tap 与 SendInput 已验证。第一版正式 UI 的视觉与输入体验验收已通过。详见 RECEIVER_UI.md。
 
 RAW Mouse 与 Single Tap 的真人验证均已通过。
 
@@ -270,7 +272,7 @@ sensitivityY = 7.0
 
 仍可通过启动参数 `--sensitivity-x`、`--sensitivity-y` 覆盖。
 
-当前没有 settings UI 或配置文件。
+WPF Motion / Tap 页面支持实时调参，并自动保存至 %LocalAppData%\rightpad\settings.json。详见 RECEIVER_UI.md。
 
 ---
 
@@ -316,7 +318,7 @@ Status: Independent launcher adopted。
 正式开发入口为 `windows/tools/RightpadReceiverTask.ps1`，任务名为
 `Rightpad Receiver Dev`。使用当前用户 InteractiveToken、Limited / LUA、与
 explorer 相同的交互 Session、Medium integrity 和 Default desktop；无触发器、
-无自动重启。运行现有 Release 二进制，仅传 `--raw-mouse`；日志保留在 ignored
+无自动重启。运行 Release WPF GUI，传入明确的 `--dev-log-dir`；日志保留在 ignored
 `windows/test-results/receiver-runtime/`。持久 Receiver 不再作为 Codex shell 子进程启动。
 
 该脚本是供 Codex 自动测试和开发阶段使用的 development-only launcher，不是最终产品
@@ -479,6 +481,7 @@ Completed:
 - Phase 3 — Android Protocol v1 UDP Sender + real LAN E2E
 - Phase 3.5 — Real Finger Transport Characterization
 - Phase 4 implementation — RAW Mouse Baseline
+- WPF Receiver UI v1 implementation — single-process GUI, automatic Start, runtime settings, persistence and diagnostics; accepted as the first formal UI baseline
 
 ---
 
@@ -512,7 +515,6 @@ Do not implement yet:
 - Virtual HID
 - driver
 - game profiles
-- settings UI
 - network optimization
 - heartbeat
 - device discovery

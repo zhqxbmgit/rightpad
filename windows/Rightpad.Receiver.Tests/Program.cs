@@ -4,6 +4,11 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args.SequenceEqual(new[] { "--gui-android-smoke" }))
+        {
+            try { await ButtonSmokeTests.GuiAndroid(); return 0; }
+            catch (Exception exception) { Console.WriteLine($"FAIL GUI Android smoke: {exception}"); return 1; }
+        }
         if (args.SequenceEqual(new[] { "--sendinput-button-smoke" }) || args.SequenceEqual(new[] { "--android-tap-smoke" }))
         {
             try { await ButtonSmokeTests.Run(args[0] == "--android-tap-smoke"); return 0; }
@@ -73,7 +78,34 @@ internal static class Program
             ("UDP gesture gate / exact motion independence", GestureIntegrationTests.GateAndMotionIndependence),
             ("UDP nonblocking click hold / timeout retention", GestureIntegrationTests.NonblockingAndTimeout),
             ("UDP normal / exceptional shutdown button cleanup", GestureIntegrationTests.ShutdownCleanup),
-            ("UDP async LEFT UP failure stops idle receiver", GestureIntegrationTests.AsyncFailureStopsIdleReceiver)
+            ("UDP async LEFT UP failure stops idle receiver", GestureIntegrationTests.AsyncFailureStopsIdleReceiver),
+            ("settings no file", Sync(SettingsTests.NoFile)),
+            ("settings valid", Sync(SettingsTests.Valid)),
+            ("settings malformed root", Sync(SettingsTests.Malformed)),
+            ("settings missing fields", Sync(SettingsTests.Missing)),
+            ("settings invalid fields", Sync(SettingsTests.Invalid)),
+            ("settings product range", Sync(SettingsTests.Range)),
+            ("settings unknown fields", Sync(SettingsTests.Unknown)),
+            ("settings five-field round trip", SettingsTests.RoundTrip),
+            ("settings 500ms debounce", SettingsTests.Debounce),
+            ("settings quick updates / latest wins", SettingsTests.LatestWins),
+            ("settings save failure retains runtime", SettingsTests.SaveFailure),
+            ("settings exit flush", SettingsTests.ExitFlush),
+            ("settings atomic full snapshot", SettingsTests.AtomicSnapshot),
+            ("numeric draft / publish / precision", SettingsTests.NumericDraft),
+            ("GUI default / explicit dev entries", Sync(SettingsTests.Entry)),
+            ("runtime Start / Stop / release", RuntimeTests.StartStop),
+            ("runtime repeated Start / Stop / fresh run", RuntimeTests.Repeated),
+            ("runtime occupied port / retry", RuntimeTests.Occupied),
+            ("runtime output error / restart", RuntimeTests.ErrorRestart),
+            ("runtime counters / run isolation", RuntimeTests.CountersAndRuns),
+            ("input without UI snapshot reads", RuntimeTests.NoUiReads),
+            ("runtime old timer isolation", RuntimeTests.OldTimerIsolation),
+            ("stats activity / actual elapsed rates", Sync(RuntimeTests.ActivityAndRates)),
+            ("settings accepted packet boundary", RuntimeSettingsTests.PacketBoundary),
+            ("settings residual / position retained", Sync(RuntimeSettingsTests.Residual)),
+            ("settings Tap DOWN snapshot", Sync(RuntimeSettingsTests.TapDownSnapshot)),
+            ("settings queued Click Hold durations", RuntimeSettingsTests.QueuedHold)
         ];
 
         int failed = 0;

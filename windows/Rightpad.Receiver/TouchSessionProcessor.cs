@@ -14,7 +14,9 @@ internal sealed class TouchSessionProcessor(Action<int, int> output, double sens
     public long TotalDy { get; private set; }
 
     // Only fully decoded, sequence-accepted packets enter here.
-    public void Process(TouchPacket packet)
+    public void Process(TouchPacket packet) => Process(packet, sensitivityX, sensitivityY);
+
+    public void Process(TouchPacket packet, double packetSensitivityX, double packetSensitivityY)
     {
         if (packet.Header.EventType == TouchEventType.Down)
         {
@@ -40,7 +42,7 @@ internal sealed class TouchSessionProcessor(Action<int, int> output, double sens
                 double dy = (double)sample.Y - previousY;
                 previousX = sample.X;
                 previousY = sample.Y;
-                var movement = motion.Process(dx, dy);
+                var movement = motion.Process(dx, dy, packetSensitivityX, packetSensitivityY);
                 ProcessedMotionSamples++;
                 if (movement.X == 0 && movement.Y == 0) continue;
                 output(movement.X, movement.Y);

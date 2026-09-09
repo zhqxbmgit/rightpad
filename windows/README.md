@@ -1,336 +1,191 @@
-# Windows Receiver / RAW Mouse Baseline Prototype
+# rightpad Receiver for Windows 11
 
-Windows 11 console receiver for Protocol v1 raw touch packets:
+C#, .NET 8, WPF; one GUI process owns UDP reception, RAW motion, Single Tap
+and SendInput. No third-party packages, Core project, service or IPC.
 
-```text
-UDP receive -> packet decode -> sequence acceptance
-                              -> diagnostic logging (default)
-                              -> touch session -> RAW delta -> fixed sensitivity
-                                 -> fractional accumulator -> relative SendInput (--raw-mouse)
-                              -> independent Single Tap recognition -> local LEFT DOWN/UP (--raw-mouse)
-```
+## Normal use
 
-C#, .NET 8, `net8.0-windows`. Both application and tests use only the .NET
-standard library plus Win32 SendInput through P/Invoke. RAW mouse mode includes
-Single Tap left-click recognition. It has no motion filter, acceleration, drag,
-motion output scheduler, settings UI, configuration file, discovery, or security system.
+Double-click the built `Rightpad.Receiver.exe`. The GUI opens on **Motion** and
+automatically listens on IPv4 `0.0.0.0:50000`. A matching .NET 8 Desktop Runtime
+is required for this framework-dependent build; no SDK, PowerShell, Task Scheduler
+or Codex is needed for daily use.
 
-## Build and run
+- Overview: actual connection observations, traffic counters and one Start/Stop.
+- Motion: RAW text and independently editable X/Y sensitivity.
+- Tap: duration, axis-aligned movement threshold and click hold.
+- Diagnostics: actual Receiver counters/state only.
+- Minimize keeps receiving; closing stops input, releases buttons best-effort,
+  flushes pending settings and exits. Page changes never restart input.
 
-From the repository root in PowerShell, with .NET 8 SDK installed:
+Full UI contract: [RECEIVER_UI.md](../docs/RECEIVER_UI.md).
 
-`RightpadReceiverTask.ps1` is a development-only independent Receiver launcher
-for Codex automation and development testing. It is not the final product UI or
-a Windows Service. After the final user-facing GUI Receiver is available, normal
-daily use will not depend on this Task Scheduler launcher.
+Header states are Stopped, Starting…, Waiting, Receiving, Ready · Idle,
+Stopping… and Error. Receiving means accepted input within about a second,
+not a verified network connection. Stationary touch does not become Disconnected.
+The existing two-second timeout is diagnostic only and preserves touch state.
 
-If the dev Receiver is already running, use the launcher `-Mode Stop` before
-rebuilding its Release files, then `-Mode Start` after the successful build.
+Runtime defaults are 7/7 sensitivity and Single Tap 300 ms / 8 px / 25 ms.
+Valid edits apply without Apply, Save or restart. Sensitivity is sampled once
+per accepted packet; duration/threshold are captured at DOWN; each click request
+owns its hold. Small tap motion remains normal RAW output. No 1:1 desktop-pixel claim.
+
+Settings auto-save after 500 ms to
+`%LocalAppData%\rightpad\settings.json`. Only the five input settings are stored.
+Missing/bad fields fall back to defaults; file errors do not stop input.
+Save failure is nonmodal and keeps the in-memory settings active.
+
+## Build and development launch
 
 ```powershell
-dotnet build C:\rightpad\windows\Rightpad.Receiver\Rightpad.Receiver.csproj --configuration Release
+dotnet build C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj -c Release
+dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj -c Release --no-build
+```
+
+The test executable is dependency-free and returns nonzero on failure. Ordinary
+tests use fake mouse output and temporary loopback ports; they do not inject input.
+
+Persistent Receiver launched by Codex must use the independent project launcher:
+
+```powershell
+& C:\rightpad\windows\tools\RightpadReceiverTask.ps1 -Mode Stop
+# Build Release after stopping the previous binary.
 & C:\rightpad\windows\tools\RightpadReceiverTask.ps1 -Mode Start
 & C:\rightpad\windows\tools\RightpadReceiverTask.ps1 -Mode Status
 ```
 
-Persistent / user-facing development RAW Receiver must use this independent
-launcher, not `Start-Process Receiver` (or an indirect persistent child) from the
-Codex execution shell. The old launch method experimentally inherited a Windows
-Job with `KILL_ON_JOB_CLOSE`; host replacement/cleanup can therefore end its runtime.
+Stop an existing development runtime before rebuilding its Release files. Start
+ensures the fixed `Rightpad Receiver Dev` task and starts the **WPF GUI**, passing
+`--dev-log-dir`. The GUI reads the normal user settings file; automated tuning
+checks must restore 7/7 and 300/8/25 before leaving it for acceptance.
 
-The single script provides `Ensure`, `Start`, `Stop`, `Status`, and internal `Run`.
-`Start` ensures the fixed `Rightpad Receiver Dev` Scheduled Task, stops its own
-previous runtime if present, and starts a fresh Receiver. `Ensure` only registers
-or checks the task. Use `Stop` to stop it explicitly; `Status` reports identity,
-UDP ownership and log paths. `Run` is only allowed as the scheduler action.
+The task uses current-user InteractiveToken, Limited/LUA, no triggers, no stored
+password, no time limit and no automatic restart. The Receiver must match the
+current user's explorer SessionId, Medium integrity and Default desktop.
+Persistent Receiver must not be a direct or indirect Codex-shell child: the
+previous launch method inherited KILL_ON_JOB_CLOSE. There is no fallback child
+launch, product service or watchdog.
 
-The task uses the current logged-in user, InteractiveToken, Limited / LUA, no
-triggers, no stored password, no execution time limit and no automatic restart.
-The Receiver must match explorer's user/session, Medium integrity and Default
-desktop. A failed validation is reported, never replaced by a Codex child launch.
-The task runs the existing Release EXE in its build directory with only
-`--raw-mouse`, preserving the binary's defaults (currently 7/7 and 300/8/25).
-No executable copy, service, installation directory or configuration file is added.
+The independent wrapper explicitly retains/waits for the WinExe process handle.
+It writes receiver.log, start.json, receiver.json and exit evidence under ignored
+`windows/test-results/receiver-runtime/`. Status returns RuntimeLog, identity,
+PID and UDP ownership. Stop requests the verified WPF window to close normally
+before stopping the task/forcing only a verified residual. Use it with input idle;
+forced termination cannot guarantee LEFT UP or final settings/log flush.
+Ensure/Start/Stop/Status remain public modes; Run is scheduler-internal.
 
-Runtime evidence is ignored under `windows/test-results/receiver-runtime/`: a
-per-run start record, Receiver PID/creation time when observed, stdout/stderr, and
-exit time/code when the waiting wrapper observes exit. Explicit `Stop` stops the
-task, cleans only its verified residual Receiver if necessary, and records the
-observed forced exit in `stop.json`. Forced termination need not produce normal
-Receiver shutdown statistics; a host/OS loss can also prevent an exit record.
-Stop only when input is idle. The launcher does not mask failures with a watchdog.
+## Explicit development CLI
 
-The Receiver listens on IPv4 `0.0.0.0:50000`. In a human-owned diagnostic console,
-press Ctrl+C to cancel a pending
-receive, print final statistics, close the socket and exit. A bind error (for
-example an occupied port) is reported with a nonzero exit code. Windows 11 is
-checked at application startup. No firewall rules are installed or changed.
+No arguments now means GUI. Protocol diagnostics must be explicitly selected:
 
-## Protocol v1
+```powershell
+# Human-owned interactive console only; stop any listener first.
+.\Rightpad.Receiver.exe --diagnostics --dev-log-dir C:\rightpad\windows\test-results\protocol
+.\Rightpad.Receiver.exe --raw-mouse --sensitivity-x 5 --sensitivity-y 6 --tap-max-duration-ms 300 --tap-movement-threshold-px 8 --click-hold-ms 25 --dev-log-dir C:\rightpad\windows\test-results\raw
+```
 
-The authoritative layout is in [INPUT_PROTOCOL.md](../docs/INPUT_PROTOCOL.md).
+These modes reuse ReceiverRuntime without a WPF window. WinExe does not imply a
+console: a parent console is attached when available for Ctrl+C, while diagnostics
+are explicitly written to receiver.log. The default dev log directory is
+`%LocalAppData%\rightpad\diagnostics`. Use a waiting process API when automating a
+bounded dev run; do not rely on shell GUI-process wait/redirection behavior.
+`--dev-settings-path <path>` optionally isolates GUI persistence for tests.
+It is not a profile feature. Dev RAW options do not write user settings.
 
-- UDP port: 50000; version: 1.
-- Events: DOWN=1, MOVE=2, UP=3. No CANCEL event.
-- All multi-byte fields: Little Endian; no padding or extra fields.
-- Header: version uint8, eventType uint8, sampleCount uint16,
-  sessionId uint32, sequence uint32; total 12 bytes.
-- Sample: timestampNs uint64, x float32, y float32; total 16 bytes.
-- Datagram size must equal `12 + sampleCount * 16` exactly.
-- DOWN/UP contain one sample; MOVE contains at least one.
-- Coordinates must be finite; no screen-size clipping, scaling or conversion.
-- timestampNs is an unsigned nanosecond event timestamp. No millisecond
-  conversion is performed. Equal timestamps and original sample order remain.
+The dev CLI retains finite-positive gains/thresholds and positive int32 duration
+values. GUI/JSON product ranges are sensitivity .1..30, duration 50..1500 ms,
+threshold .5..100 px, hold 1..200 ms. Errors in dev runtime return nonzero;
+GUI errors stop only the internal runtime and leave an Error/retry view.
 
-The packet has no historical/current source field. `sampleIndex` in the console
-is a zero-based index inside the packet, not an added wire field. `remote` and
-`receiveElapsedMs` are receiver-local diagnostics. Receive time is measured just
-after the socket receive completes and before decode, relative to receiver
-startup using Stopwatch. It is not a hardware arrival timestamp or a one-way
-Android-to-Windows latency measurement.
+## Frozen input behavior
 
-## Validation and statistics
+[INPUT_PROTOCOL.md](../docs/INPUT_PROTOCOL.md) is authoritative:
+UDP 50000, version 1, DOWN=1/MOVE=2/UP=3, little-endian 12-byte header plus
+16 bytes per sample. DOWN/UP have one sample, MOVE has one or more. No CANCEL
+wire event, handshake, heartbeat, reorder buffer or reconnect protocol.
+The decoder rejects malformed lengths, version/events/counts and non-finite
+coordinates; original sample order and uint64 nanoseconds are retained.
 
-The decoder rejects short/truncated packets, unsupported versions/events,
-invalid sample counts, extra trailing bytes, and NaN/infinite coordinates. A
-malformed packet produces a diagnostic, never a partial set of sample logs,
-and does not stop reception or change the sequence baseline.
-
-The first valid packet establishes the sequence baseline. Subsequent values
-use ordinary uint32 ordering across session IDs:
-
-- greater by one: `in_order`;
-- greater by more than one: `gap`, add `delta - 1` to sequenceGapEstimate;
-- equal to last accepted: `duplicate`;
-- lower than last accepted: `old` (out-of-order or an older duplicate).
-
-Duplicate/old packets log their header and status, but do not add accepted
-samples or move the baseline. There is no reorder buffer or retransmission.
-The gap estimate is cumulative and does not decrease for late packets; it is
-not an exact final loss count. uint32 wraparound is intentionally unsupported.
-Restart the receiver after restarting the sender.
-
-Statistics are logged after each datagram in diagnostic mode and at shutdown in both modes:
+Sequence ordering is ordinary uint32 comparison across touch sessions:
+first valid establishes baseline, greater is accepted, forward gaps accumulate
+delta-1, equal is duplicate, lower is old. No wraparound support. Only accepted
+packets enter motion/gesture. Remote addresses are diagnostics only, with no
+sender locking or source authentication.
 
 | Counter | Meaning |
 |---|---|
-| receivedPackets | All datagrams received, including invalid/duplicate/old |
-| invalidPackets | Datagrams rejected by the decoder |
-| acceptedPackets | Valid baseline/in-order/gap packets |
-| acceptedSamples | Samples in accepted packets |
-| sequenceGapEstimate | Cumulative forward sequence gaps |
-| duplicatePackets | Packets equal to the last accepted sequence |
-| oldPackets | Packets below the last accepted sequence |
+| receivedPackets | All datagrams, including rejected and duplicate |
+| invalidPackets | Rejected by decoder |
+| acceptedPackets / acceptedSamples | Valid baseline/in-order/gap input |
+| sequenceGapEstimate | Cumulative forward gaps, not final loss |
+| duplicatePackets / oldPackets | Equal / lower than last accepted sequence |
+| inputTimeouts | Once after each rearmed two-second accepted-input silence |
 
-Remote endpoints are logged only. There is no sender locking, source rejection,
-pairing or authentication. One sequence baseline is used for the intended single
-sender; multiple independent sequence streams would make its statistics ambiguous.
+UI Hz uses counter deltas over real Stopwatch time, sampled at 5 Hz with an
+approximately one-second history. This is received throughput, not hardware scan
+rate or one-way latency. UI never dispatches per sample or locks input processing.
 
-After accepted input stops for 2 seconds, the receiver emits one `input_timeout`
-diagnostic and keeps listening. Invalid, duplicate and old packets do not refresh
-that deadline. A new accepted packet rearms it. Timeout only logs and increments
-`inputTimeouts`: it does not clear sequence statistics, active touch session,
-previous position, or fractional residual. A held finger can remain stationary
-past 2 seconds and continue moving in the same session. This is the explicitly
-approved diagnostic-only behavior described in the architecture/protocol documents.
-Single Tap release is local to Windows; real connection-state and future drag
-safety handling are deferred. There is no heartbeat.
+RAW: matching DOWN resets the baseline/residual without output; MOVE/UP samples
+produce ordered absolute-position differences, fixed axis gain and truncation
+toward zero with independent residuals. Final UP delta is processed; residual
+is discarded at session end. Wrong/orphan sessions have no motion effect.
+No sample merging, output ticker, clamping, synthetic split, acceleration or filter.
+An unrepresentable int32 output stops the runtime.
 
-Raw console logging itself has overhead. This prototype verifies data transport
-and decoding; it is not a measurement of the final input system's performance.
+Single Tap: each raw sample is tested relative to DOWN per axis (inclusive);
+once outside either bound, the candidate stays rejected even if it returns.
+Matching UP must also be within bounds and event-time duration nonnegative and
+within the DOWN snapshot. A valid tap requests one LEFT DOWN then locally timed
+LEFT UP. Overlapping requests are serialized with their own hold durations.
+System timer scheduling can release later than requested. Motion is independent.
 
-## Automated verification
+Every SendInput call checks the actual inserted count and available Win32 error.
+Failure stops input, clears pending clicks and best-effort releases LEFT UP.
+Timer failures cancel idle receive too. Forced kill or persistent native failure
+cannot guarantee release. Windows pointer settings and app behavior can still
+affect output; rightpad never changes them automatically.
 
-```powershell
-dotnet build C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj --configuration Release
-dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj --configuration Release --no-build
-```
+## Native and Android smoke
 
-The test executable returns nonzero if any test fails. It checks independent
-fixed-byte fixtures, all three events, nanosecond values, original order and
-equal timestamps, malformed inputs, sequence behavior, localhost UDP with two
-source ports, reception after bad packets, idle cancellation, socket release,
-input timeout/resume, and occupied-port failure. Socket tests use temporary
-loopback ports and bounded waits. A sender exists only in the test project.
-
-The real loopback test sends 7 datagrams: two malformed, DOWN sequence 10,
-MOVE sequence 13 (two samples), duplicate 13, old 12, and UP sequence 14.
-Expected totals: received=7, invalid=2, accepted=3, samples=4, gap estimate=2,
-duplicate=1, old=1. All test event times are constructed as nanoseconds.
-
-The Android sender and Protocol v1 remain unchanged. Optional SendInput and Android
-LAN smoke tests are described below; ordinary regression tests never inject mouse input.
-
-## Files
-
-| File | Responsibility |
-|---|---|
-| Rightpad.Receiver/Program.cs | Windows 11 check, fixed endpoint, Ctrl+C and errors |
-| Rightpad.Receiver/UdpReceiver.cs | Sequential UDP receive, local receive clock and timeout |
-| Rightpad.Receiver/PacketDecoder.cs | Protocol validation and explicit endian decoding |
-| Rightpad.Receiver/PacketModels.cs | Header, sample and decoded packet models |
-| Rightpad.Receiver/PacketStatistics.cs | Counters and ordinary uint32 sequence comparison |
-| Rightpad.Receiver/RawSampleLogger.cs | Console packet/sample/diagnostic/statistics output |
-| Rightpad.Receiver/TouchSessionProcessor.cs | Active session, ordered position deltas, final UP delta |
-| Rightpad.Receiver/RawMotionProcessor.cs | Fixed axis gains, symmetric truncation, per-session residual |
-| Rightpad.Receiver/WindowsMouseOutput.cs | Relative SendInput, native layout and return/error checks |
-| Rightpad.Receiver/GestureProcessor.cs | Independent Single Tap candidate, all-sample bounds and event-time duration |
-| Rightpad.Receiver/LeftButtonController.cs | Nonblocking local click hold, serialized buttons and best-effort cleanup |
-| Rightpad.Receiver.Tests/Program.cs | Dependency-free test runner and assertions |
-| Rightpad.Receiver.Tests/PacketDecoderTests.cs | Literal fixtures, field and malformed tests |
-| Rightpad.Receiver.Tests/PacketStatisticsTests.cs | Sequence and count tests |
-| Rightpad.Receiver.Tests/UdpReceiverTests.cs | Actual socket tests and test-only sender |
-
-Each directory has its own csproj; tests reference the application project.
-`.gitignore` excludes build and IDE output.
-
-## RAW mouse mode
+Run native checks in the current interactive user context, outside the restricted
+Codex SendInput sandbox. The default test suite never calls native SendInput.
 
 ```powershell
-& C:\rightpad\windows\tools\RightpadReceiverTask.ps1 -Mode Start
+dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj -c Release --no-build -- --sendinput-smoke
+dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj -c Release --no-build -- --sendinput-button-smoke
+dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj -c Release --no-build -- --android-mouse-smoke
+dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj -c Release --no-build -- --android-tap-smoke
 ```
 
-### Android Redeploy / Receiver Restart
+Move smoke submits +8/-8 counts and checks inserted=1, not cursor displacement.
+Button smoke uses an inert test window and validates native DOWN/UP. Android
+mouse/tap checks own UDP 50000 for bounded 15/25-second runs, so stop the GUI
+listener first. Start the unchanged phone app and inject a small swipe/tap after
+the readiness signal. These verify plumbing, not human gaming feel.
 
-During development, whenever the Android app is reinstalled or its Sender process
-is restarted, restart Rightpad.Receiver before testing the touchpad again. The
-fresh Receiver must establish a new runtime input baseline and listen on UDP
-50000. For RAW Mouse, Gesture, or other SendInput testing, launch it in the current
-Windows user's interactive desktop session through `RightpadReceiverTask.ps1`
-(`Stop`, then `Start`), with the same active SessionId as explorer.exe. Do not
-leave it attached to the Codex execution Job.
+For GUI E2E, `Rightpad.Receiver.Tests.exe --gui-android-smoke` uses the already-running GUI and an inert click target for a 10 px swipe and one tap. It owns no UDP listener; verify the GUI native summaries after Stop. Android must be awake with rightpad foreground.
 
-Default sensitivityX is 7.0 and default sensitivityY is 7.0. The following direct
-CLI examples are for a human-owned interactive console only, not a persistent
-Codex launch; stop the scheduled runtime first. Optional finite positive values:
+For GUI E2E, use the independent launcher, edit real controls, verify settings
+round-trip/default restoration, exercise GUI Stop/Start and inspect per-run
+motion/button summaries. A small native UI Automation check needs no added
+framework. Real-finger RAW and Single Tap human validation passed before WPF;
+this UI migration still awaits user visual/live-tuning/feel acceptance.
 
-```powershell
-dotnet run --project C:\rightpad\windows\Rightpad.Receiver\Rightpad.Receiver.csproj --configuration Release --no-build -- --raw-mouse --sensitivity-x 5 --sensitivity-y 6
-```
+After Android Sender restart or reinstall, restart the Receiver via Stop/Start
+of the independent launcher and verify a fresh baseline, foreground Android,
+sender errors/overflow through development evidence, UDP and native output.
+No Android rebuild is needed for Windows-only UI work. Sender restart detection
+remains deferred; the GUI does not add a reconnect mechanism.
 
-Values use an invariant decimal point and stay fixed for the process lifetime.
-Without `--raw-mouse`, the receiver only records the original detailed diagnostics.
+## Implementation files
 
-Only decoded and sequence-accepted packets enter the motion path. DOWN establishes
-the position baseline and clears residuals, without moving. Matching MOVE samples
-are processed in packet order; even equal or non-monotonic sample timestamps never
-affect the processing order. A matching UP processes its final real delta before
-ending the session. Foreign-session MOVE/UP and orphan MOVE/UP have no motion effect.
-Every accepted DOWN resets the baseline, even if its session ID equals the active ID.
-Duplicate/old packets never reach the processor. A sequence gap alone does not reset
-motion: the next matching absolute position recovers the accumulated delta.
+- Existing decoder, packet models, statistics, UDP, motion, gesture, buttons and
+  SendInput classes remain in Rightpad.Receiver.
+- Runtime/ReceiverRuntime.cs owns runs; RuntimeStatsSnapshot is the UI read model.
+- Settings contains immutable settings/store and JSON/debounce persistence.
+- App/MainWindow, four Views, NumericEditor and DarkTheme form the WPF surface.
+- MainViewModel, SettingsViewModel and RuntimeStatsViewModel share page state.
+- Existing tests remain, plus settings/runtime/settings-boundary regression files.
 
-Coordinates widen to double before subtraction. Each axis uses
-`total = residual + delta * sensitivity`, `integer = truncate(total)` and
-`residual = total - integer`. Every nonzero integer pair is immediately submitted
-as a single SendInput event. Samples are not combined across or within packets.
-Fractional residuals belong only to the active session and are discarded on UP,
-new DOWN, shutdown, or output/range failure. No residual is flushed after release.
-An unrepresentable int32 movement stops the receiver with an explicit error;
-it is not clamped, wrapped or split into artificial movement.
-
-SendInput uses `INPUT_MOUSE`, `MOUSEEVENTF_MOVE`, relative signed dx/dy, zero
-mouseData/time/extraInfo and the native INPUT size. Every call must return 1.
-Failure logs the returned count and available Win32 error, stops the receiver,
-clears local state and exits nonzero. It does not retry. UIPI causes cannot always
-be identified from the Win32 error. RAW means unfiltered processing within rightpad;
-Windows pointer settings and downstream WM_MOUSEMOVE coalescing can still affect
-desktop/app behavior. There is no claim of hardware Raw Input injection or a
-one-count-to-one-desktop-pixel mapping.
-
-RAW mode omits routine packet/sample/per-datagram-stat formatting entirely. It logs
-startup, invalid packets, sequence gaps/old packets, timeout and final statistics.
-Expected DOWN/UP duplicates are counted silently. Final `motion_stats` include
-processed MOVE/UP samples, ignored session packets, successful integer output events
-and signed X/Y totals; `mouse_stats` records successful native movement events and failed movement calls.
-Timeout counters are diagnostic, not network-disconnect classifications.
-
-## Single Tap left click
-
-`--raw-mouse` enables Single Tap alongside the unchanged RAW movement path.
-Defaults verified from Moonlight Noir source: tap duration 300 ms, movement
-threshold 8 px per axis, click hold 25 ms. The old double-tap interval is 130 ms,
-recorded for future work only; Double Tap Drag and double-click recognition are
-not implemented. Two independent clicks may still be interpreted as a double click
-by Windows/the target application according to its own settings.
-
-```powershell
-dotnet run --project C:\rightpad\windows\Rightpad.Receiver\Rightpad.Receiver.csproj --configuration Release --no-build -- --raw-mouse --tap-max-duration-ms 300 --tap-movement-threshold-px 8 --click-hold-ms 25
-```
-
-The three options require `--raw-mouse`. Duration/hold accept positive int32 whole
-milliseconds; threshold accepts a finite positive number. Sensitivity stays 7/7
-unless explicitly overridden. There is no double-tap option or saved configuration.
-
-Each accepted DOWN stores its own gesture session, position and eventTimeNs.
-All MOVE samples are checked: `abs(x-downX) <= threshold` AND
-`abs(y-downY) <= threshold`. Exceeding either axis latches `confirmedMove` even if
-a later sample returns in bounds. A matching UP clicks only if still a candidate,
-UP is in bounds, and its nonnegative source-event duration is <= tapMaxDurationMs.
-Wrong-session MOVE/UP do not mutate the candidate. Existing packet acceptance
-removes duplicates, old packets and malformed data before either processing path.
-Gesture never suppresses, modifies, or rolls back RAW movement.
-
-Click sends LEFT DOWN immediately when idle and schedules LEFT UP using a one-shot
-`System.Threading.Timer`. It does not wait in the receiver and does not need another
-Android packet. Windows scheduling may make a 25 ms request last longer. Overlapping
-tap requests are serialized after the prior UP so every click retains its hold;
-pending clicks are discarded during shutdown. Button synchronization does not lock
-the motion path. Normal shutdown and exception unwinding dispose the controller
-and attempt release if held. Native failures log the button, return value and Win32
-error; timer failure wakes/cancels the receiver and exits nonzero. Cleanup retries
-UP best-effort, but forced termination or persistent native failure cannot guarantee
-release. Input timeout remains diagnostic only.
-
-Quiet mode adds startup parameters and final `gesture_stats` (tapCandidates,
-confirmedMoves, clicksTriggered) and `button_stats` (leftDownSuccess, leftUpSuccess,
-leftButtonFailures); no per-sample or per-tap logs. clicksTriggered counts requests;
-native down/up counters record actual successful insertion calls separately.
-
-The automatic runner includes the original 31 cases and Single Tap bounds/session/
-historical-sample cases, button fields/errors, asynchronous hold, overlapping clicks,
-cleanup, UDP progress during hold, exact motion independence and async failure exit.
-Real native tests must run as the current Windows interactive user, outside the
-Codex SendInput-restricted sandbox:
-
-```powershell
-dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj --configuration Release --no-build -- --sendinput-button-smoke
-dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj --configuration Release --no-build -- --android-tap-smoke
-```
-
-Both use an inert test window at the existing cursor position and assert actual
-LEFT DOWN/UP returns, not cursor displacement. The Android test listens on 50000
-for up to 25 seconds, expecting one ADB tap after `ANDROID_TAP_READY`; the phone
-must be awake with rightpad in front. It validates one click, packet acceptance,
-duplicates and native success. Human click feel and game compatibility remain pending.
-
-## RAW automated checks
-
-The default runner includes the original 14 tests plus session, accumulator, native
-layout/error, argument, accepted-only UDP, quiet logging, output-failure cleanup and
-timeout-preserves-motion tests. It uses collected movement commands rather than
-moving the system cursor.
-
-Run the actual native smoke test separately in an allowed interactive Windows session:
-
-```powershell
-dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj --configuration Release --no-build -- --sendinput-smoke
-```
-
-It submits +8 and -8 relative X counts and requires both SendInput calls to return 1.
-Native structure sizes/alignment and deterministic error handling are also tested.
-GetCursorPos displacement is not an automatic pass/fail condition; visible movement
-and game feeling remain manual checks.
-
-For the Android chain, start a fresh Sender after launching this bounded test:
-
-```powershell
-dotnet run --project C:\rightpad\windows\Rightpad.Receiver.Tests\Rightpad.Receiver.Tests.csproj --configuration Release --no-build -- --android-mouse-smoke
-```
-
-This test uses the production receiver/session/SendInput classes on UDP 50000 for
-15 seconds, then cancels cleanly and validates accepted input, successful native
-outputs and reliability counters. While it listens, ADB can start the unchanged
-Android app and inject a small swipe. The 15-second limit is test lifetime only.
-ADB injection verifies plumbing, not real-finger feel. Existing UDP inbound rules
-are assumed; no firewall GUI or rule changes are performed.
+No filter, FIR/Second Order, Double Tap Drag, right click, scroll, HID/driver,
+profiles/discovery/multi-device, heartbeat/reconnect, cloud/accounts/plugins,
+tray/autostart, updates, graphs/log viewer, theme selector or custom title bar.

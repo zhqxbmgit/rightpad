@@ -9,7 +9,7 @@ internal sealed class LeftButtonController : IDisposable
     private readonly int holdMs;
     private readonly Timer timer;
     private bool held, disposed;
-    private long pendingClicks;
+    private readonly Queue<int> pendingClicks = new();
     private Exception? failure;
 
     public Exception? Failure { get { lock (gate) return failure; } }
@@ -26,24 +26,27 @@ internal sealed class LeftButtonController : IDisposable
         timer = new Timer(_ => ReleaseDue(), null, Timeout.Infinite, Timeout.Infinite);
     }
 
-    public void Click()
+    public void Click() => Click(holdMs);
+
+    public void Click(int clickHoldMs)
     {
+        if (clickHoldMs <= 0) throw new ArgumentOutOfRangeException(nameof(clickHoldMs));
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             if (failure is not null) throw new IOException("Left button output has failed.", failure);
             // Serialize overlapping clicks so an earlier UP cannot shorten a later hold.
-            if (held) { pendingClicks++; return; }
-            try { Press(); }
+            if (held) { pendingClicks.Enqueue(clickHoldMs); return; }
+            try { Press(clickHoldMs); }
             catch (Exception exception) { Fail(exception); throw; }
         }
     }
 
-    private void Press()
+    private void Press(int clickHoldMs)
     {
         held = true; // Even an ambiguous DOWN failure gets a best-effort UP.
         down();
-        timer.Change(holdMs, Timeout.Infinite);
+        timer.Change(clickHoldMs, Timeout.Infinite);
     }
 
     private void ReleaseDue()
@@ -55,10 +58,9 @@ internal sealed class LeftButtonController : IDisposable
             {
                 up();
                 held = false;
-                if (pendingClicks > 0)
+                if (pendingClicks.Count > 0)
                 {
-                    pendingClicks--;
-                    Press();
+                    Press(pendingClicks.Dequeue());
                 }
             }
             catch (Exception exception) { Fail(exception); }
@@ -68,7 +70,7 @@ internal sealed class LeftButtonController : IDisposable
     private void Fail(Exception exception)
     {
         failure ??= exception;
-        pendingClicks = 0;
+        pendingClicks.Clear();
         timer.Change(Timeout.Infinite, Timeout.Infinite);
         logError($"left_button_error: {exception.Message}");
         ReleaseBestEffort();
@@ -92,7 +94,7 @@ internal sealed class LeftButtonController : IDisposable
         {
             if (disposed) return;
             disposed = true;
-            pendingClicks = 0;
+            pendingClicks.Clear();
             timer.Dispose();
             ReleaseBestEffort();
         }

@@ -17,10 +17,12 @@ internal sealed class RawMotionProcessor
         SensitivityY = sensitivityY;
     }
 
-    public (int X, int Y) Process(double dx, double dy)
+    public (int X, int Y) Process(double dx, double dy) => Process(dx, dy, SensitivityX, SensitivityY);
+
+    public (int X, int Y) Process(double dx, double dy, double sensitivityX, double sensitivityY)
     {
-        double totalX = ResidualX + dx * SensitivityX;
-        double totalY = ResidualY + dy * SensitivityY;
+        double totalX = ResidualX + dx * sensitivityX;
+        double totalY = ResidualY + dy * sensitivityY;
         double integerX = Math.Truncate(totalX);
         double integerY = Math.Truncate(totalY);
         // Validate both axes before committing residuals; never wrap or clamp movement.

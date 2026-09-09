@@ -15,14 +15,21 @@ internal sealed class UdpReceiver : IDisposable
     private readonly TouchSessionProcessor? motion;
     private readonly GestureProcessor? gesture;
     private readonly bool detailedLogging;
+    private readonly RuntimeSettingsStore? settings;
+    private long inputTimeouts, lastAcceptedAtTicks, activeSession = -1;
+    private IPAddress? lastRemoteIp;
 
     public IPEndPoint LocalEndpoint { get; }
     public PacketStatistics Statistics { get; } = new();
-    public long InputTimeouts { get; private set; }
+    public long InputTimeouts => Interlocked.Read(ref inputTimeouts);
+    public long LastAcceptedAtTicks => Interlocked.Read(ref lastAcceptedAtTicks);
+    public long ActiveTouchSessionId => Interlocked.Read(ref activeSession);
+    public string? LastRemoteIp => Volatile.Read(ref lastRemoteIp)?.ToString();
 
     // Endpoint and timeout injection are for loopback tests, not user configuration.
     public UdpReceiver(IPEndPoint endpoint, TextWriter output, TimeSpan? timeout = null,
-        TouchSessionProcessor? motion = null, bool detailedLogging = true, GestureProcessor? gesture = null)
+        TouchSessionProcessor? motion = null, bool detailedLogging = true, GestureProcessor? gesture = null,
+        RuntimeSettingsStore? settings = null)
     {
         inputTimeout = timeout ?? InputTimeout;
         if (inputTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
@@ -31,6 +38,7 @@ internal sealed class UdpReceiver : IDisposable
         this.motion = motion;
         this.gesture = gesture;
         this.detailedLogging = detailedLogging;
+        this.settings = settings;
         logger = new RawSampleLogger(output, detailedLogging);
     }
 
@@ -59,7 +67,7 @@ internal sealed class UdpReceiver : IDisposable
                 UdpReceiveResult received;
                 try
                 {
-                    received = await socket.ReceiveAsync(receiveCancellation.Token);
+                    received = await socket.ReceiveAsync(receiveCancellation.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
@@ -81,8 +89,23 @@ internal sealed class UdpReceiver : IDisposable
                     if (observation.Accepted)
                     {
                         lastAccepted = receiveTime;
-                        motion?.Process(packet);
-                        gesture?.Process(packet);
+                        Interlocked.Exchange(ref lastAcceptedAtTicks, Stopwatch.GetTimestamp());
+                        if (!received.RemoteEndPoint.Address.Equals(lastRemoteIp))
+                            Volatile.Write(ref lastRemoteIp, received.RemoteEndPoint.Address);
+                        // One publication boundary for every historical/current sample in this packet.
+                        var snapshot = settings?.Current;
+                        if (snapshot is null)
+                        {
+                            motion?.Process(packet);
+                            gesture?.Process(packet);
+                        }
+                        else
+                        {
+                            motion?.Process(packet, snapshot.SensitivityX, snapshot.SensitivityY);
+                            gesture?.Process(packet, snapshot.TapMaxDurationMs,
+                                snapshot.TapMovementThresholdPx, snapshot.ClickHoldMs);
+                        }
+                        Interlocked.Exchange(ref activeSession, motion?.ActiveSessionId is uint id ? id : -1);
                     }
                     logger.Packet(receiveTime.TotalMilliseconds, received.RemoteEndPoint, packet, observation);
                 }
@@ -97,6 +120,7 @@ internal sealed class UdpReceiver : IDisposable
         {
             gesture?.Reset();
             motion?.Reset();
+            Interlocked.Exchange(ref activeSession, -1);
             socket.Dispose();
             logger.Stats(Statistics);
             logger.Summary(InputTimeouts, motion);
@@ -107,7 +131,7 @@ internal sealed class UdpReceiver : IDisposable
     private void RecordTimeout(double elapsedMs)
     {
         // Silence is indistinguishable from a stationary held finger. Preserve all motion state.
-        InputTimeouts++;
+        Interlocked.Increment(ref inputTimeouts);
         logger.Timeout(elapsedMs);
     }
 

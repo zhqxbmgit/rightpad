@@ -98,7 +98,7 @@ internal static class WindowsMouseOutputTests
 
     public static void Arguments()
     {
-        Equal(new Rightpad.Receiver.Program.Options(false, 7, 7), Rightpad.Receiver.Program.ParseArguments([]), "diagnostic default");
+        Equal(new Rightpad.Receiver.Program.Options(false, 7, 7), Rightpad.Receiver.Program.ParseArguments([]), "input option defaults (GUI entry tested separately)");
         Equal(new Rightpad.Receiver.Program.Options(true, 7, 7), Rightpad.Receiver.Program.ParseArguments(["--raw-mouse"]), "raw default");
         Equal(new Rightpad.Receiver.Program.Options(true, 5, 6),
             Rightpad.Receiver.Program.ParseArguments(["--sensitivity-y", "6", "--raw-mouse", "--sensitivity-x", "5"]), "explicit sensitivity overrides defaults");

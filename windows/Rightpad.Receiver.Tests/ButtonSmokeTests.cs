@@ -9,6 +9,33 @@ namespace Rightpad.Receiver.Tests;
 
 internal static class ButtonSmokeTests
 {
+    // Exercise the already-running GUI's UDP/SendInput path. This owns only a
+    // temporary inert click target, never a second Receiver or UDP listener.
+    public static async Task GuiAndroid()
+    {
+        using var target = new ClickTarget();
+        target.CheckPointer();
+        async Task Adb(params string[] arguments)
+        {
+            var start = new ProcessStartInfo("adb") { UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true };
+            foreach (string argument in arguments) start.ArgumentList.Add(argument);
+            using var process = Process.Start(start) ?? throw new IOException("Could not start adb.");
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); }
+            catch { if (!process.HasExited) process.Kill(); throw; }
+            Check(process.ExitCode == 0, $"adb failed: {await stderr}");
+            Console.Write(await stdout);
+        }
+        await Adb("shell", "input", "swipe", "600", "1000", "610", "1000", "250");
+        await Task.Delay(200);
+        target.CheckPointer();
+        await Adb("shell", "input", "tap", "600", "1000");
+        await Task.Delay(200);
+        Console.WriteLine("GUI_ANDROID_INJECTED smallSwipe=10px tap=1 target=inert; verify GUI runtime native summaries separately.");
+    }
+
     // These entry points inject real buttons only when explicitly requested.
     public static async Task Run(bool android)
     {

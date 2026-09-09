@@ -1,0 +1,11 @@
+<UserControl x:Class="Rightpad.Receiver.MotionView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:Rightpad.Receiver">
+  <StackPanel><TextBlock Text="Motion" Style="{StaticResource PageTitle}"/>
+    <Border Style="{StaticResource Card}"><StackPanel MaxWidth="720" HorizontalAlignment="Left">
+      <TextBlock Text="Motion settings" Style="{StaticResource SectionTitle}"/>
+      <Grid Height="34" Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="210"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="Mode" Style="{StaticResource Muted}"/><TextBlock Grid.Column="1" Text="RAW" FontWeight="SemiBold"/></Grid>
+      <local:NumericEditor DataContext="{Binding Settings.SensitivityX}"/>
+      <local:NumericEditor DataContext="{Binding Settings.SensitivityY}"/>
+      <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,14,0,0" Padding="0,12,0,0"><TextBlock Text="RAW applies a fixed gain without filtering." Style="{StaticResource Muted}" FontSize="13"/></Border>
+    </StackPanel></Border>
+  </StackPanel>
+</UserControl>

@@ -6,7 +6,7 @@ Gesture Engine converts touch timing behavior into mouse button actions.
 
 Current implementation:
 
-- Single tap → Left click: implemented; human validation pending.
+- Single tap → Left click: implemented; human validation passed.
 - Double tap drag → Left button drag: pending, future design only.
 
 The Gesture Engine does NOT control mouse movement.
@@ -158,7 +158,7 @@ tapMovementThresholdPx = 8
 CLI parameter is implemented. Current Windows CLI options (require `--raw-mouse`):
 `--tap-max-duration-ms`, `--tap-movement-threshold-px`, `--click-hold-ms`.
 Durations must be positive int32 whole milliseconds; the threshold must be finite
-and positive. Defaults are 300 / 8 / 25. No settings file or UI is implemented.
+and positive. Defaults are 300 / 8 / 25. WPF v1 supports live settings and local persistence; see RECEIVER_UI.md.
 
 ---
 
@@ -444,7 +444,7 @@ Gesture parameters should be:
 - Adjustable without rebuilding Android
 - Saved locally
 
-Local persistence is future design; current tuning uses startup CLI arguments only.
+WPF v1 auto-saves local settings. Duration/threshold are captured at DOWN; click hold is captured for each click request and retained while queued. Explicit dev CLI tuning remains available.
 
 Android should not contain user tuning values.
 
