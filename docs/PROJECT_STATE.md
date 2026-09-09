@@ -11,6 +11,27 @@ WPF Receiver UI v1 is the committed/accepted foundation (`358a2729`).
 Protocol v2 connection behavior and RAW/Single Tap regression have completed
 human acceptance.
 
+Start with Windows is implemented in the WPF Overview Receiver card. It uses the
+current-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value
+`rightpad Receiver`, with the quoted current executable path and Registry as the
+UI source of truth. A GUI-only named Mutex prevents a login-started Receiver and
+a later manual launch from competing for UDP 50000. Human Windows reboot and
+sign-in acceptance passed.
+
+Start with Windows automated verification (2026-09-09): Release build passed with
+0 warnings/errors and all 110 Windows tests passed. Real WPF Enable/Disable/Enable
+confirmed the exact HKCU command, deletion and final On state. The final fresh
+Receiver PID 9088 runs as the current user in explorer Session 1, Medium integrity,
+Default desktop and owns `0.0.0.0:50000`; foreground Android heartbeat restored
+Connected without restarting Android. GUI Stop/Start, 200% DPI minimum layout,
+bounded second-instance exit, RAW movement and Single Tap native smoke passed.
+Windows login startup then passed three real reboot validations. During the first,
+one transient input-loss episode was observed while WPF still showed Connected;
+input later recovered without restarting Receiver, ReceiverRuntime or Android.
+Two subsequent reboot validations completed normally. The root cause remains
+unconfirmed, so no speculative workaround or production-code change was added;
+re-investigate only if the issue recurs with a preservable failure scene.
+
 Protocol v2 automated/device verification (2026-09-09):
 
 - Windows Release build: 0 warnings / 0 errors; 100/100 tests passed.
@@ -385,6 +406,9 @@ KILL_ON_JOB_CLOSE Job。
 上述独立 launcher 修复发生在 v1 阶段，当时没有修改 Protocol、Motion、Gesture 和
 diagnostic-only timeout。当前 v2 继续保留相同独立进程启动规则。
 
+产品的登录启动与此开发入口分离：WPF 的 Start with Windows toggle 只管理当前用户
+HKCU Run value，不调用 PowerShell、不创建或修改 `Rightpad Receiver Dev` task。
+
 ### Android Redeploy Lifecycle
 
 当前已验证的开发环境恢复流程：
@@ -529,6 +553,7 @@ Completed:
 - Phase 3.5 — Real Finger Transport Characterization
 - Phase 4 implementation — RAW Mouse Baseline
 - WPF Receiver UI v1 implementation — single-process GUI, automatic Start, runtime settings, persistence and diagnostics; accepted as the first formal UI baseline
+- Start with Windows implementation — current-user HKCU Run toggle with Registry source-of-truth state and GUI single-instance guard; real Windows reboot/login acceptance passed
 
 ---
 

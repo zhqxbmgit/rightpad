@@ -22,6 +22,19 @@
       <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="#29384A"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlueBrush}"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="Surface" Property="Opacity" Value=".75"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Opacity" Value=".4"/></Trigger></ControlTemplate.Triggers>
     </ControlTemplate></Setter.Value></Setter>
   </Style>
+  <Style x:Key="CompactToggle" TargetType="ToggleButton">
+    <Setter Property="Width" Value="42"/><Setter Property="Height" Value="22"/><Setter Property="Cursor" Value="Hand"/><Setter Property="HorizontalAlignment" Value="Left"/>
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
+      <Border x:Name="Track" Background="#273343" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="11">
+        <Ellipse x:Name="Knob" Width="16" Height="16" Margin="2" HorizontalAlignment="Left" Fill="{StaticResource MutedBrush}"/>
+      </Border>
+      <ControlTemplate.Triggers>
+        <Trigger Property="IsChecked" Value="True"><Setter TargetName="Track" Property="Background" Value="{StaticResource BlueBrush}"/><Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/><Setter TargetName="Knob" Property="Fill" Value="White"/></Trigger>
+        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="#70A4FF"/></Trigger>
+        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Track" Property="Opacity" Value=".4"/></Trigger>
+      </ControlTemplate.Triggers>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
   <Style TargetType="TextBox">
     <Setter Property="Background" Value="#111A24"/><Setter Property="Foreground" Value="{StaticResource TextBrush}"/><Setter Property="CaretBrush" Value="{StaticResource TextBrush}"/><Setter Property="SelectionBrush" Value="{StaticResource BlueBrush}"/>
     <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="10,5"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="FontSize" Value="15"/>

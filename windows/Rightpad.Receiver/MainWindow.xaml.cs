@@ -16,11 +16,12 @@ public partial class MainWindow : Window
     private readonly UserControl[] pages;
     private bool closing, closed;
 
-    internal MainWindow(ReceiverRuntime runtime, SettingsViewModel settings, SettingsFileStore settingsFile)
+    internal MainWindow(ReceiverRuntime runtime, SettingsViewModel settings, StartupViewModel startup,
+        SettingsFileStore settingsFile)
     {
         this.runtime = runtime;
         this.settingsFile = settingsFile;
-        model = new(runtime, settings);
+        model = new(runtime, settings, startup);
         InitializeComponent();
         pages = [new OverviewView(), new MotionView(), new TapView(), new DiagnosticsView()];
         DataContext = model;

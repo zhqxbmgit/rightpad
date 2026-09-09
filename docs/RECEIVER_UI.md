@@ -47,7 +47,7 @@ Four UserControls selected by a ListBox / ReceiverPage enum / ContentControl:
 
 | Page | Contents |
 |---|---|
-| Overview | Connection: status, current presence Android IP, Last Seen, listener, sample/packet Hz, Gap/Old/Invalid. Receiver: runtime state and one Start/Stop button. |
+| Overview | Connection: status, current presence Android IP, Last Seen, listener, sample/packet Hz, Gap/Old/Invalid. Receiver: runtime state, a compact Start with Windows toggle, and one Start/Stop button. |
 | Motion (default) | Read-only RAW; Sensitivity X/Y numeric editors. No slider or mode dropdown. |
 | Tap | Tap settings: duration, movement threshold, click hold. No Enabled row or toggle. |
 | Diagnostics | Input/Transport: sample/packet Hz, Gap/Old/Invalid/Duplicate/Input Timeout, Heartbeat Packets, Presence Timeouts, Outdated Run Packets. Receiver: state, backend, touch session, last accepted age, last remote IP. |
@@ -170,6 +170,23 @@ Three main ViewModels share settings and stats across pages. A small NumericFiel
 model handles editing; NumericEditor code-behind handles only input interaction.
 MainWindow handles navigation, the UI timer and awaited close coordination.
 
+## Windows login startup
+
+The compact Overview toggle controls the current-user value
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` / `rightpad Receiver`.
+The command is the quoted `Environment.ProcessPath`; it does not depend on the
+working directory and supports spaces and Unicode. The Registry value is the
+source of truth: absent, malformed, stale and other-executable commands display
+Off. Enabling writes or repairs only that value; disabling safely deletes only
+that value. A failed Registry operation leaves ReceiverRuntime running, re-reads
+the actual value and shows a short nonmodal notice. This state is not stored in
+settings.json.
+
+The GUI entry uses a small named Mutex. A second GUI instance does not create a
+second ReceiverRuntime or compete for UDP 50000; it displays a short notice and
+exits. Development diagnostics and RAW command-line modes remain bounded,
+explicit processes and do not take the GUI mutex.
+
 ## Runtime lifecycle and development
 
 Start/Stop requests are serialized by a low-frequency async gate. Every Start
@@ -189,7 +206,8 @@ InteractiveToken/Limited Scheduled Task starts GUI with --dev-log-dir, retains t
 process handle, waits for exit, and records receiver.log / identity / PID / exit.
 Status checks user, explorer SessionId, Medium integrity, Default desktop and UDP
 50000. Stop requests normal window close before a verified forced fallback.
-No Codex-shell persistent child, watchdog, product scheduler or automatic startup.
+No Codex-shell persistent child, watchdog or product scheduler. Product login
+startup is the separate HKCU Run value and never calls or modifies this launcher.
 
 Protocol v2 Sender restart is recognized by senderRunId on valid HEARTBEAT/DOWN.
 Android restart/redeployment retains the existing WPF PID, Runtime RunId, socket,
@@ -209,7 +227,7 @@ human visual and input-feel acceptance.
 
 No FIR/Second Order/filter, extra gestures, drag, right click, scroll, HID/driver,
 profiles, discovery/multi-device, generic reconnect frameworks, cloud/account/plugins,
-updates, tray/startup, charts/log viewer, theme selector or custom title bar.
+updates, tray, charts/log viewer, theme selector or custom title bar.
 
 ## Implementation verification (2026-09-09)
 
@@ -245,3 +263,29 @@ updates, tray/startup, charts/log viewer, theme selector or custom title bar.
   79 Windows tests passed. Live sensitivity, settings persistence, GUI Stop/Start,
   Android input acceptance and UDP 50000 were rechecked. Human visual acceptance
   passed for the first formal UI baseline.
+
+## Start with Windows verification (2026-09-09)
+
+- Final Release build: zero warnings/errors; automated suite: 110 passed, 0 failed.
+- The real HKCU value began absent. The final WPF toggle performed Enable,
+  Disable and Enable; reads confirmed the exact quoted current executable,
+  deletion, and final On state.
+- PID 20988 was stopped before the final build; its exit and UDP 50000 release
+  were confirmed. The independent interactive launcher started fresh PID 9088
+  as the current user in explorer Session 1, Medium integrity and Default desktop;
+  UDP `0.0.0.0:50000` belongs to PID 9088.
+- Receiver Stop/Start kept the WPF process, released/rebound UDP and recovered
+  Connected from the unchanged foreground Android Sender heartbeat. The runtime
+  log orders listener startup before sender admission and Connected presence.
+- Overview was captured and inspected at 860 x 600 DIP on the 200% DPI display.
+  The compact toggle is complete and the existing scroll layout remains usable.
+- A bounded second GUI launch displayed the single-instance notice, exited 0,
+  left one Receiver process, and did not change UDP ownership. GUI Android smoke
+  produced 29 native movement events and exactly one LEFT DOWN / LEFT UP.
+- Human validation passed three real Windows reboots: HKCU Run started the WPF
+  Receiver, Runtime started, UDP 50000 listened, Android connected, and RAW Mouse
+  and Single Tap worked. One transient input-loss episode occurred during the
+  first validation while WPF remained Connected, then recovered without restarting
+  Receiver, ReceiverRuntime or Android. It did not recur in the next two reboot
+  validations; its root cause remains unconfirmed and no speculative workaround
+  was added.

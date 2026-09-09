@@ -37,6 +37,18 @@ internal static class Program
         }
         using TextWriter log = OpenLog(logDirectory);
         if (launch.Mode != LaunchMode.Gui) return RunDevelopmentAsync(launch, log).GetAwaiter().GetResult();
+        using var instance = new Mutex(initiallyOwned: true, @"Local\rightpad.Receiver.Gui", out bool firstInstance);
+        if (!firstInstance)
+        {
+            MessageBox.Show("rightpad Receiver is already running.", "rightpad Receiver");
+            return 0;
+        }
+        try { return RunGui(launch, log); }
+        finally { instance.ReleaseMutex(); }
+    }
+
+    private static int RunGui(LaunchOptions launch, TextWriter log)
+    {
         string path = launch.SettingsPath ?? SettingsFileStore.DefaultPath;
         var loaded = SettingsFileStore.Load(path);
         var file = new SettingsFileStore(path);
@@ -45,7 +57,9 @@ internal static class Program
         var app = new App();
         app.InitializeComponent();
         log.WriteLine("application: mode=gui defaultPage=Motion");
-        return app.Run(new MainWindow(runtime, new SettingsViewModel(store, file, loaded.Warning), file));
+        string executable = Environment.ProcessPath ?? throw new InvalidOperationException("Current executable path is unavailable.");
+        var startup = new StartupViewModel(new(new WindowsStartupValueStore(), executable));
+        return app.Run(new MainWindow(runtime, new SettingsViewModel(store, file, loaded.Warning), startup, file));
     }
 
     private static TextWriter OpenLog(string? directory)

@@ -8,9 +8,12 @@
     </StackPanel></Border>
     <Border Style="{StaticResource Card}" Margin="0,12,0,0"><StackPanel MaxWidth="440" HorizontalAlignment="Left">
       <TextBlock Text="Receiver" Style="{StaticResource SectionTitle}"/>
-      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="32"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <TextBlock Text="Receiver" Style="{StaticResource Muted}"/><TextBlock Grid.Column="1" Text="{Binding Stats.RuntimeState}"/>
-        <Button Grid.Row="1" Grid.Column="1" Content="{Binding ActionText}" IsEnabled="{Binding CanToggle}" Click="ToggleReceiver" MinWidth="154" Margin="0,9,0,0" AutomationProperties.AutomationId="ToggleReceiver"><Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Style.Triggers><DataTrigger Binding="{Binding IsStopped}" Value="True"><Setter Property="Background" Value="{StaticResource BlueBrush}"/></DataTrigger></Style.Triggers></Style></Button.Style></Button>
+        <TextBlock Grid.Row="1" Text="Start with Windows" Style="{StaticResource Muted}"/>
+        <ToggleButton Grid.Row="1" Grid.Column="1" Style="{StaticResource CompactToggle}" IsChecked="{Binding Startup.Enabled, Mode=OneWay}" Checked="StartupChanged" Unchecked="StartupChanged" AutomationProperties.AutomationId="StartWithWindows" AutomationProperties.Name="Start with Windows"/>
+        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Startup.Notice}" Style="{StaticResource OptionalNotice}" Margin="0,4,0,0"/>
+        <Button Grid.Row="3" Grid.Column="1" Content="{Binding ActionText}" IsEnabled="{Binding CanToggle}" Click="ToggleReceiver" MinWidth="154" Margin="0,9,0,0" AutomationProperties.AutomationId="ToggleReceiver"><Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Style.Triggers><DataTrigger Binding="{Binding IsStopped}" Value="True"><Setter Property="Background" Value="{StaticResource BlueBrush}"/></DataTrigger></Style.Triggers></Style></Button.Style></Button>
       </Grid>
     </StackPanel></Border>
   </StackPanel>

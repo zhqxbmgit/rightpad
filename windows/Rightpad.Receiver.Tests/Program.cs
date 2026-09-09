@@ -126,7 +126,17 @@ internal static class Program
             ("button cancel queue / release / stale callback", LeftButtonControllerTests.CancelAndRace),
             ("button cancel failure propagates", Sync(LeftButtonControllerTests.CancelFailure)),
             ("run/disconnect held and queued button cleanup", PresenceTests.ButtonCleanupIntegration),
-            ("run cleanup LEFT UP failure becomes Runtime Error", PresenceTests.CleanupFailureIsRuntimeError)
+            ("run cleanup LEFT UP failure becomes Runtime Error", PresenceTests.CleanupFailureIsRuntimeError),
+            ("startup absent is Off", Sync(StartupTests.AbsentIsOff)),
+            ("startup current executable is On", Sync(StartupTests.CurrentExecutableIsOn)),
+            ("startup stale or wrong executable is Off", Sync(StartupTests.StaleOrWrongIsOff)),
+            ("startup enable writes current command", Sync(StartupTests.EnableWritesCurrentCommand)),
+            ("startup repeated enable is idempotent", Sync(StartupTests.EnableIsIdempotent)),
+            ("startup enable replaces stale path", Sync(StartupTests.EnableReplacesStalePath)),
+            ("startup disable deletes only rightpad value", Sync(StartupTests.DisableDeletesOnlyRightpadValue)),
+            ("startup disable absent is safe", Sync(StartupTests.DisableAbsentIsSafe)),
+            ("startup write failure leaves runtime running", StartupTests.WriteFailureDoesNotAffectRuntime),
+            ("startup command quoting and Unicode path", Sync(StartupTests.CommandQuotingHandlesSpacesAndUnicode))
         ];
 
         int failed = 0;

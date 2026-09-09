@@ -10,7 +10,8 @@ automatically listens on IPv4 `0.0.0.0:50000`. A matching .NET 8 Desktop Runtime
 is required for this framework-dependent build; no SDK, PowerShell, Task Scheduler
 or Codex is needed for daily use.
 
-- Overview: actual connection observations, traffic counters and one Start/Stop.
+- Overview: actual connection observations, traffic counters, a compact Start with
+  Windows toggle and one Start/Stop.
 - Motion: RAW text and independently editable X/Y sensitivity.
 - Tap: duration, axis-aligned movement threshold and click hold.
 - Diagnostics: actual Receiver counters/state only.
@@ -36,6 +37,21 @@ Settings auto-save after 500 ms to
 `%LocalAppData%\rightpad\settings.json`. Only the five input settings are stored.
 Missing/bad fields fall back to defaults; file errors do not stop input.
 Save failure is nonmodal and keeps the in-memory settings active.
+
+Start with Windows writes the current executable as a quoted command to
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value name
+`rightpad Receiver`. Registry is the source of truth; an absent, malformed,
+stale or different executable displays Off. Enabling repairs the value and
+disabling deletes only this value. Failures are nonmodal and never stop input.
+The setting is not stored in settings.json. A GUI-only named Mutex prevents a
+second manual GUI launch from creating another runtime or binding UDP 50000.
+The 2026-09-09 implementation check passed a warning-free Release build and all
+110 Windows tests, real WPF Enable/Disable/Enable with final On, GUI Stop/Start,
+200% DPI minimum layout, second-instance rejection, Protocol v2 recovery and
+native Android RAW/Single Tap smoke. Three real Windows reboot/login validations
+then passed. One transient input-loss observation during the first run recovered
+without restarting either side, did not recur in the next two runs, and has no
+confirmed root cause; no speculative workaround was added.
 
 ## Build and development launch
 
@@ -67,6 +83,10 @@ current user's explorer SessionId, Medium integrity and Default desktop.
 Persistent Receiver must not be a direct or indirect Codex-shell child: the
 previous launch method inherited KILL_ON_JOB_CLOSE. There is no fallback child
 launch, product service or watchdog.
+
+This `Rightpad Receiver Dev` Scheduled Task remains a Codex-only development
+harness. Product login startup uses only the HKCU Run value; the WPF application
+does not call the launcher or modify the development task.
 
 The independent wrapper explicitly retains/waits for the WinExe process handle.
 It writes receiver.log, start.json, receiver.json and exit evidence under ignored
@@ -197,10 +217,11 @@ Use the independent launcher if Windows itself needs to be started or updated.
   SendInput classes remain in Rightpad.Receiver.
 - Runtime/ReceiverRuntime.cs owns runs; RuntimeStatsSnapshot is the UI read model.
 - Settings contains immutable settings/store and JSON/debounce persistence.
+- Startup contains the small HKCU Run access boundary and source-of-truth logic.
 - App/MainWindow, four Views, NumericEditor and DarkTheme form the WPF surface.
-- MainViewModel, SettingsViewModel and RuntimeStatsViewModel share page state.
+- MainViewModel, SettingsViewModel, StartupViewModel and RuntimeStatsViewModel share page state.
 - Existing tests remain, plus settings/runtime/settings-boundary regression files.
 
 No filter, FIR/Second Order, Double Tap Drag, right click, scroll, HID/driver,
 profiles/discovery/multi-device, generic reconnect frameworks, cloud/accounts/plugins,
-tray/autostart, updates, graphs/log viewer, theme selector or custom title bar.
+tray, updates, graphs/log viewer, theme selector or custom title bar.

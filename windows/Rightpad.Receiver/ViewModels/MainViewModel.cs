@@ -4,7 +4,7 @@ namespace Rightpad.Receiver;
 
 internal enum ReceiverPage { Overview, Motion, Tap, Diagnostics }
 
-internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel settings) : ObservableModel
+internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel settings, StartupViewModel startup) : ObservableModel
 {
     private ReceiverPage currentPage = ReceiverPage.Motion;
     private bool busy;
@@ -12,6 +12,7 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
     private bool canToggle = true;
     public ReceiverPage CurrentPage { get => currentPage; set => Set(ref currentPage, value); }
     public SettingsViewModel Settings { get; } = settings;
+    public StartupViewModel Startup { get; } = startup;
     public RuntimeStatsViewModel Stats { get; } = new();
     public string ActionText => running ? "Stop Receiver" : "Start Receiver";
     public bool CanToggle => canToggle;
