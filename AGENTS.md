@@ -514,3 +514,78 @@ device is reachable through ADB, explicitly report that deployment and runtime
 recovery could not be completed. If Android requires a system-level installation
 confirmation that Codex cannot operate, stop only at that permission boundary,
 ask the user for that single confirmation, and then continue automatically.
+
+---
+
+# 19. Windows Receiver Change / Mandatory Restart and Verification Rule
+
+This is a permanent engineering rule. It applies whenever a completed change can
+alter the actual Windows Receiver runtime code or binary behavior, including but
+not limited to:
+
+- C# production code
+- WPF XAML
+- ResourceDictionary
+- View or ViewModel
+- Runtime
+- Settings
+- UDP or Protocol
+- Motion or Gesture
+- SendInput
+- Receiver project configuration
+- Receiver executable build output
+
+After any such change, Codex must complete this sequence:
+
+1. Complete the applicable build and tests.
+2. Stop the currently running old Receiver.
+3. Verify that the old Receiver process has exited.
+4. Verify that the old process has released UDP port 50000.
+5. Start the latest build through the project-approved independent interactive
+   launcher, normally `windows/tools/RightpadReceiverTask.ps1`.
+6. Never launch a persistent Receiver as a direct or indirect long-running child
+   of the Codex shell.
+7. Record and verify the new Receiver PID, or otherwise provide explicit evidence
+   that this is a new process instance running the latest build.
+8. Verify that the Receiver runs as the current user, in the interactive Session,
+   at Medium integrity, on the Default desktop.
+9. Verify that `0.0.0.0:50000` is owned by the new Receiver PID.
+10. If the Android rightpad app is currently available, wait for the existing
+    Protocol v2 heartbeat and verify the header transition from
+    `Waiting for Android` to `Connected`.
+11. Run the minimum end-to-end smoke check required by the change's scope.
+12. Only after all applicable checks pass may the Receiver change be reported as
+    verified or complete.
+
+`build succeeded`, `tests passed`, and `a new executable was generated` are each
+insufficient on their own. If a change affects actual Receiver runtime code, the
+old process must exit and the latest build must start. A Receiver that is already
+Connected, still has a PID, owns UDP 50000, or appears healthy does not waive this
+restart requirement. Do not attribute later runtime observations to the new code
+while a pre-change process is still running.
+
+The mandatory action is Stop -> verify exited and port released -> Start fresh.
+A new PID or equally explicit new-instance evidence is part of the verification.
+When it is unclear whether a change affects Receiver runtime behavior, perform
+the mandatory restart by default.
+
+The restart is not required for changes limited to:
+
+- documentation only
+- comments only
+- README only
+- test instruction files that do not participate in build or runtime
+- Git metadata
+
+Protocol v2 keeps the Android and Windows lifecycle rules separate. A Windows
+Receiver code change does not justify restarting Android. If Android remains in
+the foreground after the Receiver restart, its existing heartbeat must naturally
+drive `Waiting for Android` -> `Connected`; this is an important Receiver restart
+regression check. If one task changes both Android and Windows runtime code,
+restart the Receiver once after its final build, then keep that new Receiver
+instance running throughout the Android deployment/restart recovery checks.
+
+Continue using `windows/tools/RightpadReceiverTask.ps1` or an explicitly approved
+equivalent independent interactive launcher. Do not return to a persistent
+`Codex shell -> Start-Process -> Receiver` chain because it can inherit the Codex
+Windows Job lifetime and terminate unexpectedly.
