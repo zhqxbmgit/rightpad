@@ -12,4 +12,6 @@ internal sealed record RuntimeStatsSnapshot(long RunId, ReceiverState RuntimeSta
     long PresenceTimeouts = 0, long LastHeartbeatAtTicks = 0, long LastTouchDatagramAtTicks = 0,
     long LastAcceptedSampleAtTicks = 0, long MotionOutputEvents = 0, long LastMotionOutputAtTicks = 0,
     long SendInputSuccesses = 0, long SendInputFailures = 0,
-    long LastSuccessfulSendInputAtTicks = 0, long LastFailedSendInputAtTicks = 0);
+    long LastSuccessfulSendInputAtTicks = 0, long LastFailedSendInputAtTicks = 0,
+    long IntendedRelativeDxTotal = 0, long IntendedRelativeDyTotal = 0,
+    long IntendedAbsDxTotal = 0, long IntendedAbsDyTotal = 0);

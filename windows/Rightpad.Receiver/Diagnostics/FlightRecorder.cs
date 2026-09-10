@@ -43,6 +43,7 @@ internal sealed class FlightRecorder : IDisposable
     private readonly Func<long> monotonicNow;
     private readonly Func<DateTimeOffset> wallNow;
     private readonly Action<string>? reportError;
+    private readonly Func<Dictionary<string, object?>>? captureEnvironment;
     private readonly CancellationTokenSource cancellation = new();
     private readonly Task writerTask;
     private Task? snapshotTask;
@@ -52,14 +53,17 @@ internal sealed class FlightRecorder : IDisposable
     public bool Disabled => Volatile.Read(ref disabled) != 0;
 
     public FlightRecorder(IFlightRecordStorage storage, int queueCapacity = 256,
-        Func<long>? monotonicNow = null, Func<DateTimeOffset>? wallNow = null, Action<string>? reportError = null)
+        Func<long>? monotonicNow = null, Func<DateTimeOffset>? wallNow = null, Action<string>? reportError = null,
+        Func<Dictionary<string, object?>>? captureEnvironment = null)
     {
         this.storage = storage; this.monotonicNow = monotonicNow ?? Stopwatch.GetTimestamp;
         this.wallNow = wallNow ?? (() => DateTimeOffset.Now); this.reportError = reportError;
+        this.captureEnvironment = captureEnvironment;
         queue = new(queueCapacity); writerTask = Task.Run(WriteLoop);
     }
     public static FlightRecorder CreateDefault(Action<string>? reportError = null) =>
-        new(new RollingFlightRecordStorage(DefaultDirectory), reportError: reportError);
+        new(new RollingFlightRecordStorage(DefaultDirectory), reportError: reportError,
+            captureEnvironment: new WindowsInputEnvironmentSnapshot().Capture);
     public void StartSnapshots(Func<RuntimeStatsSnapshot> capture, TimeSpan? interval = null)
     {
         if (snapshotTask is not null) throw new InvalidOperationException("Snapshots already started.");
@@ -86,6 +90,15 @@ internal sealed class FlightRecorder : IDisposable
         v["inputTimeouts"] = s.InputTimeoutCount; v["activeTouchSessionId"] = s.ActiveTouchSessionId < 0 ? null : s.ActiveTouchSessionId;
         v["motionOutputEvents"] = s.MotionOutputEvents; v["sendInputSuccesses"] = s.SendInputSuccesses;
         v["sendInputFailures"] = s.SendInputFailures; v["lastError"] = s.LastError;
+        v["intendedRelativeDxTotal"] = s.IntendedRelativeDxTotal; v["intendedRelativeDyTotal"] = s.IntendedRelativeDyTotal;
+        v["intendedAbsDxTotal"] = s.IntendedAbsDxTotal; v["intendedAbsDyTotal"] = s.IntendedAbsDyTotal;
+        if (captureEnvironment is not null)
+        {
+            Dictionary<string, object?> environment;
+            try { environment = captureEnvironment(); }
+            catch (Exception e) { environment = WindowsInputEnvironmentSnapshot.Unavailable(e); }
+            foreach (var field in environment) v[field.Key] = field.Value;
+        }
         Enqueue(JsonSerializer.Serialize(v));
     }
     private Dictionary<string, object?> BaseRecord(string type, long? ticks = null) => new()

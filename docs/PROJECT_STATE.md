@@ -34,6 +34,30 @@ future incident, the user may recover control minutes later and report the
 approximate wall-clock time; Codex must first freeze the rolling evidence with
 `windows/tools/FreezeRightpadFlightRecorder.ps1` before considering active probes.
 
+Real CASE 5 was captured on 2026-09-10 (user-reported onset approximately
+11:38–11:39, exact onset uncertain): Touch/Accepted/Motion/SendInput continued,
+SendInputFailures stayed zero, and the user confirmed a visible, immobile cursor.
+Existing Windows history did not identify a root cause. The next diagnostic step
+adds read-only cursor, clip rectangle, virtual screen, cached foreground identity,
+input desktop and console session observations on the existing 1 Hz snapshot task,
+plus four intended relative movement counters at the SendInput boundary. No bug
+fix attempted. Root cause remains unconfirmed. No changes to RAW values, protocol,
+gesture behavior or Android. 1 Hz cannot rule out subsecond cursor repositioning;
+sampled movement cannot establish its source. See windows/README.md for fields and
+interpretation limits. Release build passed with 0 warnings/errors and all 133
+Windows tests passed. Section 19 replacement on 2026-09-10 verified old PID 12504
+exited and UDP 50000 was released, then launched fresh PID 17536 through the
+independent task as the current user, Session 2, Medium, Default. The unchanged
+Android Sender naturally restored Connected. Controlled RAW/tap smoke observed
+actual cursor movement and exactly one LEFT DOWN/UP; the user also reported normal
+RAW feel with no perceived regression. Baseline evidence is retained under ignored
+windows/test-results/cursor-witness-20260910/.
+The 4m46s baseline contained 287 continuous snapshots, successful cursor/clip/desktop
+reads, Default input desktop, matching console/Receiver Session 2, full-screen clip
+bounds and zero SendInput failures. Over 192s, whole-Receiver CPU averaged 0.138% of
+one logical core; Flight Recorder growth was approximately 1.66 KB/s. This is a
+normal-use baseline, not a throughput ceiling or a root-cause finding.
+
 Start with Windows automated verification (2026-09-09): Release build passed with
 0 warnings/errors and all 110 Windows tests passed. Real WPF Enable/Disable/Enable
 confirmed the exact HKCU command, deletion and final On state. The final fresh
@@ -578,7 +602,7 @@ Completed:
 
 Immediate:
 
-1. Run the diagnostic-only Flight Recorder during normal use and preserve the first real intermittent input-loss incident before probing
+1. Run the diagnostic-only Flight Recorder with cursor/input-environment witnesses during normal use; freeze the next real CASE 5 before probing
 2. Compare RAW directly against Moonlight Noir if further motion evaluation is needed
 3. Continue monitoring Single Tap feel and accidental clicks during normal use
 

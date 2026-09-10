@@ -51,6 +51,11 @@ internal sealed class WindowsMouseOutput
     public long AllFailedCalls => Interlocked.Read(ref allFailedCalls);
     public long LastSuccessfulAtTicks => Interlocked.Read(ref lastSuccessfulAtTicks);
     public long LastFailedAtTicks => Interlocked.Read(ref lastFailedAtTicks);
+    private long intendedRelativeDxTotal, intendedRelativeDyTotal, intendedAbsDxTotal, intendedAbsDyTotal;
+    public long IntendedRelativeDxTotal => Interlocked.Read(ref intendedRelativeDxTotal);
+    public long IntendedRelativeDyTotal => Interlocked.Read(ref intendedRelativeDyTotal);
+    public long IntendedAbsDxTotal => Interlocked.Read(ref intendedAbsDxTotal);
+    public long IntendedAbsDyTotal => Interlocked.Read(ref intendedAbsDyTotal);
     private readonly Func<long> monotonicNow;
     private readonly FlightRecorder? flightRecorder;
     private long leftDownSuccess, leftUpSuccess, leftButtonFailures;
@@ -101,6 +106,11 @@ internal sealed class WindowsMouseOutput
             Type = InputMouse,
             Data = new InputUnion { Mouse = new MouseInput { Dx = dx, Dy = dy, Flags = MouseMove } }
         };
+        // Count attempted relative input, including failed calls; never query Windows state here.
+        Interlocked.Add(ref intendedRelativeDxTotal, dx);
+        Interlocked.Add(ref intendedRelativeDyTotal, dy);
+        Interlocked.Add(ref intendedAbsDxTotal, Math.Abs((long)dx));
+        Interlocked.Add(ref intendedAbsDyTotal, Math.Abs((long)dy));
         uint inserted = send(1, ref input, InputSize);
         if (inserted != 1)
         {

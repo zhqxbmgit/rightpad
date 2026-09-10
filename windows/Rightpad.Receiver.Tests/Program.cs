@@ -150,7 +150,16 @@ internal static class Program
             ("flight queue overflow does not block input", FlightRecorderTests.QueueOverflowIsNonblocking),
             ("flight motion output counter / timestamp", Sync(FlightRecorderTests.MotionCounters)),
             ("flight SendInput counters / timestamps", Sync(FlightRecorderTests.SendInputCounters)),
-            ("flight runtime restart boundary", FlightRecorderTests.RuntimeRestartBoundary)
+            ("flight runtime restart boundary", FlightRecorderTests.RuntimeRestartBoundary),
+            ("witness intended counts / native fields / failure / int.MinValue", Sync(WindowsInputEnvironmentTests.IntendedCounts)),
+            ("witness round-trip absolute counts", Sync(WindowsInputEnvironmentTests.RoundTripCounts)),
+            ("witness zero and buttons do not count movement", Sync(WindowsInputEnvironmentTests.ZeroAndButtons)),
+            ("witness snapshot fields / event isolation", WindowsInputEnvironmentTests.SnapshotFields),
+            ("witness cursor read failure / next snapshot", Sync(WindowsInputEnvironmentTests.CursorFailure)),
+            ("witness clip read failure isolated", Sync(WindowsInputEnvironmentTests.ClipFailure)),
+            ("witness foreground PID cache / unavailable", Sync(WindowsInputEnvironmentTests.ForegroundCache)),
+            ("witness desktop read failure preserves input", WindowsInputEnvironmentTests.DesktopFailureDoesNotAffectInput),
+            ("witness environment failure preserves input and recorder", WindowsInputEnvironmentTests.EnvironmentFailureDoesNotAffectInput)
         ];
 
         int failed = 0;

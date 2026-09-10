@@ -139,6 +139,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             r.LastHeartbeatAtTicks, r.LastTouchDatagramAtTicks, r.LastAcceptedSampleAtTicks,
             motion?.OutputEvents ?? 0, motion?.LastOutputAtTicks ?? 0,
             mouse?.SuccessfulCalls ?? 0, mouse?.AllFailedCalls ?? 0,
-            mouse?.LastSuccessfulAtTicks ?? 0, mouse?.LastFailedAtTicks ?? 0);
+            mouse?.LastSuccessfulAtTicks ?? 0, mouse?.LastFailedAtTicks ?? 0,
+            mouse?.IntendedRelativeDxTotal ?? 0, mouse?.IntendedRelativeDyTotal ?? 0,
+            mouse?.IntendedAbsDxTotal ?? 0, mouse?.IntendedAbsDyTotal ?? 0);
     }
 }

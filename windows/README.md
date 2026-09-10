@@ -49,14 +49,55 @@ The Receiver continuously keeps diagnostic-only JSONL history under
 half to `flight-recorder.previous.log`. Each file is capped at approximately
 8 MiB (approximately 16 MiB total). A 1 Hz snapshot records the existing runtime,
 connection, transport, session, motion and SendInput counters plus monotonic ages;
-low-frequency lifecycle boundaries are event records. MOVE samples, coordinates
-and dx/dy trajectories are never persisted. The bounded queue and background
+low-frequency lifecycle boundaries are event records. Individual MOVE samples
+and per-sample dx/dy trajectories are never persisted. The bounded queue and background
 writer never block input; queue overflow drops diagnostics, and a storage failure
 disables recording without changing ReceiverRuntime state.
 
-This recorder is observability, not a bug fix. The intermittent state where the
-header remains Connected while input is inactive still has no confirmed root
-cause. After an incident, the user need not operate Windows within 60 seconds:
+The 2026-09-10 real CASE 5 capture established ongoing Touch, acceptance, Motion
+and successful SendInput calls while the user reported a visible, immobile cursor.
+Historical Windows logs did not identify a root cause. No bug fix attempted.
+Root cause remains unconfirmed.
+
+To distinguish SendInput accepted from actual cursor effect on the next incident,
+the existing 1 Hz snapshot task now adds these read-only witnesses:
+
+- `cursorReadSucceeded`, `cursorX/Y`, `cursorReadError` from GetCursorPos.
+- `clipReadSucceeded`, `clipLeft/Top/Right/Bottom`, `clipReadError` from GetClipCursor.
+- `virtualScreenLeft/Top/Width/Height` from GetSystemMetrics (76/77/78/79).
+- `foregroundPid` and cached `foregroundProcessName/Path/Integrity`. Process details
+  refresh only on PID changes; inaccessible values remain `Unavailable`, including
+  cached failures. This does not detect a PID reused entirely between samples.
+- `inputDesktopReadSucceeded`, `inputDesktopName`, `inputDesktopReadError` via
+  OpenInputDesktop/GetUserObjectInformation/CloseDesktop; `activeConsoleSessionId`
+  via WTSGetActiveConsoleSessionId, with `receiverSessionId` cached on first snapshot.
+- `intendedRelativeDxTotal/DyTotal` and `intendedAbsDxTotal/DyTotal`: four
+  Interlocked.Add operations immediately before a nonzero relative SendInput call.
+  Buttons and zero movement do not increment them. Failed attempts do; successes
+  and failures remain separate. Abs values widen to long before taking magnitude.
+
+Read failures leave null values and diagnostic errors (native Win32 error numbers
+where available); they neither stop input nor disable subsequent snapshots. No
+cursor visibility field, input hook, Raw Input, ETW, desktop switch, state mutation,
+retry loop or per-SendInput environment read is added. WPF does not query this helper.
+FreezeRightpadFlightRecorder.ps1 copies the expanded rolling log without changes.
+
+Interpret adjacent snapshots within one Receiver PID/RuntimeRunId. Growing absolute
+intended counts avoid cancellation during back-and-forth motion; counts are requested
+relative input units, not measured cursor pixels. Compare clip left/top/right/bottom
+with virtual left/top/(left+width)/(top+height) during analysis. A narrow clip while
+sampled positions stay fixed is evidence to investigate, not automatic attribution.
+Normal sampled clip bounds and stable foreground lower that specific suspicion;
+desktop/console-session changes provide a different concrete lead. Positions that
+change establish sampled Windows coordinate movement, not its input source or visual
+rendering. These fields are sequential observations, not an atomic system snapshot,
+and use the snapshot thread's existing DPI context without changing it.
+**1 Hz cannot rule out subsecond repositioning**, including move-then-return between
+samples. Unchanged coordinates do not prove no movement occurred within that second;
+unchanged virtual bounds do not exclude all monitor layout changes. No software,
+device or Windows component is automatically blamed by the recorder.
+
+After an incident, the user need not operate Windows within 60 seconds:
 once control is available, report the approximate time and run
 `windows/tools/FreezeRightpadFlightRecorder.ps1` first. It copies rolling logs to
 `windows/test-results/failure-captures/<timestamp>/` and captures read-only process,
