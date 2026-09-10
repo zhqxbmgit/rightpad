@@ -22,6 +22,7 @@ internal sealed class UdpReceiver : IDisposable
     private readonly RuntimeSettingsStore? settings;
     private readonly Action? cancelButtons;
     private readonly TextWriter output;
+    private readonly FlightRecorder? flightRecorder;
     private readonly HashSet<ulong> retiredRunIds = new();
     private SenderPresence presence = new();
     private long presenceTimeouts;
@@ -29,20 +30,24 @@ internal sealed class UdpReceiver : IDisposable
     private long clockOrigin;
     public SenderPresence Presence => Volatile.Read(ref presence);
     public long PresenceTimeouts => Interlocked.Read(ref presenceTimeouts);
-    private long inputTimeouts, lastAcceptedAtTicks, activeSession = -1;
+    private long inputTimeouts, lastAcceptedAtTicks, lastAcceptedSampleAtTicks, lastHeartbeatAtTicks;
+    private long lastTouchDatagramAtTicks, activeSession = -1;
     private IPAddress? lastRemoteIp;
 
     public IPEndPoint LocalEndpoint { get; }
     public PacketStatistics Statistics { get; } = new();
     public long InputTimeouts => Interlocked.Read(ref inputTimeouts);
     public long LastAcceptedAtTicks => Interlocked.Read(ref lastAcceptedAtTicks);
+    public long LastAcceptedSampleAtTicks => Interlocked.Read(ref lastAcceptedSampleAtTicks);
+    public long LastHeartbeatAtTicks => Interlocked.Read(ref lastHeartbeatAtTicks);
+    public long LastTouchDatagramAtTicks => Interlocked.Read(ref lastTouchDatagramAtTicks);
     public long ActiveTouchSessionId => Interlocked.Read(ref activeSession);
     public string? LastRemoteIp => Volatile.Read(ref lastRemoteIp)?.ToString();
 
     // Endpoint and timeout injection are for loopback tests, not user configuration.
     public UdpReceiver(IPEndPoint endpoint, TextWriter output, TimeSpan? timeout = null,
         TouchSessionProcessor? motion = null, bool detailedLogging = true, GestureProcessor? gesture = null,
-        RuntimeSettingsStore? settings = null, Action? cancelButtons = null)
+        RuntimeSettingsStore? settings = null, Action? cancelButtons = null, FlightRecorder? flightRecorder = null)
     {
         inputTimeout = timeout ?? InputTimeout;
         if (inputTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
@@ -54,7 +59,9 @@ internal sealed class UdpReceiver : IDisposable
         this.settings = settings;
         this.cancelButtons = cancelButtons;
         this.output = output;
+        this.flightRecorder = flightRecorder;
         logger = new RawSampleLogger(output, detailedLogging);
+        flightRecorder?.Event("udp_bound", ("endpoint", LocalEndpoint.ToString()));
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -64,6 +71,7 @@ internal sealed class UdpReceiver : IDisposable
         try
         {
             logger.Listening(LocalEndpoint);
+            flightRecorder?.Event("presence_waiting");
             while (!cancellationToken.IsCancellationRequested)
             {
                 long now = Stopwatch.GetTimestamp();
@@ -99,8 +107,7 @@ internal sealed class UdpReceiver : IDisposable
         }
         finally
         {
-            gesture?.Reset();
-            motion?.Reset();
+            ClearInput("receiver_stop");
             Interlocked.Exchange(ref activeSession, -1);
             socket.Dispose();
             logger.Stats(Statistics);
@@ -130,7 +137,8 @@ internal sealed class UdpReceiver : IDisposable
         {
             Volatile.Write(ref presence, p with { Connected = false });
             Interlocked.Increment(ref presenceTimeouts);
-            ClearInput();
+            flightRecorder?.Event("presence_timeout", ("senderRunId", $"{p.RunId:X16}"));
+            ClearInput("presence_timeout");
             output.WriteLine($"presence: status=disconnected senderRunId={p.RunId:X16} timeouts={PresenceTimeouts}");
         }
     }
@@ -151,13 +159,17 @@ internal sealed class UdpReceiver : IDisposable
     private void ProcessValid(TouchPacket packet, IPEndPoint remote, long now, double elapsedMs)
     {
         var h = packet.Header;
+        if (h.EventType != TouchEventType.Heartbeat) Interlocked.Exchange(ref lastTouchDatagramAtTicks, now);
         var p = Presence;
         if (h.SenderRunId != p.RunId)
         {
             if (retiredRunIds.Contains(h.SenderRunId)) { Statistics.RecordOutdatedRun(); return; }
             if (h.EventType is not (TouchEventType.Down or TouchEventType.Heartbeat)) return;
             if (p.RunId is ulong old) retiredRunIds.Add(old);
-            ClearInput();
+            string runEvent = p.RunId is null ? "sender_run_established" : "sender_run_changed";
+            flightRecorder?.Event(runEvent, ("previousSenderRunId", p.RunId is ulong oldRun ? $"{oldRun:X16}" : null),
+                ("senderRunId", $"{h.SenderRunId:X16}"), ("trigger", h.EventType.ToString()));
+            ClearInput("sender_run_change");
             Statistics.ResetSequence();
             touchDeadline = null;
             Interlocked.Exchange(ref lastAcceptedAtTicks, 0);
@@ -167,6 +179,7 @@ internal sealed class UdpReceiver : IDisposable
         if (h.EventType == TouchEventType.Heartbeat)
         {
             Statistics.RecordHeartbeat();
+            Interlocked.Exchange(ref lastHeartbeatAtTicks, now);
             RecordPresence(remote, now);
             return;
         }
@@ -176,6 +189,7 @@ internal sealed class UdpReceiver : IDisposable
             RecordPresence(remote, now);
             touchDeadline = now + Ticks(inputTimeout);
             Interlocked.Exchange(ref lastAcceptedAtTicks, now);
+            Interlocked.Exchange(ref lastAcceptedSampleAtTicks, now);
             var snapshot = settings?.Current;
             if (snapshot is null) { motion?.Process(packet); gesture?.Process(packet); }
             else
@@ -187,9 +201,15 @@ internal sealed class UdpReceiver : IDisposable
         }
         logger.Packet(elapsedMs, remote, packet, observation);
         if (observation.Accepted && h.EventType == TouchEventType.Down)
+        {
             output.WriteLine($"touch_start: senderRunId={h.SenderRunId:X16} sequence={h.Sequence} sessionId={h.SessionId}");
+            flightRecorder?.Event("touch_session_established", ("senderRunId", $"{h.SenderRunId:X16}"), ("sessionId", h.SessionId));
+        }
         if (observation.Accepted && h.EventType == TouchEventType.Up && motion is not null)
+        {
             output.WriteLine($"touch_end: senderRunId={h.SenderRunId:X16} sequence={h.Sequence} outputEvents={motion.OutputEvents} totalDx={motion.TotalDx} totalDy={motion.TotalDy} clicksTriggered={gesture?.ClicksTriggered ?? 0}");
+            flightRecorder?.Event("touch_session_reset", ("reason", "up"), ("sessionId", h.SessionId));
+        }
     }
 
     private void RecordPresence(IPEndPoint remote, long now)
@@ -198,22 +218,27 @@ internal sealed class UdpReceiver : IDisposable
         if (!remote.Address.Equals(lastRemoteIp)) Volatile.Write(ref lastRemoteIp, remote.Address);
         string ip = LastRemoteIp!;
         Volatile.Write(ref presence, new(p.RunId, now, true, ip));
-        if (!p.Connected) output.WriteLine($"presence: status=connected senderRunId={p.RunId:X16} remote={ip}");
+        if (!p.Connected)
+        {
+            output.WriteLine($"presence: status=connected senderRunId={p.RunId:X16} remote={ip}");
+            flightRecorder?.Event("presence_connected", ("senderRunId", $"{p.RunId:X16}"), ("remote", ip));
+        }
     }
 
-    private void ClearInput()
+    private void ClearInput(string reason)
     {
+        long session = ActiveTouchSessionId;
         motion?.Reset();
         gesture?.Reset();
         Interlocked.Exchange(ref activeSession, -1);
         cancelButtons?.Invoke();
+        if (session >= 0) flightRecorder?.Event("touch_session_reset", ("reason", reason), ("sessionId", session));
     }
     private static long Ticks(TimeSpan time) => (long)(time.TotalSeconds * Stopwatch.Frequency);
 
     public void Dispose()
     {
-        gesture?.Reset();
         socket.Dispose();
-        motion?.Reset();
+        ClearInput("dispose");
     }
 }

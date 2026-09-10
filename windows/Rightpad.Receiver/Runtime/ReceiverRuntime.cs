@@ -4,7 +4,8 @@ using System.Net;
 namespace Rightpad.Receiver;
 
 internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter output,
-    IPEndPoint? endpoint = null, Func<WindowsMouseOutput>? mouseFactory = null, bool rawMouse = true)
+    IPEndPoint? endpoint = null, Func<WindowsMouseOutput>? mouseFactory = null, bool rawMouse = true,
+    FlightRecorder? flightRecorder = null)
 {
     private readonly SemaphoreSlim lifecycle = new(1, 1);
     private Run? current;
@@ -19,6 +20,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         public readonly TaskCompletionSource<bool> Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task Task = Task.CompletedTask;
         public UdpReceiver? Receiver;
+        public WindowsMouseOutput? Mouse;
+        public TouchSessionProcessor? Motion;
         public int State = (int)ReceiverState.Starting;
         public string? Error;
     }
@@ -72,8 +75,11 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         try
         {
             var initial = settings.Current;
-            mouse = rawMouse ? (mouseFactory?.Invoke() ?? new WindowsMouseOutput()) : null;
+            flightRecorder?.Event("runtime_start", ("runtimeRunId", run.Id));
+            mouse = rawMouse ? (mouseFactory?.Invoke() ?? new WindowsMouseOutput(flightRecorder)) : null;
             motion = mouse is null ? null : new(mouse.Move, initial.SensitivityX, initial.SensitivityY);
+            Volatile.Write(ref run.Mouse, mouse);
+            Volatile.Write(ref run.Motion, motion);
             buttons = mouse is null ? null : new(mouse.LeftDown, mouse.LeftUp, output.WriteLine,
                 run.Cancellation.Cancel, initial.ClickHoldMs);
             // Hold belongs to the request, which can occur after the packet's motion output.
@@ -83,7 +89,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 output.WriteLine(FormattableString.Invariant($"gesture: singleTap=enabled tapMaxDurationMs={initial.TapMaxDurationMs} tapMovementThresholdPx={initial.TapMovementThresholdPx} clickHoldMs={initial.ClickHoldMs}"));
             var receiver = new UdpReceiver(endpoint ?? new(IPAddress.Any, UdpReceiver.Port), output,
                 motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings,
-                cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease);
+                cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder);
             Volatile.Write(ref run.Receiver, receiver);
             Volatile.Write(ref run.State, (int)ReceiverState.Running);
             run.Started.TrySetResult(true);
@@ -93,6 +99,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         {
             Volatile.Write(ref run.Error, e.Message);
             output.WriteLine($"receiver_error: {e.Message}");
+            flightRecorder?.Event("runtime_error", ("runtimeRunId", run.Id), ("error", e.Message));
         }
         finally
         {
@@ -109,6 +116,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 output.WriteLine($"button_stats: leftDownSuccess={mouse.LeftDownSuccess} leftUpSuccess={mouse.LeftUpSuccess} leftButtonFailures={mouse.LeftButtonFailures}");
             }
             Volatile.Write(ref run.State, (int)(run.Error is null ? ReceiverState.Stopped : ReceiverState.Error));
+            flightRecorder?.Event("runtime_stop", ("runtimeRunId", run.Id), ("error", Volatile.Read(ref run.Error)));
             run.Started.TrySetResult(false);
         }
     }
@@ -121,10 +129,16 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         var r = Volatile.Read(ref run.Receiver);
         if (r is null) return new(run.Id, state, LastError: Volatile.Read(ref run.Error));
         var s = r.Statistics;
+        var motion = Volatile.Read(ref run.Motion);
+        var mouse = Volatile.Read(ref run.Mouse);
         return new(run.Id, state, r.LastAcceptedAtTicks, s.ReceivedPackets, s.AcceptedPackets,
             s.AcceptedSamples, s.SequenceGapEstimate, s.OldPackets, s.DuplicatePackets,
             s.InvalidPackets, r.InputTimeouts, state == ReceiverState.Running ? r.ActiveTouchSessionId : -1,
             r.LastRemoteIp, rawMouse ? "SendInput" : "None (diagnostics)", Volatile.Read(ref run.Error),
-            r.Presence, s.HeartbeatPackets, s.OutdatedRunPackets, r.PresenceTimeouts);
+            r.Presence, s.HeartbeatPackets, s.OutdatedRunPackets, r.PresenceTimeouts,
+            r.LastHeartbeatAtTicks, r.LastTouchDatagramAtTicks, r.LastAcceptedSampleAtTicks,
+            motion?.OutputEvents ?? 0, motion?.LastOutputAtTicks ?? 0,
+            mouse?.SuccessfulCalls ?? 0, mouse?.AllFailedCalls ?? 0,
+            mouse?.LastSuccessfulAtTicks ?? 0, mouse?.LastFailedAtTicks ?? 0);
     }
 }

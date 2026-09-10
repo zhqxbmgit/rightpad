@@ -141,7 +141,16 @@ internal static class Program
             ("tray explicit Exit allows Closing", Sync(TrayApplicationBehaviorTests.ExplicitExitAllowsClosing)),
             ("tray Exit runtime/settings/resource cleanup", TrayApplicationBehaviorTests.ExitCleansUp),
             ("tray restore hidden window", Sync(TrayApplicationBehaviorTests.RestoreHidden)),
-            ("tray restore minimized window", Sync(TrayApplicationBehaviorTests.RestoreMinimized))
+            ("tray restore minimized window", Sync(TrayApplicationBehaviorTests.RestoreMinimized)),
+            ("flight snapshot formatting / timestamps / counters", FlightRecorderTests.FormattingAndTimestamps),
+            ("flight periodic snapshot uses runtime capture", FlightRecorderTests.PeriodicSnapshot),
+            ("flight event formatting", FlightRecorderTests.EventFormatting),
+            ("flight rolling files respect size cap", Sync(FlightRecorderTests.Rotation)),
+            ("flight writer failure does not affect runtime", FlightRecorderTests.WriterFailureDoesNotAffectRuntime),
+            ("flight queue overflow does not block input", FlightRecorderTests.QueueOverflowIsNonblocking),
+            ("flight motion output counter / timestamp", Sync(FlightRecorderTests.MotionCounters)),
+            ("flight SendInput counters / timestamps", Sync(FlightRecorderTests.SendInputCounters)),
+            ("flight runtime restart boundary", FlightRecorderTests.RuntimeRestartBoundary)
         ];
 
         int failed = 0;

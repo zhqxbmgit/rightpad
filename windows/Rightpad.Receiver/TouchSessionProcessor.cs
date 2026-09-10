@@ -1,6 +1,9 @@
+using System.Diagnostics;
+
 namespace Rightpad.Receiver;
 
-internal sealed class TouchSessionProcessor(Action<int, int> output, double sensitivityX = 1, double sensitivityY = 1)
+internal sealed class TouchSessionProcessor(Action<int, int> output, double sensitivityX = 1, double sensitivityY = 1,
+    Func<long>? monotonicNow = null)
 {
     private readonly RawMotionProcessor motion = new(sensitivityX, sensitivityY);
     private double previousX;
@@ -9,7 +12,9 @@ internal sealed class TouchSessionProcessor(Action<int, int> output, double sens
     public uint? ActiveSessionId { get; private set; }
     public long ProcessedMotionSamples { get; private set; }
     public long IgnoredSessionPackets { get; private set; }
-    public long OutputEvents { get; private set; }
+    private long outputEvents, lastOutputAtTicks;
+    public long OutputEvents => Interlocked.Read(ref outputEvents);
+    public long LastOutputAtTicks => Interlocked.Read(ref lastOutputAtTicks);
     public long TotalDx { get; private set; }
     public long TotalDy { get; private set; }
 
@@ -46,7 +51,8 @@ internal sealed class TouchSessionProcessor(Action<int, int> output, double sens
                 ProcessedMotionSamples++;
                 if (movement.X == 0 && movement.Y == 0) continue;
                 output(movement.X, movement.Y);
-                OutputEvents++;
+                Interlocked.Increment(ref outputEvents);
+                Interlocked.Exchange(ref lastOutputAtTicks, (monotonicNow ?? Stopwatch.GetTimestamp)());
                 TotalDx += movement.X;
                 TotalDy += movement.Y;
             }

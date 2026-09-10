@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Rightpad.Receiver;
@@ -43,8 +44,15 @@ internal sealed class WindowsMouseOutput
     private readonly Func<int> getError;
     private static readonly int InputSize = Marshal.SizeOf<NativeInput>();
 
-    public long SuccessfulEvents { get; private set; }
-    public long FailedCalls { get; private set; }
+    private long successfulEvents, failedCalls, successfulCalls, allFailedCalls, lastSuccessfulAtTicks, lastFailedAtTicks;
+    public long SuccessfulEvents => Interlocked.Read(ref successfulEvents);
+    public long FailedCalls => Interlocked.Read(ref failedCalls);
+    public long SuccessfulCalls => Interlocked.Read(ref successfulCalls);
+    public long AllFailedCalls => Interlocked.Read(ref allFailedCalls);
+    public long LastSuccessfulAtTicks => Interlocked.Read(ref lastSuccessfulAtTicks);
+    public long LastFailedAtTicks => Interlocked.Read(ref lastFailedAtTicks);
+    private readonly Func<long> monotonicNow;
+    private readonly FlightRecorder? flightRecorder;
     private long leftDownSuccess, leftUpSuccess, leftButtonFailures;
     public long LeftDownSuccess => Interlocked.Read(ref leftDownSuccess);
     public long LeftUpSuccess => Interlocked.Read(ref leftUpSuccess);
@@ -65,20 +73,24 @@ internal sealed class WindowsMouseOutput
         {
             int error = getError();
             Interlocked.Increment(ref leftButtonFailures);
+            RecordFailure("button", inserted, error);
             throw new Win32Exception(error,
                 $"SendInput button={(flags == MouseLeftDown ? "LEFT_DOWN" : "LEFT_UP")} inserted={inserted} expected=1 win32Error={error}. Cause may not be reported by Windows (including UIPI).");
         }
+        RecordSuccess();
         if (flags == MouseLeftDown) Interlocked.Increment(ref leftDownSuccess);
         else Interlocked.Increment(ref leftUpSuccess);
     }
 
-    public WindowsMouseOutput() : this(SendInput, Marshal.GetLastPInvokeError) { }
+    public WindowsMouseOutput(FlightRecorder? flightRecorder = null) : this(SendInput, Marshal.GetLastPInvokeError, null, flightRecorder) { }
 
     // Small native-call seam for verifying failure handling without injecting input.
-    internal WindowsMouseOutput(SendInputCall send, Func<int> getError)
+    internal WindowsMouseOutput(SendInputCall send, Func<int> getError, Func<long>? monotonicNow = null, FlightRecorder? flightRecorder = null)
     {
         this.send = send;
         this.getError = getError;
+        this.monotonicNow = monotonicNow ?? Stopwatch.GetTimestamp;
+        this.flightRecorder = flightRecorder;
     }
 
     public void Move(int dx, int dy)
@@ -93,10 +105,18 @@ internal sealed class WindowsMouseOutput
         if (inserted != 1)
         {
             int error = getError();
-            FailedCalls++;
+            Interlocked.Increment(ref failedCalls);
+            RecordFailure("move", inserted, error);
             throw new Win32Exception(error,
                 $"SendInput inserted={inserted} expected=1 win32Error={error}. Cause may not be reported by Windows (including UIPI).");
         }
-        SuccessfulEvents++;
+        Interlocked.Increment(ref successfulEvents);
+        RecordSuccess();
+    }
+    private void RecordSuccess() { Interlocked.Increment(ref successfulCalls); Interlocked.Exchange(ref lastSuccessfulAtTicks, monotonicNow()); }
+    private void RecordFailure(string kind, uint inserted, int error)
+    {
+        Interlocked.Increment(ref allFailedCalls); Interlocked.Exchange(ref lastFailedAtTicks, monotonicNow());
+        flightRecorder?.Event("send_input_failure", ("kind", kind), ("inserted", inserted), ("win32Error", error));
     }
 }

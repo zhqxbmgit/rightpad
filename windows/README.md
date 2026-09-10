@@ -42,6 +42,28 @@ Settings auto-save after 500 ms to
 Missing/bad fields fall back to defaults; file errors do not stop input.
 Save failure is nonmodal and keeps the in-memory settings active.
 
+## Intermittent input-loss Flight Recorder
+
+The Receiver continuously keeps diagnostic-only JSONL history under
+`%LocalAppData%\rightpad\diagnostics\flight-recorder.log`, rotating the older
+half to `flight-recorder.previous.log`. Each file is capped at approximately
+8 MiB (approximately 16 MiB total). A 1 Hz snapshot records the existing runtime,
+connection, transport, session, motion and SendInput counters plus monotonic ages;
+low-frequency lifecycle boundaries are event records. MOVE samples, coordinates
+and dx/dy trajectories are never persisted. The bounded queue and background
+writer never block input; queue overflow drops diagnostics, and a storage failure
+disables recording without changing ReceiverRuntime state.
+
+This recorder is observability, not a bug fix. The intermittent state where the
+header remains Connected while input is inactive still has no confirmed root
+cause. After an incident, the user need not operate Windows within 60 seconds:
+once control is available, report the approximate time and run
+`windows/tools/FreezeRightpadFlightRecorder.ps1` first. It copies rolling logs to
+`windows/test-results/failure-captures/<timestamp>/` and captures read-only process,
+session/integrity/desktop, UDP, foreground process, Mouse/HID, Sunshine and Android
+ADB/logcat state. It does not restart, inject input, modify Bluetooth/network/
+Registry, or run an active probe.
+
 Start with Windows writes the current executable as a quoted command to
 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value name
 `rightpad Receiver`. Registry is the source of truth; an absent, malformed,

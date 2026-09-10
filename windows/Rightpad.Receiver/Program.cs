@@ -49,17 +49,21 @@ internal static class Program
 
     private static int RunGui(LaunchOptions launch, TextWriter log)
     {
+        using var flightRecorder = FlightRecorder.CreateDefault(log.WriteLine);
+        flightRecorder.Event("receiver_process_start", ("mode", "gui"));
         string path = launch.SettingsPath ?? SettingsFileStore.DefaultPath;
         var loaded = SettingsFileStore.Load(path);
         var file = new SettingsFileStore(path);
         var store = new RuntimeSettingsStore(loaded.Settings);
-        var runtime = new ReceiverRuntime(store, log);
+        var runtime = new ReceiverRuntime(store, log, flightRecorder: flightRecorder);
+        flightRecorder.StartSnapshots(runtime.CaptureSnapshot);
         var app = new App();
         app.InitializeComponent();
         log.WriteLine("application: mode=gui defaultPage=Motion");
         string executable = Environment.ProcessPath ?? throw new InvalidOperationException("Current executable path is unavailable.");
         var startup = new StartupViewModel(new(new WindowsStartupValueStore(), executable));
-        return app.Run(new MainWindow(runtime, new SettingsViewModel(store, file, loaded.Warning), startup, file));
+        try { return app.Run(new MainWindow(runtime, new SettingsViewModel(store, file, loaded.Warning), startup, file)); }
+        finally { flightRecorder.Event("receiver_shutdown", ("mode", "gui")); }
     }
 
     private static TextWriter OpenLog(string? directory)
@@ -71,9 +75,13 @@ internal static class Program
 
     private static async Task<int> RunDevelopmentAsync(LaunchOptions launch, TextWriter log)
     {
+        using var flightRecorder = FlightRecorder.CreateDefault(log.WriteLine);
+        flightRecorder.Event("receiver_process_start", ("mode", launch.Mode.ToString()));
         var o = launch.Input;
         var store = new RuntimeSettingsStore(new(o.SensitivityX, o.SensitivityY, o.TapMaxDurationMs, o.TapMovementThresholdPx, o.ClickHoldMs));
-        var runtime = new ReceiverRuntime(store, log, rawMouse: launch.Mode == LaunchMode.RawMouse);
+        var runtime = new ReceiverRuntime(store, log, rawMouse: launch.Mode == LaunchMode.RawMouse,
+            flightRecorder: flightRecorder);
+        flightRecorder.StartSnapshots(runtime.CaptureSnapshot);
         using var cancellation = new CancellationTokenSource();
         ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
         Console.CancelKeyPress += cancel;
@@ -84,7 +92,11 @@ internal static class Program
             await runtime.StopAsync().ConfigureAwait(false);
             return runtime.CaptureSnapshot().RuntimeState == ReceiverState.Error ? 1 : 0;
         }
-        finally { Console.CancelKeyPress -= cancel; }
+        finally
+        {
+            flightRecorder.Event("receiver_shutdown", ("mode", launch.Mode.ToString()));
+            Console.CancelKeyPress -= cancel;
+        }
     }
 
     internal static LaunchOptions ParseLaunchArguments(string[] args)

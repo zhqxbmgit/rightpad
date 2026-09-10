@@ -26,6 +26,14 @@ performs runtime cleanup, final settings flush, tray disposal and shutdown.
 Minimize remains the standard taskbar minimize, and login startup still shows
 the window normally.
 
+Intermittent Connected-but-input-inactive root cause remains unconfirmed. A
+diagnostic-only Flight Recorder now keeps low-frequency, size-bounded history of
+the Receiver's UDP → acceptance → session → motion → SendInput chain. It does not
+reset, retry, reconnect, restart or otherwise change input behavior. After a
+future incident, the user may recover control minutes later and report the
+approximate wall-clock time; Codex must first freeze the rolling evidence with
+`windows/tools/FreezeRightpadFlightRecorder.ps1` before considering active probes.
+
 Start with Windows automated verification (2026-09-09): Release build passed with
 0 warnings/errors and all 110 Windows tests passed. Real WPF Enable/Disable/Enable
 confirmed the exact HKCU command, deletion and final On state. The final fresh
@@ -570,8 +578,9 @@ Completed:
 
 Immediate:
 
-1. Compare RAW directly against Moonlight Noir if further motion evaluation is needed
-2. Continue monitoring Single Tap feel and accidental clicks during normal use
+1. Run the diagnostic-only Flight Recorder during normal use and preserve the first real intermittent input-loss incident before probing
+2. Compare RAW directly against Moonlight Noir if further motion evaluation is needed
+3. Continue monitoring Single Tap feel and accidental clicks during normal use
 
 Evaluate:
 
