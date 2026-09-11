@@ -29,7 +29,7 @@ internal sealed class RawMotionProcessor
         if (!double.IsFinite(integerX) || !double.IsFinite(integerY) ||
             integerX < int.MinValue || integerX > int.MaxValue ||
             integerY < int.MinValue || integerY > int.MaxValue)
-            throw new OverflowException("RAW movement cannot be represented by SendInput int32 deltas.");
+            throw new OverflowException("RAW movement cannot be represented by int32 relative deltas.");
 
         ResidualX = totalX - integerX;
         ResidualY = totalY - integerY;

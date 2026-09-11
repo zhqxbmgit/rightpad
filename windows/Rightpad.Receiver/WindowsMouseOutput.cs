@@ -4,8 +4,14 @@ using System.Runtime.InteropServices;
 
 namespace Rightpad.Receiver;
 
-internal sealed class WindowsMouseOutput
+internal sealed class WindowsMouseOutput : IMouseOutput
 {
+    public string BackendName => "SendInput";
+    public MouseOutputStats Stats => new(SuccessfulEvents, FailedCalls, LeftDownSuccess, LeftUpSuccess,
+        LeftButtonFailures, SuccessfulCalls, AllFailedCalls, LastSuccessfulAtTicks, LastFailedAtTicks,
+        IntendedRelativeDxTotal, IntendedRelativeDyTotal, IntendedAbsDxTotal, IntendedAbsDyTotal);
+    // LeftButtonController owns SendInput button release; this backend has no native lifetime.
+    public void Dispose() { }
     internal const uint InputMouse = 0;
     internal const uint MouseMove = 0x0001;
     internal const uint MouseLeftDown = 0x0002;

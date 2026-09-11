@@ -1,6 +1,6 @@
 # rightpad Project State
 
-Updated: 2026-09-09
+Updated: 2026-09-11
 
 ## 1. Current Phase
 
@@ -10,6 +10,14 @@ Protocol v2 — senderRunId, foreground heartbeat and explicit connection state.
 WPF Receiver UI v1 is the committed/accepted foundation (`358a2729`).
 Protocol v2 connection behavior and RAW/Single Tap regression have completed
 human acceptance.
+
+Virtual HID Mouse POC passed with libvirtualhid commit
+`6fdb8bd4de3b68d96c30e5303ac2ebb333c09746`, driver `2026.905.2300.20` and an
+active lifetime license. A Medium-integrity Receiver produced Move and Single Tap
+in a High-integrity foreground through a Raw Input-visible rightpad-owned mouse,
+without SendInput fallback or an obvious subjective regression. SendInput remains
+the production/default backend. Next step: formal SendInput vs Virtual HID A/B
+measurement.
 
 Start with Windows is implemented in the WPF Overview Receiver card. It uses the
 current-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value
@@ -332,9 +340,10 @@ evidence; the full v1 layout is preserved in INPUT_PROTOCOL.md.
 - SendInput relative mouse backend
 - Single Tap recognition and locally timed SendInput left click
 
-当前 Prototype backend：SendInput。
+当前 production/default backend：SendInput。
 
-Virtual HID：not implemented。只有真实游戏兼容性证明需要时才考虑。
+Virtual HID Mouse POC：passed；libvirtualhid remains an explicit development-only
+backend pending formal SendInput vs Virtual HID A/B measurement.
 
 ---
 
@@ -597,6 +606,8 @@ Completed:
 - WPF Receiver UI v1 implementation — single-process GUI, automatic Start, runtime settings, persistence and diagnostics; accepted as the first formal UI baseline
 - Start with Windows implementation — current-user HKCU Run toggle with Registry source-of-truth state and GUI single-instance guard; real Windows reboot/login acceptance passed
 - Minimal Receiver tray lifecycle — X hides without stopping input, Open restores, and tray Exit performs the existing orderly shutdown
+- Virtual HID Mouse POC — libvirtualhid backend, Raw Input identity, lifecycle,
+  Android E2E and Medium Receiver → High foreground human acceptance passed
 
 ---
 
@@ -604,9 +615,10 @@ Completed:
 
 Immediate:
 
-1. Run the diagnostic-only Flight Recorder with cursor/input-environment witnesses during normal use; freeze the next real CASE 5 before probing
-2. Compare RAW directly against Moonlight Noir if further motion evaluation is needed
-3. Continue monitoring Single Tap feel and accidental clicks during normal use
+1. Run the formal SendInput vs Virtual HID A/B measurement
+2. Run the diagnostic-only Flight Recorder with cursor/input-environment witnesses during normal use; freeze the next real CASE 5 before probing
+3. Compare RAW directly against Moonlight Noir if further motion evaluation is needed
+4. Continue monitoring Single Tap feel and accidental clicks during normal use
 
 Evaluate:
 
@@ -628,8 +640,8 @@ Do not implement yet:
 
 - Motion filter
 - Double Tap Drag (Single Tap left-click implemented)
-- Virtual HID
-- driver
+- Virtual HID production adoption (POC passed; formal A/B pending)
+- production driver/backend decision
 - game profiles
 - network optimization
 - generic reconnect / handshake frameworks
@@ -642,21 +654,13 @@ These are deferred, not forgotten.
 
 ## 21. Next Decision Point
 
-The next architectural decision depends on RAW human testing.
+The next architectural decision is the production mouse backend. Run a formal,
+controlled SendInput vs Virtual HID A/B measurement covering gaming compatibility,
+Raw Input behavior, integrity boundaries, latency, jitter, stability and human
+feel. Keep SendInput as the default until that evidence supports a change.
 
-Possible result A: RAW is already sufficiently good. Then only minimal conditioning should be considered.
-
-Possible result B: RAW shows clear speed ripple, jitter, batching/pulse feeling, or instability. Then create a controlled Motion Laboratory and compare:
-
-```text
-RAW
-vs
-Short FIR
-vs
-modified second-order model
-```
-
-Do not implement a complicated filter before this evidence exists.
+Motion-filter selection remains separate and evidence-driven. Do not implement a
+complicated filter before RAW measurements demonstrate a specific need.
 
 ## Maintenance Rule
 

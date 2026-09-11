@@ -26,7 +26,7 @@ internal static class RuntimeTests
         public bool FailNextMove;
         public Harness(IPEndPoint? endpoint = null)
         {
-            Runtime = new(Settings, TextWriter.Null, endpoint ?? new(IPAddress.Loopback, 0), () => new(
+            Runtime = new(Settings, TextWriter.Null, endpoint ?? new(IPAddress.Loopback, 0), () => new WindowsMouseOutput(
                 (uint count, ref WindowsMouseOutput.NativeInput input, int size) =>
                 {
                     if (input.Data.Mouse.Flags == WindowsMouseOutput.MouseMove && FailNextMove)

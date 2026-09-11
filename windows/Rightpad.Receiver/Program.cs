@@ -8,7 +8,8 @@ namespace Rightpad.Receiver;
 internal static class Program
 {
     internal enum LaunchMode { Gui, Diagnostics, RawMouse }
-    internal sealed record LaunchOptions(LaunchMode Mode, Options Input, string? LogDirectory, string? SettingsPath);
+    internal sealed record LaunchOptions(LaunchMode Mode, Options Input, string? LogDirectory, string? SettingsPath,
+        MouseBackend Backend = MouseBackend.SendInput);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AttachConsole(uint processId);
@@ -55,7 +56,7 @@ internal static class Program
         var loaded = SettingsFileStore.Load(path);
         var file = new SettingsFileStore(path);
         var store = new RuntimeSettingsStore(loaded.Settings);
-        var runtime = new ReceiverRuntime(store, log, flightRecorder: flightRecorder);
+        var runtime = new ReceiverRuntime(store, log, flightRecorder: flightRecorder, backend: launch.Backend);
         flightRecorder.StartSnapshots(runtime.CaptureSnapshot);
         var app = new App();
         app.InitializeComponent();
@@ -80,7 +81,7 @@ internal static class Program
         var o = launch.Input;
         var store = new RuntimeSettingsStore(new(o.SensitivityX, o.SensitivityY, o.TapMaxDurationMs, o.TapMovementThresholdPx, o.ClickHoldMs));
         var runtime = new ReceiverRuntime(store, log, rawMouse: launch.Mode == LaunchMode.RawMouse,
-            flightRecorder: flightRecorder);
+            flightRecorder: flightRecorder, backend: launch.Backend);
         flightRecorder.StartSnapshots(runtime.CaptureSnapshot);
         using var cancellation = new CancellationTokenSource();
         ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
@@ -104,17 +105,24 @@ internal static class Program
         var input = new List<string>();
         string? log = null, settings = null;
         bool diagnostics = false;
+        var backend = MouseBackend.SendInput;
         var seen = new HashSet<string>();
         for (int i = 0; i < args.Length; i++)
         {
             string arg = args[i];
-            if (arg is "--dev-log-dir" or "--dev-settings-path" or "--diagnostics")
+            if (arg is "--dev-log-dir" or "--dev-settings-path" or "--diagnostics" or "--dev-mouse-backend")
             {
                 if (!seen.Add(arg)) throw new ArgumentException($"Repeated option: {arg}");
                 if (arg == "--diagnostics") { diagnostics = true; continue; }
                 if (++i >= args.Length || string.IsNullOrWhiteSpace(args[i]) || args[i].StartsWith("--"))
-                    throw new ArgumentException($"{arg} requires a path.");
-                if (arg == "--dev-log-dir") log = args[i]; else settings = args[i];
+                    throw new ArgumentException($"{arg} requires a value.");
+                if (arg == "--dev-mouse-backend") backend = args[i] switch
+                {
+                    "sendinput" => MouseBackend.SendInput,
+                    "virtualhid" => MouseBackend.VirtualHid,
+                    _ => throw new ArgumentException("--dev-mouse-backend requires sendinput or virtualhid.")
+                };
+                else if (arg == "--dev-log-dir") log = args[i]; else settings = args[i];
             }
             else input.Add(arg);
         }
@@ -122,7 +130,9 @@ internal static class Program
         if (diagnostics && input.Count != 0) throw new ArgumentException("--diagnostics cannot use RAW options.");
         var mode = diagnostics ? LaunchMode.Diagnostics : options.RawMouse ? LaunchMode.RawMouse : LaunchMode.Gui;
         if (settings is not null && mode != LaunchMode.Gui) throw new ArgumentException("--dev-settings-path is GUI-only.");
-        return new(mode, options, log, settings);
+        if (diagnostics && seen.Contains("--dev-mouse-backend"))
+            throw new ArgumentException("--dev-mouse-backend requires mouse output, not --diagnostics.");
+        return new(mode, options, log, settings, backend);
     }
     internal readonly record struct Options(bool RawMouse, double SensitivityX, double SensitivityY,
         int TapMaxDurationMs = 300, double TapMovementThresholdPx = 8, int ClickHoldMs = 25);

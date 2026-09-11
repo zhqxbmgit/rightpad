@@ -90,6 +90,10 @@ internal sealed class FlightRecorder : IDisposable
         v["inputTimeouts"] = s.InputTimeoutCount; v["activeTouchSessionId"] = s.ActiveTouchSessionId < 0 ? null : s.ActiveTouchSessionId;
         v["motionOutputEvents"] = s.MotionOutputEvents; v["sendInputSuccesses"] = s.SendInputSuccesses;
         v["sendInputFailures"] = s.SendInputFailures; v["lastError"] = s.LastError;
+        v["mouseBackend"] = s.MouseBackend;
+        v["mouseOutputSuccesses"] = s.MouseOutputSuccesses; v["mouseOutputFailures"] = s.MouseOutputFailures;
+        v["lastSuccessfulMouseOutputAgeMs"] = Age(now, s.LastSuccessfulMouseOutputAtTicks);
+        v["lastFailedMouseOutputAgeMs"] = Age(now, s.LastFailedMouseOutputAtTicks);
         v["intendedRelativeDxTotal"] = s.IntendedRelativeDxTotal; v["intendedRelativeDyTotal"] = s.IntendedRelativeDyTotal;
         v["intendedAbsDxTotal"] = s.IntendedAbsDxTotal; v["intendedAbsDyTotal"] = s.IntendedAbsDyTotal;
         if (captureEnvironment is not null)

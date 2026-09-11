@@ -27,6 +27,13 @@ internal static class Program
         if (args.Length != 0) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            ("development backend selection / unchanged default", Sync(VirtualHidTests.Arguments)),
+            ("Virtual HID fake int32 / left mapping / counters", Sync(VirtualHidTests.Mapping)),
+            ("Virtual HID release / disposal / cleanup failure", Sync(VirtualHidTests.Cleanup)),
+            ("selected Virtual HID initialization fails without fallback", VirtualHidTests.InitializationFailure),
+            ("injected IMouseOutput Runtime lifetime / held release / identity", VirtualHidTests.RuntimeLifecycle),
+            ("Virtual HID report failure stops and destroys Runtime device", VirtualHidTests.RuntimeReportFailure),
+            ("Virtual HID cleanup after UDP bind failure", VirtualHidTests.BindFailureCleanup),
             ("fixed bytes / endian / uint64 nanoseconds", Sync(PacketDecoderTests.FixedBytes)),
             ("DOWN, MOVE, UP decoding", Sync(PacketDecoderTests.EventTypes)),
             ("preserve order, equal timestamps, signed zero", Sync(PacketDecoderTests.PreserveSamples)),

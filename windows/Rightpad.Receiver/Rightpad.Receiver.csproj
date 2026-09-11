@@ -8,6 +8,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <Target Name="BuildVirtualHidBridge" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\tools\BuildVirtualHid.ps1&quot; -Configuration $(Configuration)" />
+  </Target>
+  <ItemGroup>
+    <Content Include="..\native\Rightpad.VirtualHid\bin\$(Configuration)\Rightpad.VirtualHid.dll" Link="Rightpad.VirtualHid.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\native\Rightpad.VirtualHid\bin\$(Configuration)\libvirtualhid-LICENSE.txt" Link="libvirtualhid-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\native\Rightpad.VirtualHid\bin\$(Configuration)\lizardbyte-common-LICENSE.txt" Link="lizardbyte-common-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Rightpad.Receiver.Tests" />
     <Using Remove="System.Windows.Forms" />

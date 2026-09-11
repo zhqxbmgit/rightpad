@@ -14,4 +14,6 @@ internal sealed record RuntimeStatsSnapshot(long RunId, ReceiverState RuntimeSta
     long SendInputSuccesses = 0, long SendInputFailures = 0,
     long LastSuccessfulSendInputAtTicks = 0, long LastFailedSendInputAtTicks = 0,
     long IntendedRelativeDxTotal = 0, long IntendedRelativeDyTotal = 0,
-    long IntendedAbsDxTotal = 0, long IntendedAbsDyTotal = 0);
+    long IntendedAbsDxTotal = 0, long IntendedAbsDyTotal = 0,
+    long MouseOutputSuccesses = 0, long MouseOutputFailures = 0,
+    long LastSuccessfulMouseOutputAtTicks = 0, long LastFailedMouseOutputAtTicks = 0);

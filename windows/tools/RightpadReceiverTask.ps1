@@ -1,6 +1,8 @@
 param(
     [ValidateSet('Ensure', 'Start', 'Stop', 'Status', 'Run')]
-    [string]$Mode = 'Status'
+    [string]$Mode = 'Status',
+    [ValidateSet('sendinput', 'virtualhid')]
+    [string]$DevMouseBackend = 'sendinput'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -10,6 +12,7 @@ $windowsRoot = Split-Path $PSScriptRoot -Parent
 $receiverPath = Join-Path $windowsRoot 'Rightpad.Receiver\bin\Release\net8.0-windows\Rightpad.Receiver.exe'
 $logRoot = Join-Path $windowsRoot 'test-results\receiver-runtime'
 $currentPath = Join-Path $logRoot 'current.json'
+$launchOptionsPath = Join-Path $logRoot 'launch-options.json'
 $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $taskArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" -Mode Run' -f $PSCommandPath
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -167,6 +170,7 @@ function Show-Status {
         Identity = if ($p) { Get-DesktopIdentity $p } else { $null }
         Udp50000 = @(Get-Port | Select-Object LocalAddress, LocalPort, OwningProcess)
         RuntimeLog = if ($run) { Join-Path $run.Directory 'receiver.log' } else { $null }
+        MouseBackend = if ($run) { $run.MouseBackend } else { $null }
     }
 }
 
@@ -224,11 +228,16 @@ switch ($Mode) {
         $jobFlags = [RightpadDevToken]::CurrentJobFlags()
         if ($jobFlags -band 0x2000) { throw 'Scheduled launcher inherited KILL_ON_JOB_CLOSE; refusing persistent launch.' }
         if (!(Test-Path -LiteralPath $receiverPath)) { throw "Missing Release binary: $receiverPath" }
+        $selectedBackend = 'sendinput'
+        if (Test-Path -LiteralPath $launchOptionsPath) {
+            $selectedBackend = (Get-Content -LiteralPath $launchOptionsPath -Raw | ConvertFrom-Json).MouseBackend
+        }
+        if ($selectedBackend -notin @('sendinput','virtualhid')) { throw 'Invalid development mouse backend.' }
         $runDirectory = Join-Path $logRoot ('{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), $PID)
         $null = New-Item -ItemType Directory -Path $runDirectory
         $run = @{ Directory = $runDirectory; StartUtc = [DateTime]::UtcNow.ToString('o');
             WrapperPid = $PID; WrapperStartUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o');
-            SchedulerPid = $parent; Context = $context; ImmediateJobLimitFlags = $jobFlags }
+            SchedulerPid = $parent; Context = $context; ImmediateJobLimitFlags = $jobFlags; MouseBackend = $selectedBackend }
         $run | ConvertTo-Json | Set-Content -LiteralPath $currentPath -Encoding UTF8
         $run | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runDirectory 'start.json') -Encoding UTF8
         $exitCode = 1
@@ -239,7 +248,7 @@ switch ($Mode) {
             $start.FileName = $receiverPath
             $start.WorkingDirectory = Split-Path $receiverPath -Parent
             $start.UseShellExecute = $false
-            $start.Arguments = '--dev-log-dir "{0}"' -f $runDirectory
+            $start.Arguments = '--dev-log-dir "{0}" --dev-mouse-backend {1}' -f $runDirectory, $selectedBackend
             $receiver = [Diagnostics.Process]::Start($start)
             @{ Pid = $receiver.Id; StartUtc = $receiver.StartTime.ToUniversalTime().ToString('o') } |
                 ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runDirectory 'receiver.json') -Encoding UTF8
@@ -257,6 +266,8 @@ switch ($Mode) {
         $task = Ensure-Task
         if ($task.State -eq 4 -or (Get-OwnedReceiver (Read-Run))) { Stop-Runtime }
         if (@(Get-Port).Count) { throw 'UDP 50000 is occupied; no unrelated process will be stopped.' }
+        $null = New-Item -ItemType Directory -Path $logRoot -Force
+        @{ MouseBackend = $DevMouseBackend } | ConvertTo-Json | Set-Content -LiteralPath $launchOptionsPath -Encoding UTF8
         $null = $task.Run($null)
         $deadline = (Get-Date).AddSeconds(20)
         do {
@@ -275,7 +286,9 @@ switch ($Mode) {
             $info.SessionId -notin $info.ExplorerSessionIds -or $info.IntegritySid -ne 'S-1-16-8192' -or
             $info.Desktop -ne 'Default') { throw "Receiver context failed validation: $($info | ConvertTo-Json -Compress)" }
         $stdout = Get-Content -LiteralPath (Join-Path $run.Directory 'receiver.log') -Raw
+        $expectedBackend = if ($DevMouseBackend -eq 'virtualhid') { 'libvirtualhid' } else { 'SendInput' }
         if ($stdout -notmatch 'application: mode=gui defaultPage=Motion' -or
+            $stdout -notmatch "mouse_backend: name=$expectedBackend " -or
             $stdout -notmatch 'mode=raw_mouse' -or $stdout -notmatch 'listening: udp=0.0.0.0:50000' -or
             $stdout -match 'receiver_error:') {
             throw 'Receiver startup logs failed validation; inspect runtime logs.'
