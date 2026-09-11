@@ -29,6 +29,8 @@ public final class UdpTouchSenderTest {
             socket.setSoTimeout(2000);
             long firstRun;
             try (UdpTouchSender sender = new UdpTouchSender("127.0.0.1", socket.getLocalPort())) {
+                check(sender.getReceiverAddress().equals("127.0.0.1"), "receiver address accessor");
+                check(sender.getReceiverPort() == socket.getLocalPort(), "receiver port accessor");
                 sender.setForeground(true);
                 byte[] heartbeat = receive(socket); check(heartbeat.length == 10 && heartbeat[1] == 4, "immediate heartbeat");
                 firstRun = run(heartbeat);

@@ -5,7 +5,7 @@
         android:allowBackup="false"
         android:label="rightpad Touch Capture"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/Theme.Rightpad">
         <activity
             android:name=".MainActivity"
             android:exported="true"

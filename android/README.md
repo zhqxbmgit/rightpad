@@ -8,7 +8,10 @@ Android Touch Digitizer → MotionEvent → Historical + Current Samples
                                      → Protocol v2 Encoder → UDP → Windows Receiver
 ```
 
-应用使用 Java 和 Android 原生 Activity/View，只有一个空白触摸区域。
+应用使用 Java 和 Android 原生 Activity/View。UI v1 由同一个全屏
+`TouchCaptureView` 使用 Canvas 绘制；中央大面积留白和所有装饰区域都仍是原始
+触摸采集区域，没有覆盖式子 View。顶栏显示系统真实电量；最右侧电源按钮是唯一
+保留的 UI 命中区域，短按后通过正常 Activity 生命周期退出并移除任务。
 rightpad 在前台运行时会保持屏幕唤醒，离开前台后恢复系统默认超时行为。
 每条原始样本同时输出到 Logcat，并按原始顺序记录到应用私有目录中的 CSV。
 没有第三方运行时依赖、测试框架、统计界面、设置、服务、运动处理、
@@ -26,8 +29,8 @@ rightpad 在前台运行时会保持屏幕唤醒，离开前台后恢复系统�
 | `gradle/wrapper/gradle-wrapper.properties` | 固定 Gradle 8.13 分发配置 |
 | `app/build.gradle` | 应用 ID、SDK 版本和 Java 编译配置 |
 | `app/src/main/AndroidManifest.xml` | Activity、启动入口、竖屏及 UDP 必需的 INTERNET 普通权限 |
-| `MainActivity.java` | 显示采集区域、管理记录器和 Sender 生命周期，在暂停时终止本地采集 |
-| `TouchCaptureView.java` | 采集单指 DOWN/MOVE/UP/CANCEL，逐条提取历史和当前样本 |
+| `MainActivity.java` | 显示采集区域、订阅系统电量、管理记录器和 Sender 生命周期，在暂停时终止本地采集 |
+| `TouchCaptureView.java` | 全屏 Canvas UI；保留电源命中区并采集其余区域的单指原始触摸 |
 | `TouchSample.java` | 不可变原始采样数据 |
 | `TouchSampleLogger.java` | 输出采样日志及会话内相邻采样间隔 |
 | `TouchRecordWriter.java` | 按采集顺序将原始样本写入应用私有目录中的 CSV |

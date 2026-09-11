@@ -43,6 +43,14 @@ final class UdpTouchSender implements Closeable {
         thread.start();
     }
 
+    String getReceiverAddress() {
+        return receiverAddress;
+    }
+
+    int getReceiverPort() {
+        return receiverPort;
+    }
+
     // Called only on the UI thread. Only encoded bytes cross the thread boundary.
     void submit(TouchSample[] samples) {
         if (closed || !foreground) return;

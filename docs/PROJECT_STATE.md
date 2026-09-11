@@ -241,6 +241,11 @@ Android minSdk：34。
 
 Xiaomi 14 / Android 16 已完成真机验证。
 
+Android UI v1 completed：immersive fullscreen、真实电量显示和 Power
+clean-exit control 已在 Xiaomi 14 验证；除 Power 保留圆形区域外，整个界面仍是
+touch surface，Settings 仍仅为视觉 affordance。Android 边缘手势仍可临时显示
+transient system bars；Android → Windows E2E 已通过。
+
 ---
 
 ## 6. Real Touch Measurements
