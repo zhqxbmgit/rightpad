@@ -167,6 +167,8 @@ RAW Mouse 与 Single Tap 的真人验证均已通过。
 
 已冻结原则：
 
+- Game-first / necessary-complexity / monetary-cost-not-primary engineering
+  principle frozen in AGENTS.md.
 - Avoid over-engineering
 - Complexity must buy measurable value
 - No speculative future architecture

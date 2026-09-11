@@ -230,7 +230,114 @@ Avoid placing important tuning parameters only inside Android.
 
 # 9. Engineering Philosophy
 
-## Simple First
+## Game-First / Necessary Complexity Rule
+
+rightpad's formal product position is:
+
+> A top-tier gaming touchpad built for games.
+
+It is not a general office touchpad. Product and engineering decisions must
+prioritize, in order:
+
+1. Gaming feel
+2. Gaming compatibility
+3. Stability and reliability
+4. Latency and jitter
+5. Input consistency
+6. Ease of use
+7. Development difficulty and code volume
+8. Monetary cost
+
+Development difficulty and code volume may affect implementation order,
+development phases and test planning. They must not, by themselves, reject a
+gaming-grade capability whose necessity and benefit have been demonstrated.
+
+**Practicality First does NOT mean Simplicity First.** It does not mean always
+choosing the least code, the easiest implementation or a weaker solution merely
+because the stronger solution requires native code, a Windows driver, Virtual
+HID, driver signing, an installer component or lower-level Windows APIs.
+
+Necessary complexity is allowed and required when it buys measurable gaming
+compatibility, latency, jitter, consistency, reliability, correct Windows input
+semantics or user-experience benefits. Do not reject a necessary gaming-grade
+feature merely because it is difficult, low-level, driver-based or increases
+implementation complexity. Complexity without measurable product benefit is
+prohibited.
+
+Large complexity remains evidence-driven. It requires at least one of:
+
+- A verified limitation
+- A measured compatibility problem
+- A measured performance or input-quality benefit
+- A clear current product requirement
+
+“Theoretically better” is not sufficient. Measure the current limitation, define
+the expected benefit and validate the candidate with real games and human input
+where applicable.
+
+### Monetary Cost vs Dependency Risk
+
+**Practicality First does NOT mean Lowest Monetary Cost.** Monetary cost is not
+an optimization target for this personal project. Reasonable spending on
+software, drivers, licenses, hardware, development tools and testing tools is
+acceptable when it produces measurable improvements in gaming feel, gaming
+compatibility, latency, jitter, input consistency, reliability, usability or
+future capability.
+
+Do not reject a technically superior solution merely because it costs money.
+For rightpad, monetary price is normally lower priority than achieving the
+product goal: a top-tier gaming touchpad built for games. This does not justify
+buying or adopting something because it is expensive, advanced or complex; the
+benefit must still be evidence-driven.
+
+Distinguish monetary price from technical, vendor and deployment dependency
+risk. The following remain material architecture factors even when their direct
+financial cost is acceptable:
+
+- Vendor dependency and abandonment risk
+- License availability and activation reliability
+- Offline availability
+- Service or broker dependency
+- Driver deployment, signing and installation reliability
+- Upgrade compatibility and long-term maintainability
+- Game and anti-cheat compatibility
+- Failure and recovery behavior
+
+A paid Virtual HID, libvirtualhid, commercial driver or machine license must not
+be rejected merely because it is paid, driver-based or installation-intensive
+when it demonstrably improves Raw Input behavior, HID semantics, gaming
+compatibility, latency potential, consistency, reliability or future virtual
+gamepad support. Vendor lock-in, activation availability, driver maintenance and
+deployment reliability must still be evaluated independently. This rule does not
+preselect libvirtualhid or any other candidate.
+
+### Virtual HID
+
+Virtual HID is an allowed and serious Windows mouse-backend architecture
+candidate. Do not automatically choose SendInput or another weaker approach
+because driver development, WDK, signing, installation, upgrades, native bridging
+or debugging are difficult.
+
+Real testing has established a structural limitation worth formal evaluation:
+
+```text
+Medium-integrity Receiver
+→ High-integrity foreground
+→ SendInput success count remains normal
+→ actual cursor does not move
+
+High-integrity Receiver
+→ High-integrity foreground
+→ cursor movement works again
+```
+
+Whether Virtual HID becomes the production Windows mouse backend must be decided
+by measured gaming compatibility, Raw Input support, High-integrity compatibility,
+latency, jitter, stability, human feel and acceptable vendor, activation,
+deployment and maintenance risk. Do not reject it because it is difficult or
+paid, and do not adopt it merely because it appears more advanced.
+
+### Avoid Unnecessary Complexity
 
 Prefer:
 
@@ -245,6 +352,12 @@ Avoid:
 - Large abstractions
 - Premature optimization
 - Excessive design patterns
+
+Necessary complexity does not authorize scope expansion. Do not add a framework
+for its own sake, plugin system, generic abstraction hierarchy, connection manager,
+unnecessary service or IPC, telemetry platform, automatic discovery, profile
+system, security system or compatibility layer without a demonstrated current
+need.
 
 ---
 
@@ -421,11 +534,14 @@ before core input quality is proven.
 
 rightpad should become:
 
-A simple, precise, predictable, high-quality gaming input system.
+A precise, predictable, reliable, top-tier gaming touchpad built for games.
 
 The best solution is not the most complicated solution.
 
-The best solution is the simplest design that achieves the required input quality.
+The best solution is the least complex design that fully achieves the measured
+gaming-grade requirements. Necessary complexity must remain when removing it would
+sacrifice demonstrated compatibility, latency, jitter, consistency, reliability,
+correct input semantics or user experience.
 
 ---
 

@@ -413,9 +413,12 @@ without measurement.
 
 ---
 
-## Simplicity First
+## Game-First Engineering Rule
 
-A smaller system with predictable behavior is preferred over a larger system with uncertain benefits.
+rightpad is a game-first input system; necessary complexity is justified when it
+produces measurable gaming benefit. See `AGENTS.md` for the binding engineering rule.
+Monetary cost is not a primary architectural constraint; vendor dependency,
+activation reliability, deployment risk and maintainability still are.
 
 ---
 
