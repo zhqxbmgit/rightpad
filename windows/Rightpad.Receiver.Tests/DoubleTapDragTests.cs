@@ -59,6 +59,26 @@ internal static class DoubleTapDragTests
     public static void MovementXOver() => FirstTap(200_000_000, MathF.BitIncrement(8), 0, false);
     public static void MovementYOver() => FirstTap(200_000_000, 0, -MathF.BitIncrement(8), false);
     public static void HistoricalExcursion() => FirstTap(200_000_000, 0, 0, false, true);
+    public static void DragUpRearms()
+    {
+        var h = new Gesture(); h.Tap(); h.Down(2, 300_000_000); h.Up(2, 400_000_000);
+        Equal(1, h.Starts, "second DOWN starts no-move drag");
+        Equal(1, h.Ends, "no-move drag UP ends drag");
+        Check(h.G.DoubleTapArmed && !h.G.IsDragging, "drag UP rearms without requiring movement");
+        h.Down(3, 500_000_000);
+        Equal(2, h.Starts, "next DOWN chains drag without an intermediate single tap");
+    }
+    private static void RearmInterval(ulong nextDownNs, bool expected)
+    {
+        var h = new Gesture(); h.Tap(); h.Down(2, 300_000_000); h.Up(2, 400_000_000);
+        h.Down(3, nextDownNs);
+        Equal(expected, h.G.IsDragging, "drag-UP event-time interval boundary");
+        Equal(expected ? 2 : 1, h.Starts, "drag-UP arm starts only inside the interval");
+        Check(!h.G.DoubleTapArmed, "next DOWN consumes rearmed qualification");
+    }
+    public static void RearmIntervalInclusive() => RearmInterval(530_000_000, true);
+    public static void RearmIntervalOneNsOver() => RearmInterval(530_000_001, false);
+    public static void RearmIntervalBackward() => RearmInterval(399_999_999, false);
     public static void UnlimitedDrag()
     {
         var h = new Gesture(); h.Tap(); h.Down(2, 300_000_000, 500, 900);
@@ -70,10 +90,8 @@ internal static class DoubleTapDragTests
         Equal(1, h.Ends, "matching UP releases exactly once");
         Equal(1L, h.G.DragEnds, "end diagnostic");
         Equal(1, h.Clicks, "drag UP never clicks");
-        Check(!h.G.DoubleTapArmed && !h.G.IsDragging, "drag UP does not rearm");
-        h.Down(3, 5_300_000_000); Equal(1, h.Starts, "third DOWN cannot chain drag");
-        h.Up(3, 5_400_000_000); h.Down(4, 5_500_000_000);
-        Equal(2, h.Starts, "new valid tap permits another drag");
+        Check(h.G.DoubleTapArmed && !h.G.IsDragging, "drag UP rearms even after long movement");
+        h.Down(3, 5_300_000_000); Equal(2, h.Starts, "third DOWN chains drag directly");
     }
     public static void ExpiredContactRearms()
     {
@@ -83,9 +101,11 @@ internal static class DoubleTapDragTests
     }
     public static void Reset()
     {
-        var h = new Gesture(); h.Tap(); h.G.Reset(); h.Down(2, 300_000_000);
-        Equal(0, h.Starts, "Reset clears qualification");
-        h.Up(2, 350_000_000); h.Down(3, 400_000_000); h.G.Reset();
+        var h = new Gesture(); h.Tap(); h.Down(2, 300_000_000); h.Up(2, 400_000_000);
+        Check(h.G.DoubleTapArmed, "drag UP rearmed before Reset");
+        h.G.Reset(); h.Down(3, 500_000_000);
+        Equal(1, h.Starts, "Reset clears drag-UP qualification");
+        h.Up(3, 550_000_000); h.Down(4, 600_000_000); h.G.Reset();
         Check(!h.G.IsDragging && !h.G.DoubleTapArmed, "Reset clears drag and qualification; outer layer releases");
     }
     public static void HotInterval()
@@ -185,7 +205,23 @@ internal static class DoubleTapDragTests
         Equal(2L, h.R.Statistics.DuplicatePackets, "duplicates excluded");
         Equal(1L, h.R.Statistics.OldPackets, "stale excluded");
         Equal(1L, h.R.Statistics.InvalidPackets, "invalid excluded");
-        Check(!h.Held && !h.G.DoubleTapArmed, "neutral, not rearmed");
+        Check(!h.Held && h.G.DoubleTapArmed, "neutral and rearmed by the one accepted drag UP");
+    }
+    public static void ContinuousChain()
+    {
+        using var h = new Pipeline(); h.StartDrag();
+        h.Send(h.Bytes(TouchEventType.Up, 2, 400_000_000));
+        Check(!h.Held && h.G.DoubleTapArmed, "drag1 UP neutral and rearmed");
+        h.Send(h.Bytes(TouchEventType.Down, 3, 480_000_000));
+        h.Send(h.Bytes(TouchEventType.Up, 3, 500_000_000));
+        Check(!h.Held && h.G.DoubleTapArmed, "drag2 UP neutral and rearmed");
+        h.Send(h.Bytes(TouchEventType.Down, 4, 570_000_000));
+        h.Send(h.Bytes(TouchEventType.Up, 4, 600_000_000));
+        Equal(3L, h.G.DragStarts, "three chained drag starts");
+        Equal(3L, h.G.DragEnds, "three chained drag ends");
+        Check(!h.Held && h.G.DoubleTapArmed, "drag3 UP neutral and rearmed");
+        Check(h.Buttons.SequenceEqual(new[] { "D", "U", "D", "U", "D", "U", "D", "U" }),
+            "tap plus three drags preserve DOWN/UP order");
     }
     public static void StationaryThreeSeconds()
     {
@@ -208,15 +244,19 @@ internal static class DoubleTapDragTests
         foreach (string reason in new[] { "sender", "presence", "dispose" })
         {
             using var h = new Pipeline();
-            if (activeDrag) h.StartDrag();
-            else { h.Send(h.Bytes(TouchEventType.Down, 1, 100_000_000)); h.Send(h.Bytes(TouchEventType.Up, 1, 200_000_000)); }
+            h.StartDrag();
+            if (!activeDrag)
+            {
+                h.Send(h.Bytes(TouchEventType.Up, 2, 400_000_000));
+                Check(h.G.DoubleTapArmed, "completed drag rearmed before cleanup: " + reason);
+            }
             if (reason == "sender") { h.Run = 2; h.Sequence = 0; h.Send(PresenceTests.Heartbeat(2)); }
             else if (reason == "presence") h.R.CheckTimeouts(h.Now + 2 * Stopwatch.Frequency);
             else h.R.Dispose();
             Check(!h.Held && !h.G.IsDragging && !h.G.DoubleTapArmed, "clear all state: " + reason);
             if (reason != "dispose")
             {
-                h.Send(h.Bytes(TouchEventType.Down, 3, 310_000_000));
+                h.Send(h.Bytes(TouchEventType.Down, 3, 500_000_000));
                 Check(!h.G.IsDragging, "cleanup cannot transfer old qualification");
             }
         }
@@ -262,6 +302,56 @@ internal static class DoubleTapDragTests
             }
             finally { cancel.Cancel(); await loop; }
         }
+    }
+    public static async Task ChainedLoopback()
+    {
+        using var h = new Pipeline(); using var sender = new UdpClient(); using var cancel = new CancellationTokenSource();
+        Task loop = h.R.RunAsync(cancel.Token); int received = 0;
+        async Task PacketSend(byte[] bytes)
+        {
+            int expected = ++received; await sender.SendAsync(bytes, h.R.LocalEndpoint);
+            await h.Log.WaitFor(s => s.StartsWith($"stats: receivedPackets={expected} "));
+        }
+        try
+        {
+            await PacketSend(h.Bytes(TouchEventType.Down, 1, 100_000_000));
+            await PacketSend(h.Bytes(TouchEventType.Up, 1, 200_000_000));
+            await RuntimeTests.Until(() => h.Buttons.Count == 2);
+
+            await PacketSend(h.Bytes(TouchEventType.Down, 2, 300_000_000, 100, 100));
+            Check(h.Held, "drag1 LEFT held");
+            await PacketSend(h.Bytes(TouchEventType.Move, 2, 310_000_000, 101, 100));
+            Check(h.Held, "drag1 MOVE keeps LEFT held");
+            await PacketSend(h.Bytes(TouchEventType.Up, 2, 400_000_000, 102, 100));
+            Check(!h.Held, "drag1 UP releases LEFT");
+
+            await PacketSend(h.Bytes(TouchEventType.Down, 3, 480_000_000, 200, 200));
+            Check(h.Held, "drag2 starts directly after 80 ms");
+            await PacketSend(h.Bytes(TouchEventType.Move, 3, 490_000_000, 201, 202));
+            await PacketSend(h.Bytes(TouchEventType.Up, 3, 500_000_000, 202, 204));
+            Check(!h.Held, "drag2 UP releases LEFT");
+
+            await PacketSend(h.Bytes(TouchEventType.Down, 4, 570_000_000, 300, 300));
+            Check(h.Held, "drag3 starts directly after 70 ms");
+            await PacketSend(h.Bytes(TouchEventType.Move, 4, 580_000_000, 299, 303));
+            await PacketSend(h.Bytes(TouchEventType.Up, 4, 600_000_000, 298, 306));
+            Check(!h.Held, "drag3 UP releases LEFT");
+
+            Equal(3L, h.G.DragStarts, "loopback chained drag starts");
+            Equal(3L, h.G.DragEnds, "loopback chained drag ends");
+            Check(h.Moves.SequenceEqual(new[] { (7, 0), (7, 0), (7, 14), (7, 14), (-7, 21), (-7, 21) }),
+                "loopback exact RAW motion sequence");
+            Check(h.Buttons.SequenceEqual(new[] { "D", "U", "D", "U", "D", "U", "D", "U" }),
+                "loopback tap plus three drags button order");
+            Check(h.Log.Lines.Any(s => s.Contains("doubleTapDeltaNs=80000000 dragging=True")) &&
+                  h.Log.Lines.Any(s => s.Contains("doubleTapDeltaNs=70000000 dragging=True")),
+                "loopback diagnostics expose drag-UP to next-DOWN event-time deltas");
+
+            await PacketSend(h.Bytes(TouchEventType.Down, 5, 731_000_000));
+            Check(!h.Held && !h.G.IsDragging, "131 ms after drag UP does not start drag");
+        }
+        finally { cancel.Cancel(); await loop; }
+        Check(!h.Held, "loopback final LEFT neutral");
     }
     public static async Task StopAndOutputFailure()
     {

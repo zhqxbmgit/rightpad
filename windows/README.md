@@ -282,12 +282,20 @@ Double Tap Drag: a valid first tap still clicks immediately, with no double-tap 
 One next DOWN within the inclusive 130 ms interval holds LEFT immediately, using
 Android `TouchSample.TimestampNs`, not arrival time. Landing positions are unrestricted.
 The drag contact has no tap duration/movement limit and uses unchanged RAW motion.
-UP releases without rearming; an expired second contact remains a normal tap candidate.
+UP releases and rearms from that UP's Android `TouchSample.TimestampNs`, matching the
+reference Moonlight `TrackpadContext`; a direct next DOWN within the inclusive interval
+continues a drag chain without an intermediate Single Tap, even when the prior drag had
+no MOVE. A replacement DOWN that ends a lost-UP drag does not rearm. An expired next
+contact remains a normal tap candidate.
 Input timeout is diagnostic only; heartbeat-backed stationary drag survives. Sender
 change, presence timeout, Stop, Dispose and output failure clear input and release LEFT.
-Debug/Release builds and 176/176 tests per configuration passed on 2026-09-12;
+Debug/Release builds and 182/182 tests per configuration passed on 2026-09-12;
 five native automatic scenarios and human A–E passed. The scoped Discovery receive-loop
 fix tolerates only non-cancelled ConnectionReset (UDP 10054); other socket errors propagate.
+Production rearm follow-up also passed two-/three-drag automatic chains and a 306 ms
+negative. Human Raw Input recorded 35 direct rearm hits at 25.760–126.367 ms, a
+longest nine-drag chain, balanced 138 DOWN / 138 UP and final neutral; the user felt
+no perceptible subjective difference, so no interval or Android change was bundled.
 The existing development log reports drag start/end/cleanup and first-UP-to-next-DOWN
 nanoseconds. See [GESTURE_ENGINE.md](../docs/GESTURE_ENGINE.md).
 

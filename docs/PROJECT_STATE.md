@@ -8,11 +8,24 @@ Updated: 2026-09-12
 
 Double Tap Drag is implemented and accepted (2026-09-12). Single Tap remains
 immediate; a valid first UP arms one second DOWN within 130 ms, using Android
-event timestamps. Settings range is 50–1000 ms. No Android or RAW motion change.
-Debug and Release builds: 0 warnings / 0 errors; full Windows tests: 176/176 in
-both configurations (27 added gesture/settings cases plus 2 Discovery regressions).
+event timestamps. Each matching Drag UP now rearms from its own Android
+`TouchSample.TimestampNs`, matching Moonlight `TrackpadContext` and allowing a
+rapid direct DOWN to continue a drag chain without another Single Tap. Settings
+range is 50–1000 ms. No Android or RAW motion change. Debug and Release builds:
+0 warnings / 0 errors; full Windows tests: 182/182 in both configurations.
 The scoped Discovery receive-loop fix recovers only non-cancelled ConnectionReset;
 real dead-requester recovery and non-reset Shutdown propagation both pass.
+
+Drag-UP rearm production verification passed on the fresh Receiver. The native
+automatic Android-to-Virtual-HID run observed two- and three-drag chains with
+76 ms and 69/75 ms rearm gaps, exact held motion/button order, a 306 ms negative,
+and final neutral. Human verification then recorded 282 contacts, 95 Drag Starts
+and 95 Drag Ends. Of 95 post-drag recontact opportunities, 35 directly re-entered
+Drag at 25.760–126.367 ms (median 66.834 ms), including a longest chain of nine;
+60 missed at 134.517 ms or later. Native Raw Input ended at 138 DOWN / 138 UP,
+`RawHeld=false` and `LEFT=false`. The user reported no perceptible difference in
+feel, so rearm is not currently shown to explain Moonlight's subjective advantage.
+No 130 ms tuning, Android change or unbuffered-dispatch work was added.
 
 Five automated Android → UDP → production Virtual HID checks passed: single tap,
 double tap, drag, >3-second stationary drag and expired-window negative. Native
@@ -26,11 +39,15 @@ not a drag-window match. Some human attempts exceeded 130 ms; the default remain
 small sample changes; strict >3-second no-MOVE behavior is proven separately by
 controlled deterministic, real-loopback and native automatic tests.
 
-Latest verified Release was promoted with matching artifact hashes and launched
-through the independent interactive task: old PID 31504 exited, UDP 50000/50001
-were free, fresh PID 16608 owns both. Current user, Session 1, Medium integrity,
-Default desktop, libvirtualhid; Android PID 6898 remained foreground and naturally
-reconnected. Existing user sensitivity 6/6 survived; Tap settings remain 300/8/25
+Latest verified Release was promoted with matching artifact hashes. Old PID 28696
+exited and UDP 50000/50001 were free before the first fresh launch. During the later
+human flow that task-owned process exited and an Explorer-launched Receiver PID 19828
+appeared; final recovery explicitly closed that verified same-path process, rechecked
+both ports free, and started independent-task PID 18964, which owns both ports. It is
+the current user, Session 1, Medium integrity, Default desktop and libvirtualhid.
+Android was not built, installed or restarted by Codex; its PID changed externally
+from initial 8156 to final 8764, remained foreground and naturally connected. Existing
+user sensitivity 6/6 survived; Tap settings remain 300/8/25
 and Double Tap Interval 130. Final recorded diagnostics: invalid/gap/old/output
 failures all zero; no LastError. Duplicate control packets are still rejected by
 the unchanged gate. Temporary logs and test tools remain ignored, outside Git.
@@ -561,8 +578,9 @@ Double Tap Drag: Implemented — automated and human A–E validation passed (20
 第一次有效 Tap 仍在 UP 立即 Click，不增加 130 ms 等待；只记录一次 Double Tap
 资格。第二次 DOWN 依据 Android TouchSample.TimestampNs 判断非负且 <= 130 ms
 的间隔，立即 held LEFT。两次落点距离不受限制；拖拽 contact 不受 300 ms/8 px
-约束，RAW motion 未改动。Drag UP release 且不重新 arm；过期的 second contact
-仍可成为普通 Single Tap。Reset、sender change、presence timeout、Stop、Dispose
+约束，RAW motion 未改动。Drag UP release 后以该 UP 的 Android TimestampNs
+重新 arm；130 ms 内直接重新落指可连续 Drag，无 MOVE 的 Drag 也相同。过期的
+second contact 仍可成为普通 Single Tap。Reset、sender change、presence timeout、Stop、Dispose
 和 output failure 清资格并配合原有按钮清理；普通 input timeout 不释放静止拖拽。
 
 附带范围例外：Discovery receive loop 仅恢复未停止时的 SocketError.ConnectionReset

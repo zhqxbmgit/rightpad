@@ -136,13 +136,18 @@ The arm is consumed on that DOWN whether it matches, expires, or has backward ti
 An expired second contact can finish as a new normal tap and arm the next drag.
 
 A drag contact has no 300 ms duration or 8 px movement limit. Its matching UP releases
-LEFT exactly once and does not rearm. A new accepted replacement DOWN ends a lost-UP
-drag before establishing the next normal contact. Wrong-session and rejected
-stale/duplicate/invalid packets cannot release or arm a drag.
+LEFT exactly once, then rearms the Double Tap window from that UP's Android
+`TouchSample.TimestampNs`. The next DOWN can therefore begin another drag directly
+when its nonnegative event-time delta is within the inclusive interval; every matching
+drag UP repeats this behavior, including a drag with no MOVE. A new accepted replacement
+DOWN ends a lost-UP drag without rearming before establishing the next normal contact.
+Wrong-session and rejected stale/duplicate/invalid packets cannot release or arm a drag.
 
 Design reference: [zhq TrackpadContext.java, moonlight-noir](https://github.com/zhqxbmgit/zhq/blob/moonlight-noir/app/src/main/java/com/limelight/binding/input/touch/TrackpadContext.java).
-Only the immediate click / second-DOWN hold interaction is adopted, with explicit
-one-shot arming and no rearming after drag. The reference motion engine is not copied.
+The immediate click / second-DOWN hold and drag-UP rearm interactions are adopted.
+This matches `TrackpadContext.touchUpEvent()`, where a drag UP refreshes the last-tap-UP
+event time, and supports rapid lift/recontact continuous dragging. The reference motion
+engine is not copied.
 
 No additional hold delay is required.
 
@@ -310,7 +315,8 @@ candidate / confirmedMove -- invalid matching UP --> IDLE
 armed IDLE -- next DOWN inside event-time interval --> consume arm + LEFT DOWN --> DRAGGING
 armed IDLE -- next DOWN outside interval/backward --> consume arm --> candidate
 DRAGGING -- MOVE --> unchanged RAW movement with LEFT held
-DRAGGING -- matching UP --> LEFT UP --> unarmed IDLE
+DRAGGING -- matching UP --> LEFT UP + arm from Android UP TimestampNs --> armed IDLE
+armed IDLE -- repeated DOWN/drag UP inside each new interval --> continuous DRAGGING chain
 any state -- lifecycle Reset + button cleanup --> unarmed IDLE / LEFT neutral
 ```
 

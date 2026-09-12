@@ -77,7 +77,7 @@ internal sealed class GestureProcessor
         if (activeSessionId != packet.Header.SessionId) return;
         if (IsDragging)
         {
-            if (packet.Header.EventType == TouchEventType.Up) FinishDrag();
+            if (packet.Header.EventType == TouchEventType.Up) FinishDrag(packet.Samples[0].TimestampNs);
             return;
         }
 
@@ -113,12 +113,17 @@ internal sealed class GestureProcessor
         IsDragging = false;
     }
 
-    private void FinishDrag()
+    private void FinishDrag(ulong? upTimestampNs = null)
     {
         IsDragging = false;
         FinishCurrentContact();
         endDrag();
         DragEnds++;
+        if (upTimestampNs is ulong timestampNs)
+        {
+            lastTapUpTimestampNs = timestampNs;
+            DoubleTapArmed = true;
+        }
     }
 
     private void FinishCurrentContact()
