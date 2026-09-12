@@ -1,10 +1,23 @@
 # rightpad Project State
 
-Updated: 2026-09-11
+Updated: 2026-09-12
 
 ## 1. Current Phase
 
 当前阶段：
+
+Receiver Discovery v1 implements zero-operation trusted-LAN target selection for
+one Android phone used with two Windows PCs in separate locations. UDP 50001 is
+independent of unchanged Touch v2 UDP 50000; OFFER source IPv4 is authoritative,
+with no fixed IP, host chooser or first-interface heuristic. Target changes clear
+capture/queue and rotate senderRunId with Touch sequence zero. Specification and
+validation contract: [DISCOVERY_PROTOCOL.md](DISCOVERY_PROTOCOL.md).
+Single-site acceptance passed: Debug/Release each 145 Windows tests; Android
+encoder/sender/UI plus 166 discovery checks, build and lint (0 errors). Automatic
+source-IP discovery, pause/resume, Power reopen, Wi-Fi off/on and four final RAW/
+Single Tap smoke rounds passed on one unchanged Receiver instance. IPv6-only
+link updates no longer reset the IPv4 target. Remaining discovery acceptance:
+the second physical PC at the other location.
 
 Protocol v2 — senderRunId, foreground heartbeat and explicit connection state.
 WPF Receiver UI v1 is the committed/accepted foundation (`358a2729`).
@@ -620,10 +633,11 @@ Completed:
 
 Immediate:
 
-1. Run the formal SendInput vs Virtual HID A/B measurement
-2. Run the diagnostic-only Flight Recorder with cursor/input-environment witnesses during normal use; freeze the next real CASE 5 before probing
-3. Compare RAW directly against Moonlight Noir if further motion evaluation is needed
-4. Continue monitoring Single Tap feel and accidental clicks during normal use
+1. Validate automatic discovery on the second physical PC at its separate location
+2. Run the formal SendInput vs Virtual HID A/B measurement when separately requested
+3. Run the diagnostic-only Flight Recorder with cursor/input-environment witnesses during normal use; freeze the next real CASE 5 before probing
+4. Compare RAW directly against Moonlight Noir if further motion evaluation is needed
+5. Continue monitoring Single Tap feel and accidental clicks during normal use
 
 Evaluate:
 
@@ -650,7 +664,7 @@ Do not implement yet:
 - game profiles
 - network optimization
 - generic reconnect / handshake frameworks
-- device discovery
+- simultaneous multi-PC selection UI (separate-location automatic discovery implemented)
 - virtual gamepad buttons
 
 These are deferred, not forgotten.

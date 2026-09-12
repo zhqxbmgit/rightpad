@@ -27,6 +27,11 @@ internal static class Program
         if (args.Length != 0) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            ("discovery strict codec / golden bytes / malformed", Sync(DiscoveryTests.Codec)),
+            ("discovery identity persistence / atomic create and repair", DiscoveryTests.Identity),
+            ("discovery unicast nonce / invalid / repeated / shutdown", DiscoveryTests.Responder),
+            ("discovery runtime readiness / independent touch / bind failures / release", DiscoveryTests.RuntimeLifecycle),
+            ("discovery stops and releases on Runtime output error", DiscoveryTests.RuntimeErrorCleanup),
             ("development backend selection / unchanged default", Sync(VirtualHidTests.Arguments)),
             ("Virtual HID fake int32 / left mapping / counters", Sync(VirtualHidTests.Mapping)),
             ("Virtual HID release / disposal / cleanup failure", Sync(VirtualHidTests.Cleanup)),

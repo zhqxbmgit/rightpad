@@ -28,7 +28,7 @@ rightpad 在前台运行时会保持屏幕唤醒，离开前台后恢复系统�
 | `gradle/wrapper/gradle-wrapper.jar` | Wrapper 启动组件 |
 | `gradle/wrapper/gradle-wrapper.properties` | 固定 Gradle 8.13 分发配置 |
 | `app/build.gradle` | 应用 ID、SDK 版本和 Java 编译配置 |
-| `app/src/main/AndroidManifest.xml` | Activity、启动入口、竖屏及 UDP 必需的 INTERNET 普通权限 |
+| `app/src/main/AndroidManifest.xml` | Activity、竖屏、INTERNET/ACCESS_NETWORK_STATE 及 Android 16 LNP 权限声明 |
 | `MainActivity.java` | 显示采集区域、订阅系统电量、管理记录器和 Sender 生命周期，在暂停时终止本地采集 |
 | `TouchCaptureView.java` | 全屏 Canvas UI；保留电源命中区并采集其余区域的单指原始触摸 |
 | `TouchSample.java` | 不可变原始采样数据 |
@@ -37,6 +37,9 @@ rightpad 在前台运行时会保持屏幕唤醒，离开前台后恢复系统�
 | `ProtocolV2Encoder.java` | 精确的 v2 Touch / 10-byte heartbeat Little Endian 编码 |
 | `UdpTouchSender.java` | 单线程、有界 FIFO、单 socket 发送，DOWN/UP 各发送三份相同数据 |
 | `HeartbeatSchedule.java` | 500 ms deadline 算术；暂停禁用，超期不 burst |
+| `ReceiverDiscoveryClient.java` | 独立 Wi-Fi-bound UDP 50001 discovery；NetworkCallback、选择及生命周期 |
+| `DiscoveryProtocol.java` / `DiscoverySelection.java` / `DiscoverySchedule.java` | 固定二进制协议、first valid selection、2500 ms 超时及 probe 时序 |
+| `DiscoveryBroadcasts.java` / `ConnectionDisplay.java` | IPv4 prefix broadcast 计算及真实连接文案 |
 | `tests/ProtocolV2EncoderTest.java` | 无框架的固定字节、高位 runId 及字段有效性测试 |
 | `tests/UdpTouchSenderTest.java` | 真实 loopback socket 的生命周期、sequence、心跳不饥饿测试 |
 | `tests/Test-ProtocolV2Encoder.ps1` | 用 JDK 编译并执行 encoder 和 Sender 测试；Log stub 不进入 APK |
@@ -222,9 +225,11 @@ Debug APK 可通过 `run-as` 检查私有目录。以下命令只读取手机文
 
 ## UDP Prototype 与自动验证
 
-目标常量为 UdpTouchSender.RECEIVER_IPV4 = "192.168.110.248"，端口 50000。
-这是本次 Windows 到 Xiaomi 14 的局域网 IPv4。PC 地址变化后需要修改常量并重建；
-没有自动发现或配置系统。Android 重新部署或 Sender 重启后，现有 v2 Receiver
+Production 没有固定 Receiver IP，也没有 fallback。连接任一地点 Wi-Fi 后打开 app，
+通过独立 Discovery v1 UDP 50001 自动找到当地 Receiver，以 OFFER datagram source
+IPv4 + 50000 作为 Touch 目标。两台 PC 预期不同时出现在一个 LAN；无需输入 IP、
+选择主机或在 DHCP 变化后重新构建。搜索时显示 `搜索中 / —`，连接时显示
+`已连接 / 实际 source IPv4`。Android 重新部署或 Sender 重启后，现有 v2 Receiver
 通过新 senderRunId 自动建立 Touch sequence 基准，保持自身进程和 Runtime 不变。
 
 每个 DOWN/UP 编码一个样本，MOVE 将全部 historical + current 编为一个逻辑包，
@@ -237,21 +242,30 @@ DOWN/UP 各发送三份完全相同的字节（同一 sequence），MOVE 只发�
 队列满时丢弃最旧的待发送逻辑包并记录 queue_overflow droppedSequence。
 这包括可能丢弃 DOWN/UP；三份冗余不保证交付，也不恢复队列已丢弃的包。
 CSV/Logcat 仍保留全部原始样本。发送错误记录日志，无 ACK 或重传协议。
-Activity.onCreate 创建 Sender，使用 ThreadLocalRandom.nextLong 生成一次完整 64-bit
-senderRunId，不持久化。onResume 启用心跳并立即唤醒发送线程；onPause 禁用心跳、
+Activity.onCreate 创建无目标 Sender，使用 ThreadLocalRandom.nextLong 生成完整 64-bit
+senderRunId，不持久化。目标变化先停止 capture，清空队列和 session gate，换 runId，
+sequence 归零，先发 heartbeat 再接受新 DOWN。无目标时不发送、不积累 Touch。
+onResume 立即 probe，由 fresh OFFER 确认后启用心跳；onPause 禁用心跳、
 清空待发 Touch 和停止本地采集，保持同一 Sender/runId/sequence，不伪造 UP。
-onDestroy 才关闭 socket。真正重建 Sender 才换 runId 并让 sequence 从 0 开始。
+同目标且 resume 后 fresh OFFER 确认的 pause/resume 保留 runId/sequence；确认超时、Wi-Fi 变化和 target transition
+会重新建立 run。Power/onDestroy 关闭 discovery 与 sender 两个 socket/worker。
 
 现有线程使用 timed poll 等待 Touch 或 500 ms heartbeat deadline，直接同一个 socket
 发送心跳，心跳不进入 Touch queue。忙时仍检查 deadline；超期仅发一次，不补发历史。
 Touch header 为 20 bytes；HEARTBEAT 恰为 10 bytes，只有 version=2/type=4/runId。
 心跳没有 sequence，只发一份。Receiver 由心跳或 accepted Touch 续 2000 ms presence；
 超时清旧输入并显示 Disconnected。原有 Touch silence 2 秒诊断独立保留。
-没有新增设置、权限、线程池、第二 socket、Foreground Service 或 WakeLock。
+Discovery 单独使用 Wi-Fi Network.bindSocket，不全局绑定进程，不进入 Touch hot path。
+广播包含 limited broadcast 和按实际 IPv4 prefix 计算的 directed broadcast，去除重复。
+Connected 每秒 probe，2500 ms 没有当前 receiverId OFFER 则 Searching 并清 target。
+不采用 first-IPv4/NIC heuristic，不含 cloud 或手动 host UI。
 
-唯一新增权限是 UDP 必需的 android.permission.INTERNET（普通权限，无授权弹窗）。
-没有存储权限、网络状态权限或第三方依赖。筛选 RightpadUdp 可查看启动、
-每个逻辑包的发送份数和错误；packet_sent 仅证明系统接受发送，交付以 Receiver 为准。
+权限为 INTERNET、ACCESS_NETWORK_STATE 和带 neverForLocation 的 NEARBY_WIFI_DEVICES。
+Android 16 LNP 当前是 opt-in；正常模式不无条件弹 Nearby Devices 授权框，拒绝权限
+会明确记录 discovery_permission_denied。没有 location、存储权限或第三方依赖。
+筛选 RightpadDiscovery/RightpadUdp 查看低频状态、target、耗时和错误。
+详细协议、生命周期和 Android 16 官方权限依据见
+[DISCOVERY_PROTOCOL.md](../docs/DISCOVERY_PROTOCOL.md)。
 
 运行 tests/Test-ProtocolV2Encoder.ps1（JAVA_HOME 指向 JDK）执行编码及 Sender 测试，
 再运行 gradlew.bat assembleDebug lintDebug。安装、重启 Android 后，通过

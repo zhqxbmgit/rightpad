@@ -7,8 +7,10 @@ stack. The original v1 definition below is preserved as historical measurement
 context. This section supersedes its production lifecycle and presence rules.
 
 Transport remains one-way UDP on port 50000. All multibyte fields are little
-endian. No ACK, handshake, reliable UDP, retransmission, FEC, discovery, pairing,
+endian. No ACK, handshake, reliable UDP, retransmission, FEC, pairing,
 authentication, clock synchronization, jitter buffer or interpolation is added.
+Independent [Receiver Discovery v1](DISCOVERY_PROTOCOL.md) uses UDP 50001 to
+select the OFFER datagram source IPv4. It adds no fields or events to Touch v2.
 
 ### Touch layout
 
@@ -37,16 +39,23 @@ neither is a user setting or persisted JSON field.
 
 ### Android runtime
 
-UdpTouchSender generates `ThreadLocalRandom.current().nextLong()` once when
-created in Activity.onCreate. Its complete 64-bit pattern is transmitted without
+UdpTouchSender generates `ThreadLocalRandom.current().nextLong()` when
+created in Activity.onCreate and on each discovery target transition. Its complete 64-bit pattern is transmitted without
 signed conversion loss. It is transient run identity, not a device ID or security
 mechanism. A new Sender starts Touch sequence at zero. Each logical Touch advances
 it once; copies and heartbeat never advance it. No uint32 wraparound handling.
 
-onResume enables heartbeat and immediately wakes the existing sender thread.
+Production starts without a target. A valid discovery OFFER installs its source
+IPv4; target transition stops capture, clears queued Touch and the session gate,
+rotates runId, resets sequence and heartbeat, and sends heartbeat before fresh DOWN.
+No-target operation sends or queues nothing. No explicit disconnect is added.
+onResume probes immediately and enables heartbeat after a fresh confirming OFFER.
 onPause disables heartbeat, clears queued Touch and stops local capture, keeping
 the Sender, runId and sequence. onDestroy closes it. Activity/process recreation
-creates a new Sender/runId. No foreground service, WakeLock or additional socket.
+creates a new Sender/runId. Resume on the same Wi-Fi allows 2500 ms for a fresh
+OFFER before clearing the old target; input stays disabled until confirmation.
+A stale selection or changed Wi-Fi/target rotates the run. No foreground service or WakeLock; discovery alone owns an additional,
+independent socket.
 
 The existing single thread/socket/Touch queue uses timed poll until the next
 heartbeat deadline. Heartbeat is sent directly on that socket, outside the Touch

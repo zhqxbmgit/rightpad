@@ -47,9 +47,9 @@ public final class UdpTouchSenderTest {
                 socket.setSoTimeout(2000); heartbeat = receive(socket);
                 check(heartbeat[1] == 4 && run(heartbeat) == firstRun, "resume same run");
                 check(System.nanoTime() - resumed < 400_000_000L, "resume immediate heartbeat");
-                sender.submit(touch(TouchSample.Action.UP));
+                sender.submit(touch(TouchSample.Action.DOWN));
                 byte[] up = receive(socket); check(sequence(up) == 1, "heartbeat / pause do not consume touch sequence");
-                check(Arrays.equals(up, receive(socket)) && Arrays.equals(up, receive(socket)), "UP exact triplicate");
+                check(Arrays.equals(up, receive(socket)) && Arrays.equals(up, receive(socket)), "resumed DOWN exact triplicate");
                 System.out.println("PASS sender pause / resume / identity / sequence / copies");
                 long until = System.nanoTime() + 1_600_000_000L;
                 int heartbeats = 0, moves = 0;

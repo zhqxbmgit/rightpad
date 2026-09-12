@@ -5,13 +5,15 @@ namespace Rightpad.Receiver;
 
 internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter output,
     IPEndPoint? endpoint = null, Func<IMouseOutput>? mouseFactory = null, bool rawMouse = true,
-    FlightRecorder? flightRecorder = null, MouseBackend backend = MouseBackend.SendInput)
+    FlightRecorder? flightRecorder = null, MouseBackend backend = MouseBackend.SendInput,
+    IPEndPoint? discoveryEndpoint = null, Func<byte[]>? identityFactory = null)
 {
     private readonly SemaphoreSlim lifecycle = new(1, 1);
     private Run? current;
     private long nextRunId;
     public IPEndPoint? LocalEndpoint => Volatile.Read(ref current)?.Receiver?.LocalEndpoint;
     public Task Completion => Volatile.Read(ref current)?.Task ?? Task.CompletedTask;
+    public IPEndPoint? DiscoveryEndpoint => Volatile.Read(ref current)?.Discovery?.LocalEndpoint;
 
     private sealed class Run(long id)
     {
@@ -20,6 +22,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         public readonly TaskCompletionSource<bool> Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task Task = Task.CompletedTask;
         public UdpReceiver? Receiver;
+        public DiscoveryResponder? Discovery;
         public IMouseOutput? Mouse;
         public TouchSessionProcessor? Motion;
         public int State = (int)ReceiverState.Starting;
@@ -94,9 +97,27 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings,
                 cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder);
             Volatile.Write(ref run.Receiver, receiver);
+            // Explicit touch endpoints are test-only; opt into discovery there with its own endpoint.
+            if (endpoint is null || discoveryEndpoint is not null)
+            {
+                byte[] id = identityFactory?.Invoke() ?? ReceiverIdentityStore.Load(ReceiverIdentityStore.DefaultPath, message =>
+                {
+                    output.WriteLine(message);
+                    flightRecorder?.Event(message);
+                });
+                run.Discovery = new(discoveryEndpoint ?? new(IPAddress.Any, DiscoveryCodec.Port), id, output, flightRecorder);
+            }
             Volatile.Write(ref run.State, (int)ReceiverState.Running);
             run.Started.TrySetResult(true);
-            await receiver.RunAsync(run.Cancellation.Token).ConfigureAwait(false);
+            var touchTask = receiver.RunAsync(run.Cancellation.Token);
+            if (run.Discovery is null) await touchTask.ConfigureAwait(false);
+            else
+            {
+                var discoveryTask = run.Discovery.RunAsync(run.Cancellation.Token);
+                await Task.WhenAny(touchTask, discoveryTask).ConfigureAwait(false);
+                run.Cancellation.Cancel();
+                await Task.WhenAll(touchTask, discoveryTask).ConfigureAwait(false);
+            }
         }
         catch (Exception e)
         {
@@ -106,6 +127,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         }
         finally
         {
+            run.Discovery?.Dispose();
             buttons?.Dispose();
             if (buttons?.Failure is { } failure) Volatile.Write(ref run.Error, failure.Message);
             gesture?.Reset();

@@ -21,6 +21,11 @@ public final class MainActivity extends Activity {
     private TouchCaptureView captureView;
     private TouchRecordWriter recordWriter;
     private UdpTouchSender udpSender;
+    private ReceiverDiscoveryClient discovery;
+    private java.net.InetSocketAddress receiverTarget;
+    private String receiverId;
+    private boolean foreground;
+    private boolean senderEnabled;
     private boolean batteryReceiverRegistered;
     private final IntentFilter batteryFilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
     private final BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
@@ -42,9 +47,9 @@ public final class MainActivity extends Activity {
         }
         udpSender = new UdpTouchSender();
         captureView = new TouchCaptureView(this, recordWriter, udpSender,
-                udpSender.getReceiverAddress(), udpSender.getReceiverPort(),
-                this::finishAndRemoveTask);
+                this::exit);
         setContentView(captureView);
+        discovery = new ReceiverDiscoveryClient(this, this::receiverChanged);
         updateBattery(registerReceiver(null, batteryFilter));
         applyImmersiveMode();
     }
@@ -83,8 +88,8 @@ public final class MainActivity extends Activity {
             batteryReceiverRegistered = true;
             updateBattery(stickyBattery);
         }
-        udpSender.setForeground(true);
-        captureView.setSenderRunning(true);
+        foreground = true;
+        discovery.setForeground(true); // Resume input only after a fresh Wi-Fi OFFER confirms readiness.
     }
 
     @Override
@@ -99,7 +104,10 @@ public final class MainActivity extends Activity {
             unregisterReceiver(batteryReceiver);
             batteryReceiverRegistered = false;
         }
-        captureView.setSenderRunning(false);
+        foreground = false;
+        senderEnabled = false;
+        captureView.setConnection(null);
+        discovery.setForeground(false);
         udpSender.setForeground(false);
         captureView.stopCapture("activity_paused");
         super.onPause();
@@ -107,11 +115,35 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        discovery.close();
         udpSender.close();
         if (recordWriter != null) {
             recordWriter.close();
         }
         super.onDestroy();
+    }
+
+    private void receiverChanged(java.net.InetSocketAddress target, String id) {
+        if (!foreground) return;
+        if (!java.util.Objects.equals(receiverTarget, target) || !java.util.Objects.equals(receiverId, id)) {
+            captureView.stopCapture("receiver_changed");
+            udpSender.setTarget(target);
+            receiverTarget = target;
+            receiverId = id;
+        }
+        boolean enable = target != null;
+        if (senderEnabled != enable) {
+            udpSender.setForeground(enable);
+            senderEnabled = enable;
+        }
+        captureView.setConnection(target == null ? null : target.getAddress().getHostAddress());
+    }
+
+    private void exit() {
+        captureView.stopCapture("power_exit");
+        discovery.close();
+        udpSender.close();
+        finishAndRemoveTask();
     }
 
     private void updateBattery(Intent intent) {

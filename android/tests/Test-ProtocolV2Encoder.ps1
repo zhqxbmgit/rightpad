@@ -17,3 +17,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Sender tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'UI status/power test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.UiStatusAndPowerTest
 if ($LASTEXITCODE -ne 0) { throw 'UI status/power tests failed.' }
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $sourceDirectory 'DiscoveryProtocol.java') (Join-Path $sourceDirectory 'DiscoverySelection.java') (Join-Path $sourceDirectory 'DiscoveryBroadcasts.java') (Join-Path $sourceDirectory 'DiscoverySchedule.java') (Join-Path $sourceDirectory 'ConnectionDisplay.java') (Join-Path $PSScriptRoot 'DiscoveryTest.java')
+if ($LASTEXITCODE -ne 0) { throw 'Discovery test compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.DiscoveryTest
+if ($LASTEXITCODE -ne 0) { throw 'Discovery tests failed.' }

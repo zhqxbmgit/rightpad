@@ -15,6 +15,13 @@ Main goals:
 
 The system consists of two major components:
 
+Production endpoint selection uses independent Receiver Discovery v1 (UDP 50001).
+The Android Wi-Fi-bound discovery worker selects the OFFER source IPv4; the
+Windows responder advertises only after Touch UDP 50000 is bound. No fixed PC IP,
+manual host UI, first-interface heuristic or cloud is used. Two PCs at separate
+locations are supported by first-valid selection and current-receiver liveness.
+See [DISCOVERY_PROTOCOL.md](DISCOVERY_PROTOCOL.md) for lifecycle and validation.
+
 ```text
 Android Client
 
@@ -235,10 +242,12 @@ sequence baseline. A new senderRunId admitted by HEARTBEAT/DOWN also clears that
 baseline. Runtime, socket, cumulative counters and settings remain alive.
 
 Android retains one Sender thread, one socket and one Touch queue. It generates
-one random 64-bit runId per Sender creation; onResume/onPause enables/disables
-500 ms heartbeats without rebuilding the Sender. A timed poll services heartbeat
-deadlines outside the Touch queue. No new transport, service, manager, reply or
-user setting. See INPUT_PROTOCOL.md: Protocol v2 CURRENT; v1 remains historical.
+one random 64-bit runId per Sender creation and rotates it on discovery target
+transitions, which clear capture/queue and reset Touch sequence. Confirmed
+same-target pause/resume preserves identity. A timed poll services 500 ms heartbeat
+deadlines outside the Touch queue. Discovery has its own socket/thread/schedule;
+it never enters the input hot path. See INPUT_PROTOCOL.md: Protocol v2 CURRENT;
+v1 remains historical. No service or new user setting is added.
 
 Receiver owns this processing on its existing sequential background input path.
 An immutable presence snapshot and atomic counters are read by WPF at 5 Hz;

@@ -10,6 +10,22 @@ automatically listens on IPv4 `0.0.0.0:50000`. A matching .NET 8 Desktop Runtime
 is required for this framework-dependent build; no SDK, PowerShell, Task Scheduler
 or Codex is needed for daily use.
 
+After Touch runtime startup, the independent Receiver Discovery v1 responder
+listens on `0.0.0.0:50001`. Its 40-byte OFFER echoes the 16-byte DISCOVER nonce
+and includes stable opaque receiverId, Touch port 50000 and protocol version 2.
+It contains no IP; Android selects the received source IPv4. Windows never picks
+a first NIC/address, including Mihomo/TUN. Runtime Stop/Error releases both ports.
+Identity lives in `%LocalAppData%\rightpad\receiver-id` (32 hex characters),
+atomically created/repaired and retained across restarts and DHCP changes.
+
+Add separate inbound Allow UDP rules for 50000 and 50001, **Private profile only**;
+the discovery rule name is `rightpad Receiver Discovery UDP 50001`. Do not open
+Public (including a Public Mihomo adapter). This is trusted-LAN operation for one
+phone and two PCs in separate locations, normally not simultaneously on one LAN.
+There is no manual host selector, cloud or fixed Android IP. See
+[DISCOVERY_PROTOCOL.md](../docs/DISCOVERY_PROTOCOL.md) for layout, first-valid
+selection, liveness, clean sender transitions and Android 16 permission caveat.
+
 - Overview: actual connection observations, traffic counters, a compact Start with
   Windows toggle and one Start/Stop.
 - Motion: RAW text and independently editable X/Y sensitivity.
@@ -145,6 +161,10 @@ Stop an existing development runtime before rebuilding its Release files. Start
 ensures the fixed `Rightpad Receiver Dev` task and starts the **WPF GUI**, passing
 `--dev-log-dir`. The GUI reads the normal user settings file; automated tuning
 checks must restore 7/7 and 300/8/25 before leaving it for acceptance.
+To preserve an established live baseline during development, build/test final
+Release into an isolated `--artifacts-path` directory first. Then stop and verify
+the old process and both ports, copy the verified Receiver output into the normal
+Release path, and Start once through the launcher.
 
 The task uses current-user InteractiveToken, Limited/LUA, no triggers, no stored
 password, no time limit and no automatic restart. The Receiver must match the
@@ -293,6 +313,6 @@ Use the independent launcher if Windows itself needs to be started or updated.
 - Existing tests remain, plus settings/runtime/settings-boundary regression files.
 
 No filter, FIR/Second Order, Double Tap Drag, right click, scroll, HID/driver,
-profiles/discovery/multi-device, generic reconnect frameworks, cloud/accounts/plugins,
+profiles/multi-device management, generic reconnect frameworks, cloud/accounts/plugins,
 tray notifications/telemetry/runtime controls, updates, graphs/log viewer, theme
 selector or custom title bar.

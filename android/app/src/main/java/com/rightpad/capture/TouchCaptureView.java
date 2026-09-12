@@ -17,13 +17,10 @@ import android.view.View;
 import android.view.WindowInsets;
 
 final class TouchCaptureView extends View {
-    private static final String STATUS_RUNNING = "运行中";
-    private static final String STATUS_PAUSED = "已暂停";
-
     private final TouchSampleLogger logger = new TouchSampleLogger();
     private final TouchRecordWriter recordWriter;
     private final UdpTouchSender udpSender;
-    private final String receiverAddress;
+    private String receiverAddress;
     private final Runnable requestExit;
     private final float density;
     private final float scaledDensity;
@@ -68,7 +65,6 @@ final class TouchCaptureView extends View {
     private int safeInsetTop;
     private int safeInsetLeft;
     private int safeInsetRight;
-    private boolean senderRunning;
     private float statusCenterX;
     private float statusCenterY;
     private float statusRadius;
@@ -92,16 +88,15 @@ final class TouchCaptureView extends View {
     private String batteryText = BatteryDisplay.text(BatteryDisplay.UNKNOWN_PERCENT);
 
     TouchCaptureView(Context context, TouchRecordWriter recordWriter, UdpTouchSender udpSender,
-            String receiverAddress, int receiverPort, Runnable requestExit) {
+            Runnable requestExit) {
         super(context);
         this.recordWriter = recordWriter;
         this.udpSender = udpSender;
-        this.receiverAddress = receiverAddress;
         this.requestExit = requestExit;
         density = getResources().getDisplayMetrics().density;
         scaledDensity = getResources().getDisplayMetrics().scaledDensity;
         configurePaints();
-        setContentDescription(receiverAddress + ":" + receiverPort);
+        setContentDescription(ConnectionDisplay.title(null) + " " + ConnectionDisplay.address(null));
         setOnApplyWindowInsetsListener((view, windowInsets) -> {
             Insets cutoutSafe = windowInsets.getInsets(WindowInsets.Type.displayCutout());
             // Both controls sit outside the centered camera cutout. Preserve side
@@ -299,9 +294,10 @@ final class TouchCaptureView extends View {
         gearPath.close();
     }
 
-    void setSenderRunning(boolean running) {
-        if (senderRunning == running) return;
-        senderRunning = running;
+    void setConnection(String address) {
+        if (java.util.Objects.equals(receiverAddress, address)) return;
+        receiverAddress = address;
+        setContentDescription(ConnectionDisplay.title(address) + " " + ConnectionDisplay.address(address));
         invalidate();
     }
 
@@ -352,9 +348,9 @@ final class TouchCaptureView extends View {
         canvas.drawArc(wifiInnerArc, 210f, 120f, false, wifiPaint);
         canvas.drawCircle(statusCenterX, wifiDotY, wifiDotRadius, wifiPaint);
 
-        canvas.drawText(senderRunning ? STATUS_RUNNING : STATUS_PAUSED,
+        canvas.drawText(ConnectionDisplay.title(receiverAddress),
                 statusTextX, statusTitleBaseline, statusTextPaint);
-        canvas.drawText(receiverAddress, statusTextX, addressBaseline, addressTextPaint);
+        canvas.drawText(ConnectionDisplay.address(receiverAddress), statusTextX, addressBaseline, addressTextPaint);
 
         canvas.drawRoundRect(batteryBody, dp(2f), dp(2f), batteryOutlinePaint);
         canvas.drawRoundRect(batteryTerminal, dp(1f), dp(1f), batteryTerminalPaint);
@@ -420,7 +416,7 @@ final class TouchCaptureView extends View {
 
         if (action == MotionEvent.ACTION_DOWN) {
             stopCapture("new_down");
-            if (event.getPointerCount() == 1
+            if (udpSender.canCapture() && event.getPointerCount() == 1
                     && event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
                 sessionId++;
                 activePointerId = event.getPointerId(0);

@@ -176,6 +176,13 @@ pairing, PINs, encryption, TLS/DTLS, tokens, certificates, signatures, HMAC,
 anti-replay systems, multi-user permissions, or security handshakes.
 Do not add first-sender locking or source authentication/isolation.
 
+Explicitly approved LAN discovery exception (2026-09-12): one Android phone may
+automatically find either of two Windows PCs at different locations, normally
+not simultaneously on one LAN. Use independent Receiver Discovery v1 UDP 50001;
+Touch v2 UDP 50000 stays unchanged. OFFER source IPv4 is authoritative; no fixed
+production IP, first-NIC heuristic, manual host selector or cloud. See
+docs/DISCOVERY_PROTOCOL.md for the selection and clean target-transition contract.
+
 Packet length/version/field validation, malformed packet rejection, and
 timeout/stuck-input fail-safes remain required reliability measures.
 
@@ -607,9 +614,12 @@ functional E2E on the existing v2 Receiver after Android restart/reinstallation.
 
 Current Protocol v2 behavior (validated 2026-09-09):
 
-- Android creates one random 64-bit senderRunId per UdpTouchSender runtime.
+- Android creates a random 64-bit senderRunId per UdpTouchSender runtime and
+  rotates it on every discovery target transition, clearing Touch queue/session
+  and resetting sequence to zero. Same-target confirmed pause/resume retains it.
 - onPause stops heartbeat/capture without destroying Sender or resetting sequence;
-  onResume immediately enables heartbeat using the same runId and sequence.
+  onResume probes immediately and enables heartbeat after a fresh discovery OFFER
+  confirms the unchanged target, keeping the same runId and sequence.
 - Sender recreation gives a new runId and Touch sequence starts at zero.
 - Receiver admits an unknown run only on a fully valid HEARTBEAT or DOWN, retires
   the prior ID for its Runtime lifetime, and resets only the input baseline.
@@ -622,8 +632,9 @@ the explicitly approved v2 run/presence behavior. The independent interactive
 launcher / Codex Job lifetime rule remains mandatory. Practicality First: add
 only functionality solving a current demonstrated problem. This change does not
 authorize handshake frameworks, reconnect managers, TCP/ACK/reliable UDP,
-retransmission/FEC, discovery, pairing/security, config sync, extra transport
-threads/sockets or network optimization.
+retransmission/FEC, pairing/security, config sync, extra transport
+threads/sockets or network optimization beyond the separately approved independent
+LAN discovery socket/thread described in docs/DISCOVERY_PROTOCOL.md.
 
 Do not ask the user to run commands that Codex can run. If no configured test
 device is reachable through ADB, explicitly report that deployment and runtime
