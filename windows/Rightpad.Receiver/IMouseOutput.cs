@@ -19,6 +19,11 @@ internal readonly record struct MouseOutputStats(
 
 internal enum MouseBackend { SendInput, VirtualHid }
 
+internal static class MouseBackendDefaults
+{
+    public const MouseBackend Production = MouseBackend.VirtualHid;
+}
+
 internal static class MouseOutputFactory
 {
     public static string Name(MouseBackend backend) => backend switch

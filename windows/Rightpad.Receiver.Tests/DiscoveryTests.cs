@@ -106,7 +106,7 @@ internal static class DiscoveryTests
         using var reserve = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
         var discoveryEndpoint = (IPEndPoint)reserve.Client.LocalEndPoint!;
         reserve.Dispose();
-        var runtime = new ReceiverRuntime(new(), TextWriter.Null, new(IPAddress.Loopback, 0), rawMouse: false,
+        var runtime = new ReceiverRuntime(new(), TextWriter.Null, MouseBackend.SendInput, new(IPAddress.Loopback, 0), rawMouse: false,
             discoveryEndpoint: discoveryEndpoint, identityFactory: () => Id);
         Check(runtime.DiscoveryEndpoint is null, "not advertised before startup");
         using (var before = new UdpClient(discoveryEndpoint)) { }
@@ -130,14 +130,14 @@ internal static class DiscoveryTests
         finally { await runtime.StopAsync(); }
         // Failed touch bind must never acquire the discovery port.
         using var occupied = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
-        var failed = new ReceiverRuntime(new(), TextWriter.Null, (IPEndPoint)occupied.Client.LocalEndPoint!, rawMouse: false,
+        var failed = new ReceiverRuntime(new(), TextWriter.Null, MouseBackend.SendInput, (IPEndPoint)occupied.Client.LocalEndPoint!, rawMouse: false,
             discoveryEndpoint: discoveryEndpoint, identityFactory: () => Id);
         await failed.StartAsync();
         Equal(ReceiverState.Error, failed.CaptureSnapshot().RuntimeState, "touch bind fails");
         Check(failed.DiscoveryEndpoint is null, "no advertising on failed touch bind");
         using var free = new UdpClient(discoveryEndpoint);
         // Failed discovery bind must also release touch and leave a truthful Error.
-        var discoveryFailed = new ReceiverRuntime(new(), TextWriter.Null, new(IPAddress.Loopback, 0), rawMouse: false,
+        var discoveryFailed = new ReceiverRuntime(new(), TextWriter.Null, MouseBackend.SendInput, new(IPAddress.Loopback, 0), rawMouse: false,
             discoveryEndpoint: discoveryEndpoint, identityFactory: () => Id);
         await discoveryFailed.StartAsync();
         Equal(ReceiverState.Error, discoveryFailed.CaptureSnapshot().RuntimeState, "discovery bind error");
@@ -146,7 +146,7 @@ internal static class DiscoveryTests
 
     public static async Task RuntimeErrorCleanup()
     {
-        var runtime = new ReceiverRuntime(new(), TextWriter.Null, new(IPAddress.Loopback, 0),
+        var runtime = new ReceiverRuntime(new(), TextWriter.Null, MouseBackend.SendInput, new(IPAddress.Loopback, 0),
             mouseFactory: () => new WindowsMouseOutput((uint count, ref WindowsMouseOutput.NativeInput input, int size) => 0, () => 5),
             discoveryEndpoint: new(IPAddress.Loopback, 0), identityFactory: () => Id);
         try

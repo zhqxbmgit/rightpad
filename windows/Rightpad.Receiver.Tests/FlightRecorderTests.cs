@@ -79,7 +79,7 @@ internal static class FlightRecorderTests
         using var recorder = new FlightRecorder(storage);
         recorder.Event("force_failure");
         await RuntimeTests.Until(() => recorder.Disabled);
-        var runtime = new ReceiverRuntime(new(), TextWriter.Null, new IPEndPoint(IPAddress.Loopback, 0),
+        var runtime = new ReceiverRuntime(new(), TextWriter.Null, MouseBackend.SendInput, new IPEndPoint(IPAddress.Loopback, 0),
             rawMouse: false, flightRecorder: recorder);
         await runtime.StartAsync();
         Equal(ReceiverState.Running, runtime.CaptureSnapshot().RuntimeState, "diagnostic failure does not stop runtime");
@@ -124,7 +124,7 @@ internal static class FlightRecorderTests
     public static async Task RuntimeRestartBoundary()
     {
         var storage = new MemoryStorage(); using var recorder = new FlightRecorder(storage);
-        var runtime = new ReceiverRuntime(new(), TextWriter.Null, new IPEndPoint(IPAddress.Loopback, 0), rawMouse: false, flightRecorder: recorder);
+        var runtime = new ReceiverRuntime(new(), TextWriter.Null, MouseBackend.SendInput, new IPEndPoint(IPAddress.Loopback, 0), rawMouse: false, flightRecorder: recorder);
         await runtime.StartAsync(); await runtime.StopAsync(); await runtime.StartAsync(); await runtime.StopAsync();
         await RuntimeTests.Until(() => storage.Lines.Count(l => l.Contains("runtime_start")) == 2);
         Equal(2, storage.Lines.Count(l => l.Contains("runtime_stop")), "two clear runtime stop boundaries");

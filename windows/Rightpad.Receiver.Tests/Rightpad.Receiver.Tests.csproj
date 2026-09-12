@@ -7,5 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Rightpad.Receiver/Rightpad.Receiver.csproj" />
+    <None Update="LauncherTests.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../tools/RightpadReceiverTask.ps1" Link="RightpadReceiverTask.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

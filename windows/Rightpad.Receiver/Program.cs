@@ -9,7 +9,7 @@ internal static class Program
 {
     internal enum LaunchMode { Gui, Diagnostics, RawMouse }
     internal sealed record LaunchOptions(LaunchMode Mode, Options Input, string? LogDirectory, string? SettingsPath,
-        MouseBackend Backend = MouseBackend.SendInput);
+        MouseBackend Backend);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AttachConsole(uint processId);
@@ -105,7 +105,7 @@ internal static class Program
         var input = new List<string>();
         string? log = null, settings = null;
         bool diagnostics = false;
-        var backend = MouseBackend.SendInput;
+        var backend = MouseBackendDefaults.Production;
         var seen = new HashSet<string>();
         for (int i = 0; i < args.Length; i++)
         {

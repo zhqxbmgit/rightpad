@@ -320,10 +320,15 @@ preselect libvirtualhid or any other candidate.
 
 ### Virtual HID
 
-Virtual HID is an allowed and serious Windows mouse-backend architecture
-candidate. Do not automatically choose SendInput or another weaker approach
-because driver development, WDK, signing, installation, upgrades, native bridging
-or debugging are difficult.
+Production mouse backend (approved 2026-09-12): **libvirtualhid Virtual HID Mouse**.
+The single product default is `MouseBackendDefaults.Production`. Program passes
+the backend explicitly to ReceiverRuntime; normal GUI, quoted-EXE HKCU startup
+and the independent launcher without an override inherit that default.
+SendInput remains an explicit development/diagnostic compatibility override
+(`--dev-mouse-backend sendinput`), never an automatic production fallback.
+Do not add a user backend selector, persisted backend setting or silent fallback.
+Virtual HID initialization failure must remain Runtime Error with visible LastError
+and diagnostics. Keep fake tests independent of the installed native driver.
 
 Real testing has established a structural limitation worth formal evaluation:
 
@@ -338,11 +343,13 @@ High-integrity Receiver
 → cursor movement works again
 ```
 
-Whether Virtual HID becomes the production Windows mouse backend must be decided
-by measured gaming compatibility, Raw Input support, High-integrity compatibility,
-latency, jitter, stability, human feel and acceptable vendor, activation,
-deployment and maintenance risk. Do not reject it because it is difficult or
-paid, and do not adopt it merely because it appears more advanced.
+Adoption evidence: human A/B found no obvious subjective feel degradation;
+Virtual HID is Raw Input-visible; Medium Receiver → High-integrity foreground
+movement and Single Tap work; SendInput has the measured limitation above;
+POC/build/runtime and Driver/Broker/Lifetime license prerequisites are validated.
+Objective latency benchmarking is not complete: do not claim lower latency or
+higher polling rate. Broader game compatibility, latency, jitter and dependency/
+deployment maintenance risk remain evidence-driven. See docs/VIRTUAL_HID_MOUSE_POC.md.
 
 ### Avoid Unnecessary Complexity
 

@@ -1,7 +1,10 @@
 # rightpad Receiver for Windows 11
 
 C#, .NET 8, WPF; one GUI process owns UDP reception, RAW motion, Single Tap
-and SendInput. No third-party packages, Core project, service or IPC.
+and libvirtualhid Virtual HID Mouse. No managed third-party packages, Core project
+or new service/IPC layer. The existing native bridge requires the installed
+libvirtualhid Driver/Broker and active machine license; see
+[VIRTUAL_HID_MOUSE_POC.md](../docs/VIRTUAL_HID_MOUSE_POC.md).
 
 ## Normal use
 
@@ -9,6 +12,19 @@ Double-click the built `Rightpad.Receiver.exe`. The GUI opens on **Motion** and
 automatically listens on IPv4 `0.0.0.0:50000`. A matching .NET 8 Desktop Runtime
 is required for this framework-dependent build; no SDK, PowerShell, Task Scheduler
 or Codex is needed for daily use.
+
+The sole production backend default is `MouseBackendDefaults.Production`:
+libvirtualhid Virtual HID Mouse. Normal GUI and Start with Windows (quoted EXE
+only) inherit it. `RightpadReceiverTask.ps1 -Mode Start` also inherits it by omitting
+the backend argument. Explicit `-DevMouseBackend sendinput` or `virtualhid` passes
+the corresponding `--dev-mouse-backend` override. SendInput remains a development/
+diagnostic compatibility backend; there is no automatic fallback or user selector.
+Virtual HID initialization failure becomes Runtime Error with LastError/diagnostics.
+
+Adoption follows human A/B without obvious feel degradation, Raw Input visibility,
+Medium Receiver → High foreground success, the measured SendInput limitation there,
+and verified POC/build/runtime plus Driver/Broker/Lifetime license. No objective
+latency benchmark or higher polling rate claim is made.
 
 After Touch runtime startup, the independent Receiver Discovery v1 responder
 listens on `0.0.0.0:50001`. Its 40-byte OFFER echoes the 16-byte DISCOVER nonce

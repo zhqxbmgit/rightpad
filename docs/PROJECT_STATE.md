@@ -28,9 +28,14 @@ Virtual HID Mouse POC passed with libvirtualhid commit
 `6fdb8bd4de3b68d96c30e5303ac2ebb333c09746`, driver `2026.905.2300.20` and an
 active lifetime license. A Medium-integrity Receiver produced Move and Single Tap
 in a High-integrity foreground through a Raw Input-visible rightpad-owned mouse,
-without SendInput fallback or an obvious subjective regression. SendInput remains
-the production/default backend. Next step: formal SendInput vs Virtual HID A/B
-measurement.
+without SendInput fallback or an obvious subjective regression. Production now
+uses libvirtualhid Virtual HID Mouse, from the single `MouseBackendDefaults.Production`
+definition. Human A/B found no obvious feel degradation; Raw Input visibility,
+Medium Receiver → High foreground success, the measured SendInput limitation there,
+and POC/build/runtime plus Driver/Broker/Lifetime license validation support adoption.
+SendInput is retained only as an explicit development/diagnostic compatibility
+override, never an automatic fallback. No objective latency benchmark is complete;
+no lower latency or higher polling rate is claimed.
 
 Start with Windows is implemented in the WPF Overview Receiver card. It uses the
 current-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value
@@ -140,7 +145,7 @@ Android real touch
 → RAW relative delta
 → fixed sensitivity
 → fractional accumulator
-→ SendInput
+→ libvirtualhid Virtual HID Mouse
 ```
 
 自动链路已经通过。
@@ -355,13 +360,13 @@ evidence; the full v1 layout is preserved in INPUT_PROTOCOL.md.
 - TouchSessionProcessor
 - RawMotionProcessor
 - Fractional accumulator
-- SendInput relative mouse backend
-- Single Tap recognition and locally timed SendInput left click
+- libvirtualhid Virtual HID relative mouse backend; explicit SendInput dev override
+- Single Tap recognition and locally timed left click
 
-当前 production/default backend：SendInput。
-
-Virtual HID Mouse POC：passed；libvirtualhid remains an explicit development-only
-backend pending formal SendInput vs Virtual HID A/B measurement.
+当前 production/default backend：libvirtualhid Virtual HID Mouse。
+Program 显式传 backend 给 ReceiverRuntime；Runtime 没有隐式默认值。
+开发 launcher 无 override 时不传 backend 参数；HKCU startup 仍只有 quoted EXE。
+初始化失败进入 Runtime Error / LastError / diagnostics，无自动 SendInput fallback。
 
 ---
 
@@ -374,7 +379,7 @@ Accepted sample
 → absolute position difference
 → fixed sensitivity
 → fractional accumulator
-→ SendInput
+→ libvirtualhid Virtual HID Mouse
 ```
 
 没有：
@@ -528,7 +533,7 @@ Double Tap Drag: Pending。
 sample 都检查相对 DOWN 的 X/Y 独立阈值（各自 <= 8 px）；任一 sample 越界后永久
 取消本次 Tap candidate。匹配 UP 还需在阈值内且 eventTimeNs 时长 <= 300 ms。
 微小 RAW 位移照常输出。LEFT DOWN 后由一次性 .NET timer 在约 25 ms 后 LEFT UP，
-不阻塞 UDP；重叠点击依次完成各自 hold。SendInput 失败会记录并停止 Receiver，
+不阻塞 UDP；重叠点击依次完成各自 hold。Mouse output 失败会记录并停止 Receiver，
 清理时 best-effort LEFT UP；强制终止或持续注入失败无法保证释放。
 
 已确定需求及状态：
@@ -659,8 +664,6 @@ Do not implement yet:
 
 - Motion filter
 - Double Tap Drag (Single Tap left-click implemented)
-- Virtual HID production adoption (POC passed; formal A/B pending)
-- production driver/backend decision
 - game profiles
 - network optimization
 - generic reconnect / handshake frameworks
@@ -673,10 +676,11 @@ These are deferred, not forgotten.
 
 ## 21. Next Decision Point
 
-The next architectural decision is the production mouse backend. Run a formal,
-controlled SendInput vs Virtual HID A/B measurement covering gaming compatibility,
-Raw Input behavior, integrity boundaries, latency, jitter, stability and human
-feel. Keep SendInput as the default until that evidence supports a change.
+The production mouse backend decision is now libvirtualhid Virtual HID Mouse.
+Further controlled SendInput vs Virtual HID measurements of broad game compatibility,
+latency, jitter and stability remain separate work when requested; they are not
+claims established by this adoption. Keep the explicit development override for
+those comparisons and diagnostics, with no automatic fallback.
 
 Motion-filter selection remains separate and evidence-driven. Do not implement a
 complicated filter before RAW measurements demonstrate a specific need.

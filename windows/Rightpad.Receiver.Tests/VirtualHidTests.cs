@@ -20,7 +20,8 @@ internal static class VirtualHidTests
     }
     public static void Arguments()
     {
-        Equal(MouseBackend.SendInput, Receiver.Program.ParseLaunchArguments([]).Backend, "default remains SendInput");
+        Equal(MouseBackend.VirtualHid, MouseBackendDefaults.Production, "production default");
+        Equal(MouseBackendDefaults.Production, Receiver.Program.ParseLaunchArguments([]).Backend, "no-argument production launch");
         Equal(MouseBackend.SendInput, Receiver.Program.ParseLaunchArguments(["--dev-mouse-backend", "sendinput"]).Backend, "explicit SendInput");
         var selected = Receiver.Program.ParseLaunchArguments(["--dev-mouse-backend", "virtualhid"]);
         Equal(MouseBackend.VirtualHid, selected.Backend, "explicit Virtual HID");
@@ -68,8 +69,9 @@ internal static class VirtualHidTests
     public static async Task InitializationFailure()
     {
         int attempts = 0;
-        var runtime = new ReceiverRuntime(new(), TextWriter.Null, new(IPAddress.Loopback, 0),
-            () => { attempts++; throw new IOException("license unavailable"); }, backend: MouseBackend.VirtualHid);
+        using var log = new StringWriter();
+        var runtime = new ReceiverRuntime(new(), log, MouseBackendDefaults.Production, new(IPAddress.Loopback, 0),
+            () => { attempts++; throw new IOException("license unavailable"); });
         Equal("libvirtualhid", runtime.CaptureSnapshot().MouseBackend, "selected identity before start");
         await runtime.StartAsync();
         Equal(ReceiverState.Error, runtime.CaptureSnapshot().RuntimeState, "selected failure is Error");
@@ -77,14 +79,32 @@ internal static class VirtualHidTests
         Equal(1, attempts, "no retry/fallback");
         Check(runtime.LocalEndpoint is null && runtime.Completion.IsCompleted, "no UDP admission after failed initialization");
         Check(runtime.CaptureSnapshot().LastError!.Contains("license unavailable"), "actionable error");
+        Check(log.ToString().Contains("receiver_error: license unavailable"), "diagnostic records initialization cause");
+        Check(!log.ToString().Contains("name=SendInput"), "no successful fallback diagnostic");
         await runtime.StopAsync();
+    }
+    public static async Task DiagnosticsDoesNotCreateMouse()
+    {
+        var launch = Receiver.Program.ParseLaunchArguments(["--diagnostics"]);
+        int attempts = 0;
+        var runtime = new ReceiverRuntime(new(), TextWriter.Null, launch.Backend, new(IPAddress.Loopback, 0),
+            mouseFactory: () => { attempts++; throw new IOException("must never create mouse"); },
+            rawMouse: launch.Mode == Receiver.Program.LaunchMode.RawMouse);
+        try
+        {
+            await runtime.StartAsync();
+            Equal(ReceiverState.Running, runtime.CaptureSnapshot().RuntimeState, "diagnostics starts");
+            Equal("None (diagnostics)", runtime.CaptureSnapshot().MouseBackend, "no selected output");
+            Equal(0, attempts, "production default does not instantiate a diagnostic mouse");
+        }
+        finally { await runtime.StopAsync(); }
     }
     public static async Task RuntimeLifecycle()
     {
         var instances = new List<FakeNative>();
         var settings = new RuntimeSettingsStore(RuntimeSettings.Default with { ClickHoldMs = 5000 });
-        var runtime = new ReceiverRuntime(settings, TextWriter.Null, new(IPAddress.Loopback, 0),
-            () => { var n = new FakeNative(); instances.Add(n); return new LibVirtualHidMouseOutput(n); }, backend: MouseBackend.VirtualHid);
+        var runtime = new ReceiverRuntime(settings, TextWriter.Null, MouseBackend.VirtualHid, new(IPAddress.Loopback, 0),
+            () => { var n = new FakeNative(); instances.Add(n); return new LibVirtualHidMouseOutput(n); });
         using var sender = new UdpClient();
         try
         {
@@ -109,8 +129,8 @@ internal static class VirtualHidTests
     public static async Task RuntimeReportFailure()
     {
         var native = new FakeNative { FailMove = true };
-        var runtime = new ReceiverRuntime(new(), TextWriter.Null, new(IPAddress.Loopback, 0),
-            () => new LibVirtualHidMouseOutput(native), backend: MouseBackend.VirtualHid);
+        var runtime = new ReceiverRuntime(new(), TextWriter.Null, MouseBackend.VirtualHid, new(IPAddress.Loopback, 0),
+            () => new LibVirtualHidMouseOutput(native));
         using var sender = new UdpClient();
         try
         {
@@ -130,8 +150,8 @@ internal static class VirtualHidTests
     {
         using var occupied = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
         var native = new FakeNative();
-        var runtime = new ReceiverRuntime(new(), TextWriter.Null, (IPEndPoint)occupied.Client.LocalEndPoint!,
-            () => new LibVirtualHidMouseOutput(native), backend: MouseBackend.VirtualHid);
+        var runtime = new ReceiverRuntime(new(), TextWriter.Null, MouseBackend.VirtualHid, (IPEndPoint)occupied.Client.LocalEndPoint!,
+            () => new LibVirtualHidMouseOutput(native));
         await runtime.StartAsync();
         Equal(ReceiverState.Error, runtime.CaptureSnapshot().RuntimeState, "bind error");
         Equal("dispose", native.Events.Single().Kind, "creation followed by bind failure destroys device");

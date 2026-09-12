@@ -132,7 +132,7 @@ internal static class WindowsInputEnvironmentTests
         var storage = new Storage(); var environment = new WindowsInputEnvironmentSnapshot(new Reads { DesktopFails = true });
         using var recorder = new FlightRecorder(storage, captureEnvironment: () => throwAll ? throw new IOException("environment unavailable") : environment.Capture());
         var mouse = new WindowsMouseOutput((uint c, ref WindowsMouseOutput.NativeInput i, int s) => 1, () => 0);
-        var runtime = new ReceiverRuntime(new(), TextWriter.Null, new IPEndPoint(IPAddress.Loopback, 0), () => mouse, flightRecorder: recorder);
+        var runtime = new ReceiverRuntime(new(), TextWriter.Null, MouseBackend.SendInput, new IPEndPoint(IPAddress.Loopback, 0), () => mouse, flightRecorder: recorder);
         using var sender = new UdpClient();
         try
         {

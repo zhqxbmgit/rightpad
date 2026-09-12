@@ -1,9 +1,10 @@
 # libvirtualhid mouse integration POC
 
-This is a development-only Windows x64 output backend. Default GUI, login startup,
-and RAW development launches still select SendInput. No UI setting or automatic
-fallback is introduced. Android, Protocol v2, motion math and Single Tap semantics
-are unchanged.
+The completed POC is now the production Windows x64 mouse backend (2026-09-12).
+`MouseBackendDefaults.Production` selects libvirtualhid Virtual HID Mouse for GUI,
+login startup and RAW development launches. SendInput is retained as an explicit
+development/diagnostic compatibility override, never an automatic fallback.
+Android, Protocol v2, motion math and Single Tap semantics are unchanged.
 
 ## Pinned dependency and build
 
@@ -63,18 +64,19 @@ not individual HID chunks or input consumed by a foreground application.
 
 ## Enforced identity and failure behavior
 
-Select explicitly using:
+Use the production default, or select a development override explicitly:
 
 ```powershell
+windows/tools/RightpadReceiverTask.ps1 -Mode Start
 windows/tools/RightpadReceiverTask.ps1 -Mode Start -DevMouseBackend sendinput
 windows/tools/RightpadReceiverTask.ps1 -Mode Start -DevMouseBackend virtualhid
 ```
 
-The independent task wrapper passes `--dev-mouse-backend sendinput|virtualhid` to
-the GUI. Its default is always `sendinput`; it does not change the user's login
-startup command. A tiny ignored launch-options file transports the explicit
-development choice to the scheduler wrapper. Use the launcher, never a persistent
-Receiver child of the Codex shell.
+The independent task wrapper omits `--dev-mouse-backend` unless an explicit
+sendinput/virtualhid override is supplied. Its `production` mode inherits the EXE's
+single default; PowerShell does not duplicate it. HKCU startup still runs only the
+quoted EXE. A tiny ignored launch-options file transports the launch mode to the
+scheduler wrapper. Use the launcher, never a persistent Receiver child of the Codex shell.
 
 The pinned library can return a successful SendInput mouse on some creation
 failures, and its Runtime defaults to the fake backend. Therefore the bridge:
@@ -151,3 +153,24 @@ used, and no obvious subjective regression was observed.
 This POC does not by itself establish broad gaming compatibility, latency or
 jitter. Those remain subjects for the separate formal SendInput vs Virtual HID
 A/B measurement. No benchmark was performed as part of this POC acceptance.
+
+Production adoption is explicitly approved based on human A/B finding no obvious
+subjective feel degradation, Raw Input visibility, Medium Receiver → High foreground
+Move/Single Tap success, the previously measured SendInput limitation at that
+integrity boundary, passing POC/build/runtime, and the validated Driver/Broker/
+Lifetime license environment. No objective latency benchmark is complete; no lower
+latency or higher polling rate is claimed. The existing bridge also rejects the
+upstream library's possible SendInput fallback before any input submission.
+
+Production-default acceptance (2026-09-12): native Release fake test passed;
+Debug and Release builds had zero warnings/errors and each passed all 147 managed
+tests (including launcher argument checks). Fresh no-override Release runs selected
+libvirtualhid, with one rightpad-owned VID 1209/PID 0003 Raw Input mouse appearing
+on Start and disappearing on Stop. The existing Android process rediscovered the
+Receiver after each restart. Medium and High inert foreground windows consumed
+relative movement and exactly one LEFT DOWN/UP per controlled tap, with LEFT
+released and zero mouse output failures. Explicit SendInput override smoke passed;
+the final running Receiver was restored to no-override production Virtual HID.
+HKCU startup remained the original quoted Release EXE only. Local evidence is
+under ignored `windows/test-results/backend-*`; temporary test windows are not
+part of the product or committed artifacts.

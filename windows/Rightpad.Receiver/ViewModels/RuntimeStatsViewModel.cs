@@ -9,7 +9,7 @@ internal sealed class RuntimeStatsViewModel : ObservableModel
     private long runId = -1;
     private string status = "Stopped", samplesHz = "—", packetsHz = "—", runtimeState = "Stopped";
     private string remoteIp = "—", endpoint = "Not listening", session = "None", lastAccepted = "Never";
-    private string mouseBackend = "SendInput", error = "";
+    private string mouseBackend = "Not selected", error = "";
     private long gap, old, duplicate, invalid, timeouts;
     private string lastSeen = "Never";
     private long heartbeats, presenceTimeouts, outdatedRuns;

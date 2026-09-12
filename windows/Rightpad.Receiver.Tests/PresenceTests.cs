@@ -170,7 +170,7 @@ internal static class PresenceTests
         var settings = new RuntimeSettingsStore(new RuntimeSettings(7, 7, 300, 8, 200));
         var mouse = new WindowsMouseOutput((uint count, ref WindowsMouseOutput.NativeInput input, int size) =>
             input.Data.Mouse.Flags == 4 ? 0u : 1u, () => 5);
-        var runtime = new ReceiverRuntime(settings, TextWriter.Null,
+        var runtime = new ReceiverRuntime(settings, TextWriter.Null, MouseBackend.SendInput,
             new(IPAddress.Loopback, 0), () => mouse);
         await runtime.StartAsync();
         try

@@ -96,8 +96,8 @@ internal static class StartupTests
     {
         var store = new MemoryStore { FailWrite = true };
         var startup = new StartupViewModel(Registration(store));
-        var runtime = new ReceiverRuntime(new RuntimeSettingsStore(), TextWriter.Null,
-            new IPEndPoint(IPAddress.Loopback, 0));
+        var runtime = new ReceiverRuntime(new RuntimeSettingsStore(), TextWriter.Null, MouseBackend.SendInput,
+            new IPEndPoint(IPAddress.Loopback, 0), mouseFactory: () => new WindowsMouseOutput((uint count, ref WindowsMouseOutput.NativeInput input, int size) => 1, () => 0));
         await runtime.StartAsync();
         try
         {

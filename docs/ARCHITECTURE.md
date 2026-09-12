@@ -334,12 +334,24 @@ Responsible for:
 - Sending mouse movement
 - Sending left button events
 
-Possible implementations:
+Production backend: **libvirtualhid Virtual HID Mouse**. The sole product default
+is `MouseBackendDefaults.Production`; Program passes the selected backend explicitly
+to ReceiverRuntime. No backend is implicit in the Runtime constructor. Tests inject
+fake output; backend-specific tests select their backend explicitly.
 
-- Initial: standard Windows input API
-- Future: virtual HID if required
+Normal GUI, quoted-EXE HKCU login startup and the development launcher without an
+override inherit that one default. SendInput remains available through the explicit
+`--dev-mouse-backend sendinput` development/diagnostic compatibility override;
+`virtualhid` is also accepted. There is no automatic fallback or user backend setting.
+Initialization failure enters Runtime Error with LastError and diagnostics.
 
-Do not add driver complexity before compatibility testing.
+The adoption decision follows human A/B with no obvious subjective degradation,
+Raw Input visibility, working Medium Receiver input into High-integrity foreground,
+the measured SendInput limitation there, and validated POC/build/runtime plus
+Driver/Broker/Lifetime license prerequisites. It establishes no lower-latency or
+higher-polling-rate claim; objective latency benchmarking is still outstanding.
+See [VIRTUAL_HID_MOUSE_POC.md](VIRTUAL_HID_MOUSE_POC.md) for the existing bridge,
+ownership, dependency and error contracts.
 
 ---
 

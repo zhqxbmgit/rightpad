@@ -1,8 +1,8 @@
 param(
     [ValidateSet('Ensure', 'Start', 'Stop', 'Status', 'Run')]
     [string]$Mode = 'Status',
-    [ValidateSet('sendinput', 'virtualhid')]
-    [string]$DevMouseBackend = 'sendinput'
+    [ValidateSet('production', 'sendinput', 'virtualhid')]
+    [string]$DevMouseBackend = 'production'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,6 +20,15 @@ $userSid = $identity.User.Value
 $service = New-Object -ComObject Schedule.Service
 $service.Connect()
 $folder = $service.GetFolder('\')
+
+function Get-ReceiverArguments([string]$LogDirectory, [string]$BackendOverride = 'production') {
+    $arguments = '--dev-log-dir "{0}"' -f $LogDirectory
+    switch ($BackendOverride) {
+        'production' { return $arguments }
+        { $_ -in 'sendinput', 'virtualhid' } { return "$arguments --dev-mouse-backend $BackendOverride" }
+        default { throw 'Invalid development mouse backend.' }
+    }
+}
 
 function Get-DevTask {
     try { $folder.GetTask($taskName) }
@@ -170,7 +179,14 @@ function Show-Status {
         Identity = if ($p) { Get-DesktopIdentity $p } else { $null }
         Udp50000 = @(Get-Port | Select-Object LocalAddress, LocalPort, OwningProcess)
         RuntimeLog = if ($run) { Join-Path $run.Directory 'receiver.log' } else { $null }
-        MouseBackend = if ($run) { $run.MouseBackend } else { $null }
+        BackendOverride = if ($run) { $run.MouseBackend } else { $null }
+        MouseBackend = if ($run) {
+            $logPath = Join-Path $run.Directory 'receiver.log'
+            if (Test-Path -LiteralPath $logPath) {
+                $matchesFound = @(Select-String -LiteralPath $logPath -Pattern '^mouse_backend: name=(\S+) ')
+                if ($matchesFound.Count) { $matchesFound[-1].Matches[0].Groups[1].Value }
+            }
+        } else { $null }
     }
 }
 
@@ -228,11 +244,11 @@ switch ($Mode) {
         $jobFlags = [RightpadDevToken]::CurrentJobFlags()
         if ($jobFlags -band 0x2000) { throw 'Scheduled launcher inherited KILL_ON_JOB_CLOSE; refusing persistent launch.' }
         if (!(Test-Path -LiteralPath $receiverPath)) { throw "Missing Release binary: $receiverPath" }
-        $selectedBackend = 'sendinput'
+        $selectedBackend = 'production'
         if (Test-Path -LiteralPath $launchOptionsPath) {
             $selectedBackend = (Get-Content -LiteralPath $launchOptionsPath -Raw | ConvertFrom-Json).MouseBackend
         }
-        if ($selectedBackend -notin @('sendinput','virtualhid')) { throw 'Invalid development mouse backend.' }
+        if ($selectedBackend -notin @('production','sendinput','virtualhid')) { throw 'Invalid development mouse backend.' }
         $runDirectory = Join-Path $logRoot ('{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), $PID)
         $null = New-Item -ItemType Directory -Path $runDirectory
         $run = @{ Directory = $runDirectory; StartUtc = [DateTime]::UtcNow.ToString('o');
@@ -248,7 +264,7 @@ switch ($Mode) {
             $start.FileName = $receiverPath
             $start.WorkingDirectory = Split-Path $receiverPath -Parent
             $start.UseShellExecute = $false
-            $start.Arguments = '--dev-log-dir "{0}" --dev-mouse-backend {1}' -f $runDirectory, $selectedBackend
+            $start.Arguments = Get-ReceiverArguments $runDirectory $selectedBackend
             $receiver = [Diagnostics.Process]::Start($start)
             @{ Pid = $receiver.Id; StartUtc = $receiver.StartTime.ToUniversalTime().ToString('o') } |
                 ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runDirectory 'receiver.json') -Encoding UTF8
@@ -286,7 +302,11 @@ switch ($Mode) {
             $info.SessionId -notin $info.ExplorerSessionIds -or $info.IntegritySid -ne 'S-1-16-8192' -or
             $info.Desktop -ne 'Default') { throw "Receiver context failed validation: $($info | ConvertTo-Json -Compress)" }
         $stdout = Get-Content -LiteralPath (Join-Path $run.Directory 'receiver.log') -Raw
-        $expectedBackend = if ($DevMouseBackend -eq 'virtualhid') { 'libvirtualhid' } else { 'SendInput' }
+        $expectedBackend = switch ($DevMouseBackend) {
+            'sendinput' { 'SendInput' }
+            'virtualhid' { 'libvirtualhid' }
+            'production' { '\S+' } # The EXE owns the production choice; verify it reports an output.
+        }
         if ($stdout -notmatch 'application: mode=gui defaultPage=Motion' -or
             $stdout -notmatch "mouse_backend: name=$expectedBackend " -or
             $stdout -notmatch 'mode=raw_mouse' -or $stdout -notmatch 'listening: udp=0.0.0.0:50000' -or

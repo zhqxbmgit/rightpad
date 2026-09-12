@@ -3,9 +3,9 @@ using System.Net;
 
 namespace Rightpad.Receiver;
 
-internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter output,
+internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter output, MouseBackend backend,
     IPEndPoint? endpoint = null, Func<IMouseOutput>? mouseFactory = null, bool rawMouse = true,
-    FlightRecorder? flightRecorder = null, MouseBackend backend = MouseBackend.SendInput,
+    FlightRecorder? flightRecorder = null,
     IPEndPoint? discoveryEndpoint = null, Func<byte[]>? identityFactory = null)
 {
     private readonly SemaphoreSlim lifecycle = new(1, 1);
