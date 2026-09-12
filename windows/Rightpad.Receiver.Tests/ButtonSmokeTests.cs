@@ -58,7 +58,7 @@ internal static class ButtonSmokeTests
         }, Console.Error.WriteLine, cancel.Cancel);
         if (android)
         {
-            var gesture = new GestureProcessor(button.Click);
+            var gesture = new GestureProcessor(button.Click, button.BeginDrag, button.EndDrag);
             var motion = new TouchSessionProcessor(mouse.Move, 7, 7);
             using var receiver = new UdpReceiver(new IPEndPoint(IPAddress.Any, UdpReceiver.Port), Console.Out,
                 motion: motion, detailedLogging: false, gesture: gesture);

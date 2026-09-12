@@ -37,7 +37,10 @@ internal sealed class SettingsFileStore(string path)
             }
             var settings = new RuntimeSettings(Read("sensitivityX", 7, .1, 30), Read("sensitivityY", 7, .1, 30),
                 (int)Read("tapMaxDurationMs", 300, 50, 1500, true), Read("tapMovementThresholdPx", 8, .5, 100),
-                (int)Read("clickHoldMs", 25, 1, 200, true));
+                (int)Read("clickHoldMs", 25, 1, 200, true),
+                root.TryGetProperty("doubleTapIntervalMs", out _)
+                    ? (int)Read("doubleTapIntervalMs", RuntimeSettings.Default.DoubleTapIntervalMs, 50, 1000, true)
+                    : RuntimeSettings.Default.DoubleTapIntervalMs);
             return (settings, fallback ? "Some settings were invalid or missing. Defaults were used for those fields." : null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
@@ -96,7 +99,7 @@ internal sealed class SettingsFileStore(string path)
                     {
                         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                         WriteIndented = true,
-                        // Serialize the five positional values, not computed validation properties.
+                        // Serialize positional values, not computed validation properties.
                         IgnoreReadOnlyProperties = true
                     });
                     await File.WriteAllTextAsync(temporary, json).ConfigureAwait(false);

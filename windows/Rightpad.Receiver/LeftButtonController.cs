@@ -10,7 +10,7 @@ internal sealed class LeftButtonController : IDisposable
     private readonly Action onFailure;
     private readonly int holdMs;
     private readonly Timer timer;
-    private bool held, disposed;
+    private bool held, dragging, disposed;
     private readonly Queue<int> pendingClicks = new();
     private Exception? failure;
     private long releaseAt;
@@ -45,6 +45,35 @@ internal sealed class LeftButtonController : IDisposable
         }
     }
 
+    public void BeginDrag()
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (failure is not null) throw new IOException("Left button output has failed.", failure);
+            if (dragging) return;
+            pendingClicks.Clear();
+            timer.Change(Timeout.Infinite, Timeout.Infinite);
+            try
+            {
+                // Finish an unexpectedly overlapping click before starting the held contact.
+                if (held) { up(); held = false; }
+                dragging = held = true;
+                down();
+            }
+            catch (Exception exception) { Fail(exception); throw; }
+        }
+    }
+
+    public void EndDrag()
+    {
+        lock (gate)
+        {
+            if (!dragging) return;
+            CancelPendingAndRelease();
+        }
+    }
+
     private void Press(int clickHoldMs)
     {
         held = true; // Even an ambiguous DOWN failure gets a best-effort UP.
@@ -57,7 +86,7 @@ internal sealed class LeftButtonController : IDisposable
     {
         lock (gate)
         {
-            if (disposed || failure is not null || !held) return;
+            if (disposed || failure is not null || !held || dragging) return;
             // A queued callback from a cancelled click must not shorten a newer click.
             double remainingMs = (releaseAt - Stopwatch.GetTimestamp()) * 1000.0 / Stopwatch.Frequency;
             if (remainingMs > 0)
@@ -81,6 +110,7 @@ internal sealed class LeftButtonController : IDisposable
     private void Fail(Exception exception)
     {
         failure ??= exception;
+        dragging = false;
         pendingClicks.Clear();
         timer.Change(Timeout.Infinite, Timeout.Infinite);
         logError($"left_button_error: {exception.Message}");
@@ -93,6 +123,7 @@ internal sealed class LeftButtonController : IDisposable
         lock (gate)
         {
             if (disposed) return;
+            dragging = false;
             pendingClicks.Clear();
             timer.Change(Timeout.Infinite, Timeout.Infinite);
             if (!held) return;
@@ -118,6 +149,7 @@ internal sealed class LeftButtonController : IDisposable
         {
             if (disposed) return;
             disposed = true;
+            dragging = false;
             pendingClicks.Clear();
             timer.Dispose();
             ReleaseBestEffort();

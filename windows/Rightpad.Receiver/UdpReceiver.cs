@@ -195,19 +195,20 @@ internal sealed class UdpReceiver : IDisposable
             else
             {
                 motion?.Process(packet, snapshot.SensitivityX, snapshot.SensitivityY);
-                gesture?.Process(packet, snapshot.TapMaxDurationMs, snapshot.TapMovementThresholdPx, snapshot.ClickHoldMs);
+                gesture?.Process(packet, snapshot.TapMaxDurationMs, snapshot.TapMovementThresholdPx, snapshot.ClickHoldMs,
+                    snapshot.DoubleTapIntervalMs);
             }
             Interlocked.Exchange(ref activeSession, motion?.ActiveSessionId is uint id ? id : -1);
         }
         logger.Packet(elapsedMs, remote, packet, observation);
         if (observation.Accepted && h.EventType == TouchEventType.Down)
         {
-            output.WriteLine($"touch_start: senderRunId={h.SenderRunId:X16} sequence={h.Sequence} sessionId={h.SessionId}");
+            output.WriteLine($"touch_start: senderRunId={h.SenderRunId:X16} sequence={h.Sequence} sessionId={h.SessionId} timestampNs={packet.Samples[0].TimestampNs} doubleTapDeltaNs={gesture?.LastDoubleTapDeltaNs?.ToString() ?? "none"} dragging={gesture?.IsDragging ?? false} dragStarts={gesture?.DragStarts ?? 0}");
             flightRecorder?.Event("touch_session_established", ("senderRunId", $"{h.SenderRunId:X16}"), ("sessionId", h.SessionId));
         }
         if (observation.Accepted && h.EventType == TouchEventType.Up && motion is not null)
         {
-            output.WriteLine($"touch_end: senderRunId={h.SenderRunId:X16} sequence={h.Sequence} outputEvents={motion.OutputEvents} totalDx={motion.TotalDx} totalDy={motion.TotalDy} clicksTriggered={gesture?.ClicksTriggered ?? 0}");
+            output.WriteLine($"touch_end: senderRunId={h.SenderRunId:X16} sequence={h.Sequence} outputEvents={motion.OutputEvents} totalDx={motion.TotalDx} totalDy={motion.TotalDy} clicksTriggered={gesture?.ClicksTriggered ?? 0} dragEnds={gesture?.DragEnds ?? 0} timestampNs={packet.Samples[0].TimestampNs}");
             flightRecorder?.Event("touch_session_reset", ("reason", "up"), ("sessionId", h.SessionId));
         }
     }
@@ -228,6 +229,7 @@ internal sealed class UdpReceiver : IDisposable
     private void ClearInput(string reason)
     {
         long session = ActiveTouchSessionId;
+        if (gesture?.IsDragging == true) output.WriteLine($"gesture: drag_cleanup reason={reason}");
         motion?.Reset();
         gesture?.Reset();
         Interlocked.Exchange(ref activeSession, -1);

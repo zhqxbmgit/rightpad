@@ -12,7 +12,7 @@ internal static class GestureProcessorTests
     private static void Trace(bool expected, TouchSample[] moves, TouchSample up)
     {
         int clicks = 0;
-        var gesture = new GestureProcessor(() => clicks++);
+        var gesture = new GestureProcessor(() => clicks++, () => { }, () => { });
         gesture.Process(Packet(TouchEventType.Down, 1, S(100)));
         if (moves.Length > 0) gesture.Process(Packet(TouchEventType.Move, 1, moves));
         gesture.Process(Packet(TouchEventType.Up, 1, up));
@@ -33,7 +33,7 @@ internal static class GestureProcessorTests
         Trace(false, [], new TouchSample(400_000_001, 0, 0));
         Trace(false, [], S(99));
         int clicks = 0;
-        var gesture = new GestureProcessor(() => clicks++);
+        var gesture = new GestureProcessor(() => clicks++, () => { }, () => { });
         gesture.Process(Packet(TouchEventType.Down, 1, new TouchSample(ulong.MaxValue - 100, 0, 0)));
         gesture.Process(Packet(TouchEventType.Up, 1, new TouchSample(ulong.MaxValue, 0, 0)));
         Equal(1, clicks, "uint64 timestamps must not overflow");
@@ -42,7 +42,7 @@ internal static class GestureProcessorTests
     public static void WrongMove()
     {
         int clicks = 0;
-        var g = new GestureProcessor(() => clicks++);
+        var g = new GestureProcessor(() => clicks++, () => { }, () => { });
         g.Process(Packet(TouchEventType.Down, 1, S(100)));
         g.Process(Packet(TouchEventType.Move, 2, S(150, 999, 999)));
         g.Process(Packet(TouchEventType.Up, 1, S(200)));
@@ -52,7 +52,7 @@ internal static class GestureProcessorTests
     public static void WrongUp()
     {
         int clicks = 0;
-        var g = new GestureProcessor(() => clicks++);
+        var g = new GestureProcessor(() => clicks++, () => { }, () => { });
         g.Process(Packet(TouchEventType.Up, 1, S(99)));
         g.Process(Packet(TouchEventType.Down, 1, S(100)));
         g.Process(Packet(TouchEventType.Up, 2, S(150)));
@@ -63,7 +63,7 @@ internal static class GestureProcessorTests
     public static void NewDown()
     {
         int clicks = 0;
-        var g = new GestureProcessor(() => clicks++);
+        var g = new GestureProcessor(() => clicks++, () => { }, () => { });
         g.Process(Packet(TouchEventType.Down, 1, S(100)));
         g.Process(Packet(TouchEventType.Move, 1, S(150, 20)));
         g.Process(Packet(TouchEventType.Down, 1, S(1000, 100, 100)));
@@ -96,7 +96,7 @@ internal static class GestureProcessorTests
                 Throws<ArgumentException>(() => Rightpad.Receiver.Program.ParseArguments(["--raw-mouse", name, value]));
         Throws<ArgumentException>(() => Rightpad.Receiver.Program.ParseArguments(["--raw-mouse", "--double-tap-interval", "130"]));
         int clicks = 0;
-        var g = new GestureProcessor(() => clicks++, 50, 2);
+        var g = new GestureProcessor(() => clicks++, () => { }, () => { }, 50, 2);
         g.Process(Packet(TouchEventType.Down, 1, S(0)));
         g.Process(Packet(TouchEventType.Up, 1, S(50, 2, -2)));
         Equal(1, clicks, "custom duration/threshold applied");

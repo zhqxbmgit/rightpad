@@ -89,10 +89,12 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             buttons = mouse is null ? null : new(mouse.LeftDown, mouse.LeftUp, output.WriteLine,
                 run.Cancellation.Cancel, initial.ClickHoldMs);
             // Hold belongs to the request, which can occur after the packet's motion output.
-            gesture = buttons is null ? null : new(_ => buttons.Click(settings.Current.ClickHoldMs), initial);
+            gesture = buttons is null ? null : new(_ => buttons.Click(settings.Current.ClickHoldMs), initial,
+                () => { buttons.BeginDrag(); output.WriteLine("gesture: drag_start"); },
+                () => { buttons.EndDrag(); output.WriteLine("gesture: drag_end"); });
             output.WriteLine(FormattableString.Invariant($"startup: runId={run.Id} mode={(rawMouse ? "raw_mouse" : "diagnostic")} sensitivityX={initial.SensitivityX} sensitivityY={initial.SensitivityY} timeoutAction=diagnostic_only"));
             if (gesture is not null)
-                output.WriteLine(FormattableString.Invariant($"gesture: singleTap=enabled tapMaxDurationMs={initial.TapMaxDurationMs} tapMovementThresholdPx={initial.TapMovementThresholdPx} clickHoldMs={initial.ClickHoldMs}"));
+                output.WriteLine(FormattableString.Invariant($"gesture: singleTap=enabled doubleTapDrag=enabled tapMaxDurationMs={initial.TapMaxDurationMs} tapMovementThresholdPx={initial.TapMovementThresholdPx} clickHoldMs={initial.ClickHoldMs} doubleTapIntervalMs={initial.DoubleTapIntervalMs}"));
             var receiver = new UdpReceiver(endpoint ?? new(IPAddress.Any, UdpReceiver.Port), output,
                 motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings,
                 cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder);
@@ -141,7 +143,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 flightRecorder?.Event("mouse_cleanup_error", ("runtimeRunId", run.Id), ("error", e.Message));
             }
             if (gesture is not null)
-                output.WriteLine($"gesture_stats: tapCandidates={gesture.TapCandidates} confirmedMoves={gesture.ConfirmedMoves} clicksTriggered={gesture.ClicksTriggered}");
+                output.WriteLine($"gesture_stats: tapCandidates={gesture.TapCandidates} confirmedMoves={gesture.ConfirmedMoves} clicksTriggered={gesture.ClicksTriggered} dragStarts={gesture.DragStarts} dragEnds={gesture.DragEnds}");
             if (mouse is not null)
             {
                 var stats = mouse.Stats;

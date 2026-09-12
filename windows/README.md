@@ -45,7 +45,7 @@ selection, liveness, clean sender transitions and Android 16 permission caveat.
 - Overview: actual connection observations, traffic counters, a compact Start with
   Windows toggle and one Start/Stop.
 - Motion: RAW text and independently editable X/Y sensitivity.
-- Tap: duration, axis-aligned movement threshold and click hold.
+- Tap: duration, axis-aligned movement threshold, click hold and Double Tap Interval (130 ms; 50–1000 ms; step 10).
 - Diagnostics: actual Receiver counters/state only.
 - Minimize keeps receiving and remains a normal taskbar minimize. The title-bar X
   hides MainWindow to the system tray without stopping ReceiverRuntime or releasing
@@ -64,7 +64,7 @@ deadline. Expiry clears old input once, while retaining senderRunId/sequence.
 The independent two-second Touch silence timeout remains diagnostic only.
 Overview Last Seen shows presence age or Never. No runId is shown in the UI.
 
-Runtime defaults are 7/7 sensitivity and Single Tap 300 ms / 8 px / 25 ms.
+Runtime defaults are 7/7 sensitivity, Single Tap 300 ms / 8 px / 25 ms, and Double Tap Interval 130 ms.
 Valid edits apply without Apply, Save or restart. Sensitivity is sampled once
 per accepted packet; duration/threshold are captured at DOWN; each click request
 owns its hold. Small tap motion remains normal RAW output. No 1:1 desktop-pixel claim.
@@ -208,7 +208,7 @@ No arguments now means GUI. Protocol diagnostics must be explicitly selected:
 ```powershell
 # Human-owned interactive console only; stop any listener first.
 .\Rightpad.Receiver.exe --diagnostics --dev-log-dir C:\rightpad\windows\test-results\protocol
-.\Rightpad.Receiver.exe --raw-mouse --sensitivity-x 5 --sensitivity-y 6 --tap-max-duration-ms 300 --tap-movement-threshold-px 8 --click-hold-ms 25 --dev-log-dir C:\rightpad\windows\test-results\raw
+.\Rightpad.Receiver.exe --raw-mouse --sensitivity-x 5 --sensitivity-y 6 --tap-max-duration-ms 300 --tap-movement-threshold-px 8 --click-hold-ms 25 --double-tap-interval-ms 130 --dev-log-dir C:\rightpad\windows\test-results\raw
 ```
 
 These modes reuse ReceiverRuntime without a WPF window. WinExe does not imply a
@@ -278,6 +278,24 @@ within the DOWN snapshot. A valid tap requests one LEFT DOWN then locally timed
 LEFT UP. Overlapping requests are serialized with their own hold durations.
 System timer scheduling can release later than requested. Motion is independent.
 
+Double Tap Drag: a valid first tap still clicks immediately, with no double-tap wait.
+One next DOWN within the inclusive 130 ms interval holds LEFT immediately, using
+Android `TouchSample.TimestampNs`, not arrival time. Landing positions are unrestricted.
+The drag contact has no tap duration/movement limit and uses unchanged RAW motion.
+UP releases without rearming; an expired second contact remains a normal tap candidate.
+Input timeout is diagnostic only; heartbeat-backed stationary drag survives. Sender
+change, presence timeout, Stop, Dispose and output failure clear input and release LEFT.
+Debug/Release builds and 176/176 tests per configuration passed on 2026-09-12;
+five native automatic scenarios and human A–E passed. The scoped Discovery receive-loop
+fix tolerates only non-cancelled ConnectionReset (UDP 10054); other socket errors propagate.
+The existing development log reports drag start/end/cleanup and first-UP-to-next-DOWN
+nanoseconds. See [GESTURE_ENGINE.md](../docs/GESTURE_ENGINE.md).
+
+`--double-tap-interval-ms` requires `--raw-mouse` and an integer in 50–1000; the old
+`--double-tap-interval` spelling is rejected. Older settings files missing the new
+field load silently with 130; present invalid fields warn and fall back independently.
+The next save persists the field and keeps existing user tuning.
+
 Every SendInput call checks the actual inserted count and available Win32 error.
 Failure stops input, clears pending clicks and best-effort releases LEFT UP.
 Timer failures cancel idle receive too. Forced kill or persistent native failure
@@ -328,7 +346,7 @@ Use the independent launcher if Windows itself needs to be started or updated.
 - MainViewModel, SettingsViewModel, StartupViewModel and RuntimeStatsViewModel share page state.
 - Existing tests remain, plus settings/runtime/settings-boundary regression files.
 
-No filter, FIR/Second Order, Double Tap Drag, right click, scroll, HID/driver,
+No filter, FIR/Second Order, right click, scroll, new HID/driver,
 profiles/multi-device management, generic reconnect frameworks, cloud/accounts/plugins,
 tray notifications/telemetry/runtime controls, updates, graphs/log viewer, theme
 selector or custom title bar.

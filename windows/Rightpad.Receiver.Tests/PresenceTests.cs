@@ -25,7 +25,7 @@ internal static class PresenceTests
         public Harness() {
             Motion = new((x,y) => Moves.Add((x,y)));
             R = new(new(IPAddress.Loopback, 0), TextWriter.Null, motion: Motion,
-                gesture: new GestureProcessor(() => Clicks++), cancelButtons: () => Clears++);
+                gesture: new GestureProcessor(() => Clicks++, () => { }, () => { }), cancelButtons: () => Clears++);
         }
         public void Send(byte[] b) => R.ProcessDatagram(b, new(IPAddress.Loopback, 1234), Now);
         public void Advance(int ms) { Now += (long)(ms * (double)Stopwatch.Frequency / 1000); R.CheckTimeouts(Now); }

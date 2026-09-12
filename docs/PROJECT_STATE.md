@@ -6,6 +6,35 @@ Updated: 2026-09-12
 
 当前阶段：
 
+Double Tap Drag is implemented and accepted (2026-09-12). Single Tap remains
+immediate; a valid first UP arms one second DOWN within 130 ms, using Android
+event timestamps. Settings range is 50–1000 ms. No Android or RAW motion change.
+Debug and Release builds: 0 warnings / 0 errors; full Windows tests: 176/176 in
+both configurations (27 added gesture/settings cases plus 2 Discovery regressions).
+The scoped Discovery receive-loop fix recovers only non-cancelled ConnectionReset;
+real dead-requester recovery and non-reset Shutdown propagation both pass.
+
+Five automated Android → UDP → production Virtual HID checks passed: single tap,
+double tap, drag, >3-second stationary drag and expired-window negative. Native
+Raw Input verified button order, movement while held, exact sensitivity-scaled
+relative movement and neutral at every end. Human A–E completed with normal feel:
+C matched 127.069 ms and held LEFT through 276 moves; D matched 68.710 ms and held
+for about 5.34 s; E at 269.900 ms produced 273 moves with LEFT released. B's
+184.994 ms interval produced two ordinary clicks (full Windows double-click sequence),
+not a drag-window match. Some human attempts exceeded 130 ms; the default remains
+130 pending more evidence, with no automatic tuning. Human stationary touch had
+small sample changes; strict >3-second no-MOVE behavior is proven separately by
+controlled deterministic, real-loopback and native automatic tests.
+
+Latest verified Release was promoted with matching artifact hashes and launched
+through the independent interactive task: old PID 31504 exited, UDP 50000/50001
+were free, fresh PID 16608 owns both. Current user, Session 1, Medium integrity,
+Default desktop, libvirtualhid; Android PID 6898 remained foreground and naturally
+reconnected. Existing user sensitivity 6/6 survived; Tap settings remain 300/8/25
+and Double Tap Interval 130. Final recorded diagnostics: invalid/gap/old/output
+failures all zero; no LastError. Duplicate control packets are still rejected by
+the unchanged gate. Temporary logs and test tools remain ignored, outside Git.
+
 Receiver Discovery v1 implements zero-operation trusted-LAN target selection for
 one Android phone used with two Windows PCs in separate locations. UDP 50001 is
 independent of unchanged Touch v2 UDP 50000; OFFER source IPv4 is authoritative,
@@ -527,7 +556,19 @@ sequence。恢复后的旧 MOVE/UP 不输出；新 DOWN 正常。Single Tap 仍�
 
 Single Tap: Implemented — Human validation passed。
 
-Double Tap Drag: Pending。
+Double Tap Drag: Implemented — automated and human A–E validation passed (2026-09-12)。
+
+第一次有效 Tap 仍在 UP 立即 Click，不增加 130 ms 等待；只记录一次 Double Tap
+资格。第二次 DOWN 依据 Android TouchSample.TimestampNs 判断非负且 <= 130 ms
+的间隔，立即 held LEFT。两次落点距离不受限制；拖拽 contact 不受 300 ms/8 px
+约束，RAW motion 未改动。Drag UP release 且不重新 arm；过期的 second contact
+仍可成为普通 Single Tap。Reset、sender change、presence timeout、Stop、Dispose
+和 output failure 清资格并配合原有按钮清理；普通 input timeout 不释放静止拖拽。
+
+附带范围例外：Discovery receive loop 仅恢复未停止时的 SocketError.ConnectionReset
+(Windows UDP 10054，向已关闭回复端口发送 OFFER 后的 ICMP)。每次运行最多记录
+一次 diagnostic，原 socket 继续服务后续客户端；其他 socket 错误仍传播。协议、
+Android、端口、广播和选择逻辑未改动。
 
 当前 GestureProcessor 与 RAW Motion 独立消费 accepted raw packets。每个 MOVE
 sample 都检查相对 DOWN 的 X/Y 独立阈值（各自 <= 8 px）；任一 sample 越界后永久
@@ -539,7 +580,7 @@ sample 都检查相对 DOWN 的 X/Y 独立阈值（各自 <= 8 px）；任一 sa
 已确定需求及状态：
 
 - Single Tap → Left Click：已实现
-- Double Tap Drag → second DOWN immediately holds left mouse button → normal Motion Engine movement → UP releases button：待实现
+- Double Tap Drag → second DOWN immediately holds left mouse button → normal Motion Engine movement → UP releases button：已实现
 
 Windows Receiver 参数：
 
@@ -552,8 +593,8 @@ clickHoldMs = 25
 
 上述默认值已从 C:\zhq 的 PreferenceConfiguration.java / TrackpadContext.java
 只读核实；movement 使用 X/Y 独立判断，不是 Euclidean distance。
-`doubleTapIntervalMs = 130` 仅供未来参考，当前无对应参数或识别逻辑。
-当前 CLI：`--tap-max-duration-ms`、`--tap-movement-threshold-px`、`--click-hold-ms`。
+`doubleTapIntervalMs = 130` 已实现，整数范围 50–1000 ms。Tap 页面可热更新；旧 settings.json 缺少字段时静默默认 130，下次保存保留已有设置并写入新字段。
+当前 CLI：`--tap-max-duration-ms`、`--tap-movement-threshold-px`、`--click-hold-ms`、`--double-tap-interval-ms`。旧 `--double-tap-interval` 仍拒绝。
 
 Gesture processing must not alter motion feel.
 
@@ -663,7 +704,7 @@ Only after RAW human feedback: decide whether Motion Laboratory / filter impleme
 Do not implement yet:
 
 - Motion filter
-- Double Tap Drag (Single Tap left-click implemented)
+- Double Tap Drag: completed; see current validation above
 - game profiles
 - network optimization
 - generic reconnect / handshake frameworks

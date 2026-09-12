@@ -7,7 +7,7 @@ Gesture Engine converts touch timing behavior into mouse button actions.
 Current implementation:
 
 - Single tap → Left click: implemented; human validation passed.
-- Double tap drag → Left button drag: pending, future design only.
+- Double tap drag → Left button drag: implemented; current validation is tracked in PROJECT_STATE.md.
 
 The Gesture Engine does NOT control mouse movement.
 
@@ -80,13 +80,13 @@ malformed packets are excluded by the existing accepted-input gate.
 
 RAW movement, including small tap movement and UP's final delta, is not suppressed,
 rolled back, or altered. A qualifying UP consumes the candidate and requests one
-local LEFT DOWN followed by a timed LEFT UP. There is no double-tap recognition.
+local LEFT DOWN followed by a timed LEFT UP. The same valid UP arms one subsequent DOWN for Double Tap Drag, without delaying this click.
 
 ---
 
 # 3.2 Double Tap Drag
 
-Pending. The following describes a future feature, not current behavior.
+Implemented on Windows; Android and Protocol v2 remain unchanged.
 
 Purpose:
 
@@ -127,7 +127,22 @@ UP
 Left Button Up
 ```
 
-The second tap immediately enters drag mode.
+A valid first tap has already requested its normal click. Its UP arms one subsequent
+accepted DOWN. At that DOWN, `0 <= secondDown.TimestampNs - firstUp.TimestampNs
+<= DoubleTapIntervalMs * 1_000_000` starts LEFT hold immediately. Both times are
+Android MotionEvent timestamps, never UDP arrival time. No spatial distance limit
+applies between contacts. The interval is read from the second DOWN settings snapshot.
+The arm is consumed on that DOWN whether it matches, expires, or has backward time.
+An expired second contact can finish as a new normal tap and arm the next drag.
+
+A drag contact has no 300 ms duration or 8 px movement limit. Its matching UP releases
+LEFT exactly once and does not rearm. A new accepted replacement DOWN ends a lost-UP
+drag before establishing the next normal contact. Wrong-session and rejected
+stale/duplicate/invalid packets cannot release or arm a drag.
+
+Design reference: [zhq TrackpadContext.java, moonlight-noir](https://github.com/zhqxbmgit/zhq/blob/moonlight-noir/app/src/main/java/com/limelight/binding/input/touch/TrackpadContext.java).
+Only the immediate click / second-DOWN hold interaction is adopted, with explicit
+one-shot arming and no rearming after drag. The reference motion engine is not copied.
 
 No additional hold delay is required.
 
@@ -154,9 +169,8 @@ Current movement parameter:
 tapMovementThresholdPx = 8
 ```
 
-`doubleTapIntervalMs = 130` is recorded only as a future reference; no double-tap
-CLI parameter is implemented. Current Windows CLI options (require `--raw-mouse`):
-`--tap-max-duration-ms`, `--tap-movement-threshold-px`, `--click-hold-ms`.
+`doubleTapIntervalMs = 130` is the product default (integer 50–1000 ms). Current Windows CLI options (require `--raw-mouse`):
+`--tap-max-duration-ms`, `--tap-movement-threshold-px`, `--click-hold-ms`, `--double-tap-interval-ms`. The old `--double-tap-interval` name is rejected.
 Durations must be positive int32 whole milliseconds; the threshold must be finite
 and positive. Defaults are 300 / 8 / 25. WPF v1 supports live settings and local persistence; see RECEIVER_UI.md.
 
@@ -286,62 +300,22 @@ This prevents accidental clicks during movement.
 
 # 7. Gesture State Machine
 
-Current Single Tap state machine:
+The current contact, one-shot double-tap arm, and dragging state are separate:
 
 ```text
 IDLE -- DOWN --> candidate
 candidate -- any sample out of bounds --> confirmedMove (latched)
-candidate -- valid matching UP --> request click --> IDLE
-candidate / confirmedMove -- other matching UP --> IDLE
-any state -- new accepted DOWN --> new candidate
+candidate -- valid matching UP --> immediate click + arm --> IDLE
+candidate / confirmedMove -- invalid matching UP --> IDLE
+armed IDLE -- next DOWN inside event-time interval --> consume arm + LEFT DOWN --> DRAGGING
+armed IDLE -- next DOWN outside interval/backward --> consume arm --> candidate
+DRAGGING -- MOVE --> unchanged RAW movement with LEFT held
+DRAGGING -- matching UP --> LEFT UP --> unarmed IDLE
+any state -- lifecycle Reset + button cleanup --> unarmed IDLE / LEFT neutral
 ```
 
-Future Double Tap Drag design (not implemented):
-
-```text id="q7w9i8"
-IDLE
-
- |
- | DOWN
- v
-
-TOUCHING
-
- |
- |
- +----------------+
- |                |
- | movement       | release
- | exceeds        |
- | threshold      |
- |                |
- v                v
-
-MOVING          TAP_CANDIDATE
-
-
-                    |
-                    |
-                    +-----------+
-                                |
-                                |
-                         wait for second tap
-                                |
-                                |
-                                v
-
-                         DOUBLE_TAP_WINDOW
-
-
-                                |
-                                |
-                         second DOWN
-
-                                |
-                                v
-
-                             DRAGGING
-```
+`FinishCurrentContact` preserves a valid tap arm; external `Reset` clears contact,
+arm and drag state. The existing outer cleanup then releases the button.
 
 ---
 
@@ -397,24 +371,16 @@ A failed UP receives a best-effort cleanup attempt; Dispose can attempt release
 again if still held. Forced process termination or a persistent native failure
 cannot be guaranteed recoverable.
 
-The 2-second input timeout remains diagnostic only and preserves motion/session
-state. Sender-disconnect detection and future drag stuck-button handling remain
-deferred; no heartbeat, CANCEL wire event, or connection state machine is added.
+`BeginDrag` cancels the click timer and pending clicks, completes an unexpectedly
+still-held click with UP, then emits drag DOWN. `EndDrag` releases once through the
+existing controller cleanup. A queued old timer callback cannot release a drag.
+No new scheduler, movement algorithm, or <25 ms race framework is introduced.
 
-Future button safety requirements:
-
-Possible causes:
-
-- UDP loss
-- App crash
-- Network disconnect
-
-Receiver must always be able to:
-
-```text id="1p0l7q"
-Release Left Button
-Reset Gesture State
-```
+The 2-second input timeout remains diagnostic only, so a stationary drag survives
+3 seconds and longer while heartbeats keep presence alive. Sender run change,
+2000 ms presence timeout, Receiver Stop, Dispose and output failure clear gesture
+qualification and perform the existing best-effort LEFT release. Persistent native
+failure cannot guarantee physical release; it remains a visible Runtime Error.
 
 ---
 
@@ -445,6 +411,11 @@ Gesture parameters should be:
 - Saved locally
 
 WPF v1 auto-saves local settings. Duration/threshold are captured at DOWN; click hold is captured for each click request and retained while queued. Explicit dev CLI tuning remains available.
+
+The Tap page adds Double Tap Interval, ms, range 50–1000 and step 10. Missing
+`doubleTapIntervalMs` in an older settings.json silently uses 130; a present invalid
+value falls back with the existing warning. The next normal save writes the new
+field while preserving all existing tuning. Drag holds are unaffected by hot updates.
 
 Android should not contain user tuning values.
 

@@ -52,7 +52,7 @@ internal static class SettingsTests
         await store.FlushAsync();
         Equal(value, SettingsFileStore.Load(files.PathName).Settings, "round trip");
         using var doc = JsonDocument.Parse(File.ReadAllText(files.PathName));
-        Equal(5, doc.RootElement.EnumerateObject().Count(), "only five fields");
+        Equal(6, doc.RootElement.EnumerateObject().Count(), "only six fields");
     }
     public static async Task Debounce()
     {

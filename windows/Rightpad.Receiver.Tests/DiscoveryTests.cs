@@ -101,6 +101,48 @@ internal static class DiscoveryTests
             Check(storage.Lines.Any(line => line.Contains(name)), "production Flight Recorder event " + name);
         Equal(1, storage.Lines.Count(line => line.Contains("discovery_offer_sent")), "normal probes are rate-limited in production diagnostics");
     }
+    public static async Task DeadRequesterRecovery()
+    {
+        using var log = new UdpReceiverTests.ObservedOutput();
+        using var responder = new DiscoveryResponder(new(IPAddress.Loopback, 0), Id, log);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        // Queue a real DISCOVER before running the loop; its reply port is already closed when OFFER is sent.
+        using (var dead = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0)))
+            await dead.SendAsync(DiscoveryCodec.Discover(100), responder.LocalEndpoint);
+        var loop = responder.RunAsync(cancel.Token);
+        try
+        {
+            await log.WaitFor(s => s.StartsWith("discovery_receive_connection_reset:"));
+            Check(!loop.IsCompleted && !cancel.IsCancellationRequested, "real receive loop survives kernel ConnectionReset");
+            using var second = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+            await second.SendAsync(DiscoveryCodec.Discover(101), responder.LocalEndpoint);
+            var offer = await second.ReceiveAsync(cancel.Token);
+            Check(DiscoveryCodec.TryOffer(offer.Buffer, 101, out var id) && id.SequenceEqual(Id), "new client gets correct OFFER");
+            Equal(responder.LocalEndpoint, offer.RemoteEndPoint, "same responder socket remains bound and serves new client");
+            Equal(2L, responder.OffersSent, "dead requester did not kill shared responder");
+        }
+        finally { cancel.Cancel(); await loop; }
+        using var rebound = new UdpClient(responder.LocalEndpoint);
+        Equal(1, log.Lines.Count(s => s.StartsWith("discovery_receive_connection_reset:")), "minimal diagnostic");
+    }
+
+    public static async Task NonResetReceiveFailure()
+    {
+        using var responder = new DiscoveryResponder(new(IPAddress.Loopback, 0), Id, TextWriter.Null);
+        // A real, controllable receive-side SocketException; no production wrapper or injection hook.
+        var socket = (UdpClient)typeof(DiscoveryResponder).GetField("socket",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(responder)!;
+        socket.Client.Shutdown(SocketShutdown.Receive);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try { await responder.RunAsync(cancel.Token); throw new InvalidOperationException("non-reset receive error was swallowed"); }
+        catch (SocketException e)
+        {
+            Equal(SocketError.Shutdown, e.SocketErrorCode, "only ConnectionReset is recoverable; Shutdown propagates");
+            Check(!cancel.IsCancellationRequested, "failure propagates without waiting for stop");
+        }
+        using var rebound = new UdpClient(responder.LocalEndpoint);
+    }
+
     public static async Task RuntimeLifecycle()
     {
         using var reserve = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));

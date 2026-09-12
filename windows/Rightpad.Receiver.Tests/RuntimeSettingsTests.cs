@@ -48,7 +48,7 @@ internal static class RuntimeSettingsTests
     public static void TapDownSnapshot()
     {
         var holds = new List<int>();
-        var gesture = new GestureProcessor(holds.Add, RuntimeSettings.Default);
+        var gesture = new GestureProcessor(holds.Add, RuntimeSettings.Default, () => { }, () => { });
         TouchPacket Packet(TouchEventType type, uint session, ulong time, float x) => new(new(2, type, 1, session, 0), [new(time, x, 0)]);
         gesture.Process(Packet(TouchEventType.Down, 1, 0, 0), 300, 8, 25);
         gesture.Process(Packet(TouchEventType.Up, 1, 200_000_000, 7), 50, .5, 31);

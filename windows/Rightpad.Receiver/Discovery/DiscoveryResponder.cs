@@ -31,9 +31,21 @@ internal sealed class DiscoveryResponder : IDisposable
         flightRecorder?.Event("discovery_started", ("endpoint", LocalEndpoint.ToString()), ("receiverId", Convert.ToHexString(identity)));
         try
         {
+            bool resetReported = false;
             while (!token.IsCancellationRequested)
             {
-                var request = await socket.ReceiveAsync(token).ConfigureAwait(false);
+                UdpReceiveResult request;
+                try { request = await socket.ReceiveAsync(token).ConfigureAwait(false); }
+                catch (SocketException e) when (e.SocketErrorCode == SocketError.ConnectionReset && !token.IsCancellationRequested)
+                {
+                    // A prior OFFER to a closed reply port can produce an ICMP reset; the shared socket remains usable.
+                    if (!resetReported)
+                    {
+                        output.WriteLine("discovery_receive_connection_reset: continuing=true");
+                        resetReported = true;
+                    }
+                    continue;
+                }
                 if (!DiscoveryCodec.TryDiscover(request.Buffer, out ulong nonce))
                 {
                     long count = Interlocked.Increment(ref invalid);

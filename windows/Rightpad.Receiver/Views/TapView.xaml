@@ -6,6 +6,7 @@
       <local:NumericEditor DataContext="{Binding Settings.MovementThreshold}"/>
       <TextBlock Text="X and Y are checked separately from the DOWN position in Android touch pixels." Style="{StaticResource Muted}" FontSize="12" Margin="210,0,0,6" MaxWidth="470" HorizontalAlignment="Left"/>
       <local:NumericEditor DataContext="{Binding Settings.ClickHold}"/>
+      <local:NumericEditor DataContext="{Binding Settings.DoubleTapInterval}"/>
       <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,14,0,0" Padding="0,12,0,0"><TextBlock Text="Changes apply to new input actions." Style="{StaticResource Muted}" FontSize="13"/></Border>
     </StackPanel></Border>
   </StackPanel>

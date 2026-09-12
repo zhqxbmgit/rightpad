@@ -79,7 +79,7 @@ internal static class Program
         using var flightRecorder = FlightRecorder.CreateDefault(log.WriteLine);
         flightRecorder.Event("receiver_process_start", ("mode", launch.Mode.ToString()));
         var o = launch.Input;
-        var store = new RuntimeSettingsStore(new(o.SensitivityX, o.SensitivityY, o.TapMaxDurationMs, o.TapMovementThresholdPx, o.ClickHoldMs));
+        var store = new RuntimeSettingsStore(new(o.SensitivityX, o.SensitivityY, o.TapMaxDurationMs, o.TapMovementThresholdPx, o.ClickHoldMs, o.DoubleTapIntervalMs));
         var runtime = new ReceiverRuntime(store, log, rawMouse: launch.Mode == LaunchMode.RawMouse,
             flightRecorder: flightRecorder, backend: launch.Backend);
         flightRecorder.StartSnapshots(runtime.CaptureSnapshot);
@@ -135,13 +135,13 @@ internal static class Program
         return new(mode, options, log, settings, backend);
     }
     internal readonly record struct Options(bool RawMouse, double SensitivityX, double SensitivityY,
-        int TapMaxDurationMs = 300, double TapMovementThresholdPx = 8, int ClickHoldMs = 25);
+        int TapMaxDurationMs = 300, double TapMovementThresholdPx = 8, int ClickHoldMs = 25, int DoubleTapIntervalMs = RuntimeSettings.DefaultDoubleTapIntervalMs);
 
     internal static Options ParseArguments(string[] args)
     {
         bool raw = false;
         double x = 7, y = 7;
-        int tapDuration = 300, hold = 25;
+        int tapDuration = 300, hold = 25, doubleTapInterval = RuntimeSettings.Default.DoubleTapIntervalMs;
         double threshold = 8;
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (int i = 0; i < args.Length; i++)
@@ -150,22 +150,28 @@ internal static class Program
             if (!seen.Add(option)) throw new ArgumentException($"Repeated option: {option}");
             if (option == "--raw-mouse") { raw = true; continue; }
             if (option is not ("--sensitivity-x" or "--sensitivity-y" or
-                "--tap-max-duration-ms" or "--tap-movement-threshold-px" or "--click-hold-ms"))
+                "--tap-max-duration-ms" or "--tap-movement-threshold-px" or "--click-hold-ms" or "--double-tap-interval-ms"))
                 throw new ArgumentException($"Unknown option: {option}");
             if (++i >= args.Length || !double.TryParse(args[i], NumberStyles.Float,
                 CultureInfo.InvariantCulture, out double value) || !double.IsFinite(value) || value <= 0)
                 throw new ArgumentException($"{option} requires a finite positive number.");
-            if (option is "--tap-max-duration-ms" or "--click-hold-ms")
+            if (option is "--tap-max-duration-ms" or "--click-hold-ms" or "--double-tap-interval-ms")
             {
                 if (value < 1 || value > int.MaxValue || value != Math.Truncate(value))
                     throw new ArgumentException($"{option} requires a positive integer number of milliseconds (1..{int.MaxValue}).");
-                if (option == "--tap-max-duration-ms") tapDuration = (int)value; else hold = (int)value;
+                if (option == "--double-tap-interval-ms")
+                {
+                    if (!RuntimeSettings.InRange(value, 50, 1000))
+                        throw new ArgumentException("--double-tap-interval-ms requires 50–1000 whole milliseconds.");
+                    doubleTapInterval = (int)value;
+                }
+                else if (option == "--tap-max-duration-ms") tapDuration = (int)value; else hold = (int)value;
             }
             else if (option == "--tap-movement-threshold-px") threshold = value;
             else if (option == "--sensitivity-x") x = value; else y = value;
         }
         if (!raw && seen.Count != 0)
             throw new ArgumentException("Sensitivity and tap options require --raw-mouse.");
-        return new Options(raw, x, y, tapDuration, threshold, hold);
+        return new Options(raw, x, y, tapDuration, threshold, hold, doubleTapInterval);
     }
 }

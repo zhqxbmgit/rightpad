@@ -69,6 +69,7 @@ internal sealed class SettingsViewModel : ObservableModel
     public NumericField TapMaxDuration { get; }
     public NumericField MovementThreshold { get; }
     public NumericField ClickHold { get; }
+    public NumericField DoubleTapInterval { get; }
 
     public SettingsViewModel(RuntimeSettingsStore store, SettingsFileStore file, string? warning = null)
     {
@@ -84,6 +85,8 @@ internal sealed class SettingsViewModel : ObservableModel
             x => Update(store.Current with { TapMovementThresholdPx = x }));
         ClickHold = new("Click Hold", "ms", s.ClickHoldMs, 1, 200, 1, "0", true,
             x => Update(store.Current with { ClickHoldMs = (int)x }));
+        DoubleTapInterval = new("Double Tap Interval", "ms", s.DoubleTapIntervalMs, 50, 1000, 10, "0", true,
+            x => Update(store.Current with { DoubleTapIntervalMs = (int)x }));
         RefreshNotice();
     }
     private void Update(RuntimeSettings settings)

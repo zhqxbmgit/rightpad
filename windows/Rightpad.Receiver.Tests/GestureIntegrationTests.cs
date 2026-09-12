@@ -19,21 +19,21 @@ internal static class GestureIntegrationTests
             down, down,
             P(TouchEventType.Move, 1, 2, S(120, .25f, -.25f), S(130, .5f, -.5f)),
             up, up, down, [1, 2],
-            P(TouchEventType.Down, 2, 4, S(300)),
-            P(TouchEventType.Move, 2, 5, S(320, 1), S(330, 9), S(340, 1)),
+            P(TouchEventType.Down, 2, 4, S(331)),
+            P(TouchEventType.Move, 2, 5, S(340, 1), S(350, 9), S(360, 1)),
             P(TouchEventType.Up, 2, 6, S(400)),
             P(TouchEventType.Down, 3, 7, S(500)),
             P(TouchEventType.Move, 4, 8, S(520, 1000)),
             P(TouchEventType.Up, 4, 9, S(530, 1000)),
             P(TouchEventType.Up, 3, 10, S(550)),
-            P(TouchEventType.Down, 5, 11, S(600)),
-            P(TouchEventType.Up, 5, 12, S(901))
+            P(TouchEventType.Down, 5, 11, S(701)),
+            P(TouchEventType.Up, 5, 12, S(1002))
         ];
         async Task<(List<(int, int)> Moves, long Clicks)> Run(bool enabled)
         {
             var moves = new List<(int, int)>();
             var motion = new TouchSessionProcessor((x, y) => moves.Add((x, y)), 7, 7);
-            var gesture = new GestureProcessor(() => { });
+            var gesture = new GestureProcessor(() => { }, () => { }, () => { });
             using var output = new UdpReceiverTests.ObservedOutput();
             using var receiver = new UdpReceiver(new IPEndPoint(IPAddress.Loopback, 0), output,
                 motion: motion, gesture: enabled ? gesture : null);
@@ -71,7 +71,7 @@ internal static class GestureIntegrationTests
         var up = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var button = new LeftButtonController(() => { }, () => up.TrySetResult(), _ => { }, cancel.Cancel, 1500);
-        var gesture = new GestureProcessor(button.Click);
+        var gesture = new GestureProcessor(button.Click, button.BeginDrag, button.EndDrag);
         var moves = new List<(int, int)>();
         var motion = new TouchSessionProcessor((x, y) => moves.Add((x, y)), 7, 7);
         using var output = new UdpReceiverTests.ObservedOutput();
@@ -89,14 +89,14 @@ internal static class GestureIntegrationTests
         {
             await Send(TouchEventType.Down, 1, S(0));
             await Send(TouchEventType.Up, 1, S(100));
-            await Send(TouchEventType.Down, 2, S(200));
-            await Send(TouchEventType.Move, 2, S(210, .25f));
+            await Send(TouchEventType.Down, 2, S(300));
+            await Send(TouchEventType.Move, 2, S(310, .25f));
             await output.WaitFor(s => s.StartsWith("receiver: status=input_timeout"));
-            await Send(TouchEventType.Move, 2, S(220, .5f));
+            await Send(TouchEventType.Move, 2, S(320, .5f));
             Check(moves.SequenceEqual(new[] { (1, 0), (2, 0) }), "motion/accumulator continues during click hold and timeout");
             Check(!up.Task.IsCompleted, "Receiver processed packets before scheduled UP");
             await up.Task.WaitAsync(TimeSpan.FromSeconds(5)); // No more input is needed to release.
-            await Send(TouchEventType.Up, 2, S(230, .5f));
+            await Send(TouchEventType.Up, 2, S(330, .5f));
             Equal(2L, gesture.ClicksTriggered, "timeout retains gesture candidate too");
         }
         finally { cancel.Cancel(); await running; }
@@ -109,7 +109,7 @@ internal static class GestureIntegrationTests
             int releases = 0;
             using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var button = new LeftButtonController(() => { }, () => releases++, _ => { }, cancel.Cancel, 5000);
-            var gesture = new GestureProcessor(button.Click);
+            var gesture = new GestureProcessor(button.Click, button.BeginDrag, button.EndDrag);
             var motion = new TouchSessionProcessor((_, _) => { if (failMotion) throw new IOException("motion failure"); });
             using var output = new UdpReceiverTests.ObservedOutput();
             using var receiver = new UdpReceiver(new IPEndPoint(IPAddress.Loopback, 0), output, motion: motion, gesture: gesture);
@@ -123,8 +123,8 @@ internal static class GestureIntegrationTests
                 Equal(0, releases, "button still held before shutdown");
                 if (failMotion)
                 {
-                    await sender.SendAsync(P(TouchEventType.Down, 2, 3, S(20)), receiver.LocalEndpoint);
-                    await sender.SendAsync(P(TouchEventType.Move, 2, 4, S(30, 1)), receiver.LocalEndpoint);
+                    await sender.SendAsync(P(TouchEventType.Down, 2, 3, S(200)), receiver.LocalEndpoint);
+                    await sender.SendAsync(P(TouchEventType.Move, 2, 4, S(210, 1)), receiver.LocalEndpoint);
                 }
                 else cancel.Cancel();
                 try { await running; Check(!failMotion, "expected motion failure"); }
@@ -144,7 +144,7 @@ internal static class GestureIntegrationTests
         {
             if (++ups == 1) throw new System.ComponentModel.Win32Exception(5, "test LEFT UP failure");
         }, logs.Add, cancel.Cancel, 30);
-        var gesture = new GestureProcessor(button.Click);
+        var gesture = new GestureProcessor(button.Click, button.BeginDrag, button.EndDrag);
         using var output = new UdpReceiverTests.ObservedOutput();
         using var receiver = new UdpReceiver(new IPEndPoint(IPAddress.Loopback, 0), output, gesture: gesture);
         using var sender = new UdpClient(AddressFamily.InterNetwork);
