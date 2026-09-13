@@ -90,6 +90,16 @@ The receiver is the main control center.
 
 # 3. Data Flow
 
+Normal-click confirmation adds an independent Windows → Android Haptic Feedback
+v1 side channel on UDP 50002. Windows alone recognizes a normal click; after its
+successful LEFT DOWN and release scheduling, a bounded nonblocking enqueue feeds
+an independent UDP worker. Android validates the current target/run and recent
+raw UP identity, deduplicates and requests CONFIRM on the UI thread only while
+foreground/connected. Feedback loss/failure never controls input correctness.
+Touch v2, Discovery v1, RAW motion and gesture tuning remain unchanged. See
+[HAPTIC_FEEDBACK_PROTOCOL.md](HAPTIC_FEEDBACK_PROTOCOL.md) for the wire, stale
+event, queue and lifecycle contracts.
+
 Complete path:
 
 ```text

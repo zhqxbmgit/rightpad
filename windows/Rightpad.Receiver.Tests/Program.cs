@@ -27,6 +27,11 @@ internal static class Program
         if (args.Length != 0) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            ("haptic codec / golden unsigned identities / malformed", Sync(HapticFeedbackTests.Codec)),
+            ("haptic accepted input / normal versus drag / lifecycle gate", Sync(HapticFeedbackTests.InputGate)),
+            ("haptic actual button output / queued cancellation / failure", HapticFeedbackTests.Buttons),
+            ("haptic stalled sender / bounded overload / ICMP / shutdown isolation", HapticFeedbackTests.SenderIsolation),
+            ("haptic Runtime Virtual HID fake / real UDP feedback", HapticFeedbackTests.RuntimeLoopback),
             ("Double Tap Drag ImmediateTap", Sync(DoubleTapDragTests.ImmediateTap)),
             ("Double Tap Drag IntervalInclusive", Sync(DoubleTapDragTests.IntervalInclusive)),
             ("Double Tap Drag IntervalOneNsOver", Sync(DoubleTapDragTests.IntervalOneNsOver)),

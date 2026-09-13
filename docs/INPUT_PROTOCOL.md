@@ -2,6 +2,13 @@
 
 ## Protocol v2 — CURRENT (2026-09-09)
 
+Independent [Haptic Feedback v1](HAPTIC_FEEDBACK_PROTOCOL.md) adds Windows →
+Android CLICK confirmation on UDP 50002. It echoes the accepted normal-click
+UP's senderRunId/sessionId/sequence; it changes no Touch v2 fields, packet types,
+copies, admission, heartbeat or sequence behavior. Touch remains one-way and
+never waits for feedback. Feedback source correlation applies only on Android;
+the Receiver's trusted-LAN Touch source policy below remains unchanged.
+
 Production Android and Windows use v2 only. v1 is rejected; there is no dual
 stack. The original v1 definition below is preserved as historical measurement
 context. This section supersedes its production lifecycle and presence rules.

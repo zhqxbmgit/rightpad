@@ -364,6 +364,15 @@ Only the button state changes.
 
 # 9. Button Safety
 
+Normal clicks also produce [Haptic Feedback v1](HAPTIC_FEEDBACK_PROTOCOL.md).
+Only the final normal-tap branch supplies the accepted UP identity. Each click's
+callback runs after its actual successful LEFT DOWN and timer scheduling, including
+when delayed in the existing click queue; cancellation discards queued callbacks.
+Drag/NoMoveDrag/RearmDrag DOWN and UP never invoke it. The callback only attempts
+a bounded enqueue; network send runs independently. A later failed LEFT UP still
+causes the existing Runtime Error; this feedback confirms click initiation, not
+game consumption. All gesture parameters and state transitions are preserved.
+
 Current Single Tap release is driven by a Windows-local one-shot
 `System.Threading.Timer` (default 25 ms); it needs no further Android packet and
 never synchronously waits in the UDP receiver. Timer scheduling can release later

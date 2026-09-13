@@ -22,6 +22,7 @@ public final class MainActivity extends Activity {
     private TouchRecordWriter recordWriter;
     private UdpTouchSender udpSender;
     private ReceiverDiscoveryClient discovery;
+    private HapticFeedbackListener haptics;
     private java.net.InetSocketAddress receiverTarget;
     private String receiverId;
     private boolean foreground;
@@ -49,6 +50,8 @@ public final class MainActivity extends Activity {
         captureView = new TouchCaptureView(this, recordWriter, udpSender,
                 this::exit);
         setContentView(captureView);
+        haptics = new HapticFeedbackListener(captureView::performClickHaptic);
+        udpSender.setUpObserver(haptics::expectUp);
         discovery = new ReceiverDiscoveryClient(this, this::receiverChanged);
         updateBattery(registerReceiver(null, batteryFilter));
         applyImmersiveMode();
@@ -105,6 +108,7 @@ public final class MainActivity extends Activity {
             batteryReceiverRegistered = false;
         }
         foreground = false;
+        haptics.setActive(null, 0);
         senderEnabled = false;
         captureView.setConnection(null);
         discovery.setForeground(false);
@@ -115,6 +119,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        haptics.close();
         discovery.close();
         udpSender.close();
         if (recordWriter != null) {
@@ -126,6 +131,7 @@ public final class MainActivity extends Activity {
     private void receiverChanged(java.net.InetSocketAddress target, String id) {
         if (!foreground) return;
         if (!java.util.Objects.equals(receiverTarget, target) || !java.util.Objects.equals(receiverId, id)) {
+            haptics.setActive(null, 0);
             captureView.stopCapture("receiver_changed");
             udpSender.setTarget(target);
             receiverTarget = target;
@@ -137,9 +143,11 @@ public final class MainActivity extends Activity {
             senderEnabled = enable;
         }
         captureView.setConnection(target == null ? null : target.getAddress().getHostAddress());
+        haptics.setActive(target == null ? null : target.getAddress(), udpSender.getSenderRunId());
     }
 
     private void exit() {
+        haptics.close();
         captureView.stopCapture("power_exit");
         discovery.close();
         udpSender.close();

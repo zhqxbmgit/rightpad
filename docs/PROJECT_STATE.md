@@ -1,10 +1,65 @@
 # rightpad Project State
 
-Updated: 2026-09-12
+Updated: 2026-09-13
 
 ## 1. Current Phase
 
 当前阶段：
+
+Normal-click phone haptics implemented; automated device acceptance passed
+(2026-09-13). Windows remains the sole gesture authority. Independent
+[Haptic Feedback v1](HAPTIC_FEEDBACK_PROTOCOL.md), Windows → Android UDP 50002,
+echoes the qualifying UP run/session/sequence only after normal LEFT DOWN succeeds
+and release is scheduled. A bounded asynchronous sender cannot block mouse output.
+Android validates the active Receiver/run and recent raw UP identity, consumes it
+once, and calls `performHapticFeedback(CONFIRM)` on the UI thread. No gesture
+recognition, VIBRATE permission, user haptic setting or motion/timing changes.
+
+Validation: Windows Debug and Release each **187/187 tests**, both builds with
+0 warnings/errors. Android: 16 encoder checks, 4 Sender groups, 36 UI checks,
+166 discovery checks, 85 new haptic codec/gate/raw-Sender checks and an additional
+real UDP listener lifecycle suite passed. `assembleDebug` and `lintDebug` passed;
+lint remains 0 errors / 6 existing warnings. Tests cover malformed packets,
+unsigned identity, duplicate/reordered/stale feedback, normal versus drag paths,
+queue cancellation, failed DOWN, stalled/full/error sender isolation, thread and
+socket cleanup. All previous assertions retained.
+
+Runtime recovery: old Receiver PID 16228 stopped and UDP 50000 release verified;
+final Release independently launched as PID **20648**, RuntimeRunId **1**, current
+user `Z88888888\zhqqq`, explorer/interactive Session **2**, Medium, Default desktop.
+UDP 50000/50001 belong to this PID and backend remains **libvirtualhid**. Existing
+Android heartbeat reconnected after Windows restart. APK overwrite/restart then
+changed sender run from `15FC36861E8991B5` to `6C81FB2DE1AD6748`, admitted by that
+same Receiver; first new DOWN established sequence **0**. Disconnected/Connected,
+new input and preserved cumulative stats were verified with no Receiver restart.
+Android PID 30720 is resumed; OFFER source `192.168.1.11` selected automatically;
+50002 listener active on phone `192.168.1.9` (observed LAN addresses, not defaults).
+WPF header reads Connected. Settings file SHA-256 stayed unchanged.
+
+Eleven automated inert-window Android → Virtual HID Raw Input scenarios passed:
+single click = 1 haptic; three separated normal clicks = 3; MOVE and long hold = 0;
+NoMoveDrag, moving drag, >3 s stationary drag, expired second-contact negative,
+rearm, three-drag chain and expired-rearm negative each = only the first ordinary
+click's 1 haptic. Exact button order, applicable sensitivity-scaled relative motion,
+held-state semantics and neutral release passed. These 11 scenarios produced
+11 normal-click haptics total. Actual phone Logcat correlated each feedback and
+reported `performed=true`; Android vibration-service history recorded completed
+CONFIRM requests (device-mapped CLICK effect), without claiming subjective feel
+or a latency benchmark.
+
+Real pause/resume released 50002 while background, disconnected/reconnected the
+unchanged Receiver, retained senderRunId after a fresh OFFER, and rejected a
+deliberately injected stale feedback without vibration. A fresh resumed click
+again produced one native DOWN/UP and one haptic. No Android sender/listener error
+or queue overflow; one intentional stale-packet rejection is expected. Final
+Receiver snapshot: Runtime Running/Connected, LastError null, mouse failures 0,
+gap/old/invalid 0; duplicate Touch copies filtered as expected. Temporary witness
+task removed. Evidence remains ignored under `windows/test-results/haptic/`,
+`haptic-*.log`, and `receiver-runtime/20260913-194654-684-32836/`.
+
+Remaining acceptance for this feature: the user's real-finger assessment of
+CONFIRM strength, brevity and click correspondence. Automated tests do not claim
+subjective haptic quality. Broader existing project pending work below is unchanged.
 
 Double Tap Drag is implemented and accepted (2026-09-12). Single Tap remains
 immediate; a valid first UP arms one second DOWN within 130 ms, using Android

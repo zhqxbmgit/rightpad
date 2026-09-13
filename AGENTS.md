@@ -186,6 +186,15 @@ docs/DISCOVERY_PROTOCOL.md for the selection and clean target-transition contrac
 Packet length/version/field validation, malformed packet rejection, and
 timeout/stuck-input fail-safes remain required reliability measures.
 
+Explicitly approved click haptics exception (2026-09-13): independent Windows →
+Android Haptic Feedback v1 UDP 50002 confirms only Windows normal-click output.
+Android validates current discovery source IP, Sender-owned run and raw UP
+identity for stale rejection/dedupe; this is not authentication and does not
+change Touch admission. A small independent sender task/listener thread is
+authorized for this best-effort side effect. No Android gesture recognition,
+input dependency on feedback, background service or haptic setting is added.
+See docs/HAPTIC_FEEDBACK_PROTOCOL.md.
+
 ## Android Responsibility
 
 Android is only an input sensor.
@@ -641,7 +650,8 @@ only functionality solving a current demonstrated problem. This change does not
 authorize handshake frameworks, reconnect managers, TCP/ACK/reliable UDP,
 retransmission/FEC, pairing/security, config sync, extra transport
 threads/sockets or network optimization beyond the separately approved independent
-LAN discovery socket/thread described in docs/DISCOVERY_PROTOCOL.md.
+LAN discovery socket/thread described in docs/DISCOVERY_PROTOCOL.md and the
+independent click-feedback side channel in docs/HAPTIC_FEEDBACK_PROTOCOL.md.
 
 Do not ask the user to run commands that Codex can run. If no configured test
 device is reachable through ADB, explicitly report that deployment and runtime

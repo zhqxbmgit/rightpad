@@ -11,7 +11,8 @@ internal sealed class LeftButtonController : IDisposable
     private readonly int holdMs;
     private readonly Timer timer;
     private bool held, dragging, disposed;
-    private readonly Queue<int> pendingClicks = new();
+    private readonly record struct ClickRequest(int HoldMs, Action? OnPressed);
+    private readonly Queue<ClickRequest> pendingClicks = new();
     private Exception? failure;
     private long releaseAt;
 
@@ -32,6 +33,9 @@ internal sealed class LeftButtonController : IDisposable
     public void Click() => Click(holdMs);
 
     public void Click(int clickHoldMs)
+        => Click(clickHoldMs, null);
+
+    public void Click(int clickHoldMs, Action? onPressed)
     {
         if (clickHoldMs <= 0) throw new ArgumentOutOfRangeException(nameof(clickHoldMs));
         lock (gate)
@@ -39,8 +43,9 @@ internal sealed class LeftButtonController : IDisposable
             ObjectDisposedException.ThrowIf(disposed, this);
             if (failure is not null) throw new IOException("Left button output has failed.", failure);
             // Serialize overlapping clicks so an earlier UP cannot shorten a later hold.
-            if (held) { pendingClicks.Enqueue(clickHoldMs); return; }
-            try { Press(clickHoldMs); }
+            var request = new ClickRequest(clickHoldMs, onPressed);
+            if (held) { pendingClicks.Enqueue(request); return; }
+            try { Press(request); }
             catch (Exception exception) { Fail(exception); throw; }
         }
     }
@@ -74,12 +79,15 @@ internal sealed class LeftButtonController : IDisposable
         }
     }
 
-    private void Press(int clickHoldMs)
+    private void Press(ClickRequest request)
     {
         held = true; // Even an ambiguous DOWN failure gets a best-effort UP.
         down();
-        releaseAt = Stopwatch.GetTimestamp() + (long)(clickHoldMs * (double)Stopwatch.Frequency / 1000);
-        timer.Change(clickHoldMs, Timeout.Infinite);
+        releaseAt = Stopwatch.GetTimestamp() + (long)(request.HoldMs * (double)Stopwatch.Frequency / 1000);
+        timer.Change(request.HoldMs, Timeout.Infinite);
+        // Only a successfully started normal click is eligible; queued/cancelled clicks are not.
+        // The production callback only performs a nonblocking channel TryWrite.
+        request.OnPressed?.Invoke();
     }
 
     private void ReleaseDue()

@@ -8,7 +8,7 @@ namespace Rightpad.Receiver.Tests;
 
 internal static class VirtualHidTests
 {
-    private sealed class FakeNative : IVirtualHidMouse
+    internal sealed class FakeNative : IVirtualHidMouse
     {
         public string DeviceIdentity => "fake-owned-node";
         public readonly ConcurrentQueue<(string Kind, int X, int Y)> Events = new();

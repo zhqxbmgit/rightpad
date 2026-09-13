@@ -17,6 +17,10 @@ import android.view.View;
 import android.view.WindowInsets;
 
 final class TouchCaptureView extends View {
+    void performClickHaptic() {
+        boolean performed = performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM);
+        android.util.Log.i("RightpadHaptic", "confirm_requested performed=" + performed);
+    }
     private final TouchSampleLogger logger = new TouchSampleLogger();
     private final TouchRecordWriter recordWriter;
     private final UdpTouchSender udpSender;

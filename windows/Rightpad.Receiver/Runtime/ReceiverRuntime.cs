@@ -75,6 +75,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         LeftButtonController? buttons = null;
         TouchSessionProcessor? motion = null;
         GestureProcessor? gesture = null;
+        HapticFeedbackSender? haptics = null;
+        UdpReceiver? receiver = null;
         try
         {
             var initial = settings.Current;
@@ -89,13 +91,21 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             buttons = mouse is null ? null : new(mouse.LeftDown, mouse.LeftUp, output.WriteLine,
                 run.Cancellation.Cancel, initial.ClickHoldMs);
             // Hold belongs to the request, which can occur after the packet's motion output.
-            gesture = buttons is null ? null : new(_ => buttons.Click(settings.Current.ClickHoldMs), initial,
+            haptics = buttons is null ? null : new(output);
+            gesture = buttons is null ? null : new((_, packet) =>
+                {
+                    // Capture the accepted packet's route now, not the presence at timer execution.
+                    var address = IPAddress.Parse(receiver!.Presence.RemoteIp!);
+                    var h = packet.Header;
+                    var feedback = new ClickFeedback(h.SenderRunId, h.SessionId, h.Sequence);
+                    buttons.Click(settings.Current.ClickHoldMs, () => haptics!.TryEnqueue(address, feedback));
+                }, initial,
                 () => { buttons.BeginDrag(); output.WriteLine("gesture: drag_start"); },
                 () => { buttons.EndDrag(); output.WriteLine("gesture: drag_end"); });
             output.WriteLine(FormattableString.Invariant($"startup: runId={run.Id} mode={(rawMouse ? "raw_mouse" : "diagnostic")} sensitivityX={initial.SensitivityX} sensitivityY={initial.SensitivityY} timeoutAction=diagnostic_only"));
             if (gesture is not null)
                 output.WriteLine(FormattableString.Invariant($"gesture: singleTap=enabled doubleTapDrag=enabled tapMaxDurationMs={initial.TapMaxDurationMs} tapMovementThresholdPx={initial.TapMovementThresholdPx} clickHoldMs={initial.ClickHoldMs} doubleTapIntervalMs={initial.DoubleTapIntervalMs}"));
-            var receiver = new UdpReceiver(endpoint ?? new(IPAddress.Any, UdpReceiver.Port), output,
+            receiver = new UdpReceiver(endpoint ?? new(IPAddress.Any, UdpReceiver.Port), output,
                 motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings,
                 cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder);
             Volatile.Write(ref run.Receiver, receiver);
@@ -135,6 +145,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             gesture?.Reset();
             motion?.Reset();
             run.Receiver?.Dispose();
+            if (haptics is not null) await haptics.DisposeAsync().ConfigureAwait(false);
             try { mouse?.Dispose(); }
             catch (Exception e)
             {

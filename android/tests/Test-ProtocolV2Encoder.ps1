@@ -21,3 +21,11 @@ if ($LASTEXITCODE -ne 0) { throw 'UI status/power tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Discovery test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.DiscoveryTest
 if ($LASTEXITCODE -ne 0) { throw 'Discovery tests failed.' }
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $sourceDirectory 'HapticFeedbackProtocol.java') (Join-Path $sourceDirectory 'HapticFeedbackGate.java') (Join-Path $PSScriptRoot 'HapticFeedbackTest.java')
+if ($LASTEXITCODE -ne 0) { throw 'Haptic test compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.HapticFeedbackTest
+if ($LASTEXITCODE -ne 0) { throw 'Haptic tests failed.' }
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'stubs/android/os/Looper.java') (Join-Path $PSScriptRoot 'stubs/android/os/Handler.java') (Join-Path $sourceDirectory 'HapticFeedbackListener.java') (Join-Path $PSScriptRoot 'HapticListenerTest.java')
+if ($LASTEXITCODE -ne 0) { throw 'Haptic listener test compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.HapticListenerTest
+if ($LASTEXITCODE -ne 0) { throw 'Haptic listener tests failed.' }

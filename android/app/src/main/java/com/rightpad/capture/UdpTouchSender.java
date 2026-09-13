@@ -13,6 +13,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 final class UdpTouchSender implements Closeable {
+    interface UpObserver { void submitted(long runId, long sessionId, long sequence); }
+    private UpObserver upObserver; // UI-thread raw packet identity notification; never a gesture decision.
     private static final String TAG = "RightpadUdp";
     private static final int QUEUE_CAPACITY = 8;
     private static final class Route {
@@ -54,6 +56,8 @@ final class UdpTouchSender implements Closeable {
     boolean hasTarget() { return route.endpoint != null; }
     boolean canCapture() { return !closed && foreground && route.endpoint != null; }
     long runIdForTest() { return route.runId; }
+    long getSenderRunId() { return route.runId; }
+    void setUpObserver(UpObserver observer) { upObserver = observer; }
     int queuedForTest() { return pending.size(); }
 
     // UI thread only, after TouchCaptureView.stopCapture. Identity changes also force a new run.
@@ -85,6 +89,8 @@ final class UdpTouchSender implements Closeable {
             return;
         }
         nextSequence++;
+        if (first.action == TouchSample.Action.UP && upObserver != null)
+            upObserver.submitted(current.runId, first.sessionId, sequence);
         if (first.action == TouchSample.Action.DOWN) activeSession = first.sessionId;
         if (first.action == TouchSample.Action.UP) activeSession = -1;
         Pending packet = new Pending(current, bytes);

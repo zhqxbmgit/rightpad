@@ -2,7 +2,7 @@ namespace Rightpad.Receiver;
 
 internal sealed class GestureProcessor
 {
-    private readonly Action<int> click;
+    private readonly Action<int, TouchPacket> click;
     private readonly Action beginDrag, endDrag;
     private readonly int defaultDoubleTapInterval;
     private readonly int defaultClickHold;
@@ -30,6 +30,9 @@ internal sealed class GestureProcessor
         : this(_ => click(), new RuntimeSettings(7, 7, tapMaxDurationMs, tapMovementThresholdPx, 25), beginDrag, endDrag) { }
 
     public GestureProcessor(Action<int> click, RuntimeSettings settings, Action beginDrag, Action endDrag)
+        : this((hold, _) => click(hold), settings, beginDrag, endDrag) { }
+
+    public GestureProcessor(Action<int, TouchPacket> click, RuntimeSettings settings, Action beginDrag, Action endDrag)
     {
         settings.ValidateCore();
         this.click = click;
@@ -96,7 +99,7 @@ internal sealed class GestureProcessor
         FinishCurrentContact(); // Consume UP before output, including when output fails.
         if (tap)
         {
-            click(clickHoldMs);
+            click(clickHoldMs, packet);
             ClicksTriggered++;
             lastTapUpTimestampNs = upTime;
             DoubleTapArmed = true;
