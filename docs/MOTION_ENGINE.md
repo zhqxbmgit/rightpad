@@ -92,14 +92,59 @@ Do not implement:
 
 ## Rule 3: Deterministic Feel
 
-The same physical finger movement should produce the same mouse response.
+Runtime Motion behavior must be stationary: the same physical finger movement
+under the same selected fixed configuration should produce the same mouse response.
+Deterministic feel prohibits all runtime-adaptive motion shaping, not only dynamic
+sensitivity and speed-based gain.
+
+Every feel-affecting value used by a selected configuration must remain fixed,
+including any mapping, sensitivity, gain, filter coefficients, time constants,
+damping parameters, windows, output cadence and playout timing. The implementation
+must not alter them in response to the current input or environment.
 
 Avoid:
 
 - Dynamic sensitivity
 - Speed-based gain
-- Automatic adaptation
+- Adaptive smoothing, tau, damping, FIR coefficients, windows or deadzones
+- Adaptive playout delay or jitter-buffer depth
+- Velocity-, noise-, sample-rate-, network-, FPS-, game- or system-load-based
+  parameter changes or mode switching
 - Game-dependent behavior
+
+For example, this is prohibited:
+
+```text
+if speed < threshold:
+    tau = 8 ms
+else:
+    tau = 3 ms
+```
+
+So are `slow = heavy filtering, fast = raw` and automatic switching between a
+micro-aiming algorithm and a fast-turn algorithm. A favorable benchmark or
+theoretical Pareto tradeoff does not override the fixed-feel requirement.
+
+Development may evaluate different fixed configurations through offline data,
+automated tests and human game A/B. Each candidate must use fixed values throughout
+its run, and the selected runtime configuration must keep those values fixed.
+
+### Reliability Fallbacks Are Not Adaptive Feel
+
+Correctness, safety and lifecycle handling may use fixed deterministic fallbacks
+for malformed input, missed deadlines, buffer overflow, session/run invalidation,
+shutdown and similar faults. A missed output deadline may skip an obsolete tick and
+resume the same fixed cadence. These fallbacks must not modify subsequent normal
+gain, tau, coefficients, window, playout delay, mapping or Motion mode.
+
+### Fixed Algorithms May Still Be Sophisticated
+
+This rule does not limit Rightpad to simple algorithms. A fixed-coefficient FIR,
+fixed-window reconstruction, fixed second-order follower or fixed resampling design
+may be evaluated when its parameters are fixed, its behavior is deterministic and
+its benefit is measured. The goal remains relative displacement semantics with
+gimbal-like trajectory quality. Do not substitute velocity control, dynamic gain,
+glide or inertia for that goal.
 
 ---
 
@@ -297,6 +342,26 @@ light smoothing
 Reason:
 
 Creates different touch feeling.
+
+---
+
+## No Runtime-Adaptive Feel
+
+Do not implement:
+
+- Adaptive smoothing strength
+- Adaptive follower tau or damping
+- Adaptive FIR coefficients or window length
+- Adaptive deadzone
+- Adaptive playout delay or jitter-buffer depth
+- Velocity- or acceleration-based mode switching
+- Noise- or sampling-rate-based mode switching
+- Packet-jitter- or network-based mode switching
+- FPS-, game- or system-load-based mode switching
+
+These remain prohibited even when the adaptation is continuous or subtle rather
+than a named mode switch. Candidate values may be compared as separate fixed
+experiments, but a candidate range must not become a runtime controller.
 
 ---
 

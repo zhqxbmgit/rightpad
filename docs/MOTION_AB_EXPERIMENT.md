@@ -2,6 +2,20 @@
 
 本轮是实验原型，等待真人游戏评价，未定稿、未 commit、未 push。目标是 relative displacement semantics + gimbal-like trajectory quality。A 为现有 RAW；B 为固定 250 Hz 输出机会、固定 12 ms 播放延迟、累计位置线性重采样。没有加入滤波、加速度、动态增益、预测、惯性或 glide。
 
+## 后续实验的 Fixed Feel 约束
+
+第一轮 B 的固定 250 Hz 输出机会和固定 12 ms 播放延迟符合项目的
+Fixed Feel 原则。后续可以通过离线数据、自动测试和真人游戏 A/B 比较多套固定候选，
+包括不同的固定系数、窗口、时间常数、播放延迟或输出频率；每个候选在一次运行中
+必须保持自己的全部手感参数不变。
+
+A/B/C 等实验模式表示开发或用户明确选择的固定配置，不表示也不授权根据实时手指
+速度、噪声、采样率、网络状态、帧率、游戏或系统负载自动切换模式或参数。最终
+Motion 配置应是明确选定的一组固定参数。确定性的 missed-deadline、异常输入、buffer
+overflow 和 lifecycle fallback 可以保护正确性，但不得改变恢复后的正常 gain、tau、
+window、delay 或其他控制手感。此实验记录受 `AGENTS.md` 的项目级规则和
+`MOTION_ENGINE.md` 的 Motion 设计规则约束；它不预先决定任何后续候选或最终算法。
+
 ## 1. 起点与变更范围
 
 开始分支 main，HEAD 与 fetch 后 origin/main 都是 `0927a688fb9d4d4668c394ee1f0a3f92b5dd02bb`，工作树干净，ahead/behind 0/0。本轮保持该提交基线，变更留在工作树。未修改 Android、Touch v2、discovery、手势算法、点击振动协议、用户设置或其他仓库。

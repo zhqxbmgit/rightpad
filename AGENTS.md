@@ -132,6 +132,70 @@ The same physical finger movement should always create the same response.
 
 Avoid hidden behavior changes.
 
+## Fixed Feel / No Runtime Adaptation
+
+Runtime motion feel must be stationary. Once a Motion configuration is selected,
+every parameter that affects control feel must remain fixed for that run. The same
+physical finger movement under the same fixed configuration must produce the same
+motion response. This is required for stable muscle memory, predictable control,
+fair A/B comparisons and reproducible experiments.
+
+If present in an algorithm, feel-affecting parameters such as sensitivity, gain,
+smoothing strength, filter coefficients, filter window, follower time constant,
+damping parameters, output cadence and playout delay must not change according to
+finger velocity or acceleration, detected noise, touch sampling rate, packet-arrival
+jitter, network conditions, CPU or GPU load, game frame rate, game type, game state,
+estimated user intent or any other runtime condition.
+
+In particular, do not implement behavior such as:
+
+```text
+Slow movement -> stronger smoothing
+Fast movement -> weaker smoothing
+
+Low speed -> one gain / tau / window
+High speed -> another gain / tau / window
+
+Detected noise -> automatically increase smoothing
+More network jitter -> automatically enlarge playout delay or jitter buffer
+Less network jitter -> automatically reduce delay
+
+Low FPS / high FPS -> different Motion parameters
+Different games -> automatically selected Motion feel
+```
+
+This also prohibits runtime-adaptive sensitivity, gain, smoothing, tau, damping,
+FIR coefficients, window length, deadzone, playout delay, jitter-buffer depth and
+velocity-, noise-, FPS-, network-, game- or system-load-based Motion mode switching.
+A speed threshold that selects one feel for micro-aiming and another for fast turns
+is prohibited even if its benchmark or theoretical tradeoff appears better.
+
+Development may compare multiple fixed candidates, for example tau values of 3,
+5 and 8 ms, fixed windows of 4, 6 and 8 ms, fixed playout delays of 8, 12 and 16 ms,
+or fixed output rates of 250 and 500 Hz. Each candidate must keep its own values
+fixed. Offline data, automated tests and human game A/B may then select one fixed
+configuration. Experiment modes are explicit development choices; they do not
+authorize automatic runtime switching.
+
+Fixed feel does not require a simple algorithm. A measured, deterministic FIR,
+fixed-window reconstruction, fixed second-order follower or fixed resampler may be
+evaluated and adopted when all feel-affecting parameters remain fixed. The product
+goal remains relative displacement semantics with gimbal-like trajectory quality:
+smooth motion must not be obtained through velocity control, dynamic gain, glide
+or inertia.
+
+Deterministic fallbacks may react to correctness, safety and lifecycle conditions,
+including malformed input, missed deadlines, buffer overflow, session or sender-run
+invalidation and shutdown. For example, a late ticker may skip an obsolete tick and
+resume the same fixed cadence. Such handling must be specified and repeatable; it
+must not change the gain, tau, window, delay, mapping or other normal Motion feel
+after recovery, and faults must not be used as a pretext for adaptive feel.
+
+This section is the binding project-level rule. `docs/MOTION_ENGINE.md` must conform
+to it, and experiment or reference documents must conform to both. An adaptive
+candidate is ineligible as a product Motion solution unless the user explicitly
+changes this requirement.
+
 ---
 
 # 6. Forbidden Features Unless Explicitly Approved
