@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace Rightpad.Receiver;
 
 internal sealed class TouchSessionProcessor(Action<int, int> output, double sensitivityX = 1, double sensitivityY = 1,
-    Func<long>? monotonicNow = null)
+    Func<long>? monotonicNow = null) : ITouchMotion
 {
     private readonly RawMotionProcessor motion = new(sensitivityX, sensitivityY);
     private double previousX;

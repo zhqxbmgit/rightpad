@@ -9,7 +9,7 @@ internal static class Program
 {
     internal enum LaunchMode { Gui, Diagnostics, RawMouse }
     internal sealed record LaunchOptions(LaunchMode Mode, Options Input, string? LogDirectory, string? SettingsPath,
-        MouseBackend Backend);
+        MouseBackend Backend, MotionMode Motion = MotionMode.RAW, string? MotionTraceDirectory = null);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AttachConsole(uint processId);
@@ -56,7 +56,9 @@ internal static class Program
         var loaded = SettingsFileStore.Load(path);
         var file = new SettingsFileStore(path);
         var store = new RuntimeSettingsStore(loaded.Settings);
-        var runtime = new ReceiverRuntime(store, log, flightRecorder: flightRecorder, backend: launch.Backend);
+        using var motionTrace = launch.MotionTraceDirectory is null ? null : new MotionTrace(launch.MotionTraceDirectory, launch.Motion);
+        var runtime = new ReceiverRuntime(store, log, flightRecorder: flightRecorder, backend: launch.Backend,
+            motionMode: launch.Motion, motionTrace: motionTrace);
         flightRecorder.StartSnapshots(runtime.CaptureSnapshot);
         var app = new App();
         app.InitializeComponent();
@@ -80,8 +82,9 @@ internal static class Program
         flightRecorder.Event("receiver_process_start", ("mode", launch.Mode.ToString()));
         var o = launch.Input;
         var store = new RuntimeSettingsStore(new(o.SensitivityX, o.SensitivityY, o.TapMaxDurationMs, o.TapMovementThresholdPx, o.ClickHoldMs, o.DoubleTapIntervalMs));
+        using var motionTrace = launch.MotionTraceDirectory is null ? null : new MotionTrace(launch.MotionTraceDirectory, launch.Motion);
         var runtime = new ReceiverRuntime(store, log, rawMouse: launch.Mode == LaunchMode.RawMouse,
-            flightRecorder: flightRecorder, backend: launch.Backend);
+            flightRecorder: flightRecorder, backend: launch.Backend, motionMode: launch.Motion, motionTrace: motionTrace);
         flightRecorder.StartSnapshots(runtime.CaptureSnapshot);
         using var cancellation = new CancellationTokenSource();
         ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
@@ -106,11 +109,13 @@ internal static class Program
         string? log = null, settings = null;
         bool diagnostics = false;
         var backend = MouseBackendDefaults.Production;
+        var motion = MotionMode.RAW;
+        string? motionTrace = null;
         var seen = new HashSet<string>();
         for (int i = 0; i < args.Length; i++)
         {
             string arg = args[i];
-            if (arg is "--dev-log-dir" or "--dev-settings-path" or "--diagnostics" or "--dev-mouse-backend")
+            if (arg is "--dev-log-dir" or "--dev-settings-path" or "--diagnostics" or "--dev-mouse-backend" or "--dev-motion-mode" or "--dev-motion-trace-dir")
             {
                 if (!seen.Add(arg)) throw new ArgumentException($"Repeated option: {arg}");
                 if (arg == "--diagnostics") { diagnostics = true; continue; }
@@ -122,6 +127,13 @@ internal static class Program
                     "virtualhid" => MouseBackend.VirtualHid,
                     _ => throw new ArgumentException("--dev-mouse-backend requires sendinput or virtualhid.")
                 };
+                else if (arg == "--dev-motion-mode") motion = args[i] switch
+                {
+                    "RAW" => MotionMode.RAW,
+                    "RESAMPLED_250HZ" => MotionMode.RESAMPLED_250HZ,
+                    _ => throw new ArgumentException("--dev-motion-mode requires RAW or RESAMPLED_250HZ.")
+                };
+                else if (arg == "--dev-motion-trace-dir") motionTrace = args[i];
                 else if (arg == "--dev-log-dir") log = args[i]; else settings = args[i];
             }
             else input.Add(arg);
@@ -132,7 +144,9 @@ internal static class Program
         if (settings is not null && mode != LaunchMode.Gui) throw new ArgumentException("--dev-settings-path is GUI-only.");
         if (diagnostics && seen.Contains("--dev-mouse-backend"))
             throw new ArgumentException("--dev-mouse-backend requires mouse output, not --diagnostics.");
-        return new(mode, options, log, settings, backend);
+        if (diagnostics && (seen.Contains("--dev-motion-mode") || motionTrace is not null))
+            throw new ArgumentException("Motion experiments require mouse output.");
+        return new(mode, options, log, settings, backend, motion, motionTrace);
     }
     internal readonly record struct Options(bool RawMouse, double SensitivityX, double SensitivityY,
         int TapMaxDurationMs = 300, double TapMovementThresholdPx = 8, int ClickHoldMs = 25, int DoubleTapIntervalMs = RuntimeSettings.DefaultDoubleTapIntervalMs);

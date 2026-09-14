@@ -29,3 +29,11 @@ foreach ($required in @(
     '$selectedBackend = (Get-Content -LiteralPath $launchOptionsPath -Raw | ConvertFrom-Json).MouseBackend'
 )) { if (!$source.Contains($required)) { throw "Launcher no longer uses verified selection path: $required" } }
 'PASS launcher production inheritance and both explicit overrides (4 cases)'
+$motionBuilder = $ast.Find({ param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-MotionArguments'
+}, $true).Extent.Text
+$motionProbe = [scriptblock]::Create($motionBuilder + "`n" + 'Get-MotionArguments @args')
+if ((& $motionProbe 'RAW') -cne '') { throw 'RAW must inherit the EXE default.' }
+if ((& $motionProbe 'RESAMPLED_250HZ') -cne ' --dev-motion-mode RESAMPLED_250HZ') { throw 'B mode argument mismatch.' }
+if ((& $motionProbe 'RAW' 'C:\trace space') -cne ' --dev-motion-trace-dir "C:\trace space"') { throw 'Trace quoting mismatch.' }
+'PASS motion launcher default, experiment selection and trace path (3 cases)'

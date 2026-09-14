@@ -16,7 +16,8 @@ internal sealed class UdpReceiver : IDisposable
     private readonly UdpClient socket;
     private readonly RawSampleLogger logger;
     private readonly TimeSpan inputTimeout;
-    private readonly TouchSessionProcessor? motion;
+    private readonly ITouchMotion? motion;
+    private readonly MotionTrace? motionTrace;
     private readonly GestureProcessor? gesture;
     private readonly bool detailedLogging;
     private readonly RuntimeSettingsStore? settings;
@@ -46,14 +47,16 @@ internal sealed class UdpReceiver : IDisposable
 
     // Endpoint and timeout injection are for loopback tests, not user configuration.
     public UdpReceiver(IPEndPoint endpoint, TextWriter output, TimeSpan? timeout = null,
-        TouchSessionProcessor? motion = null, bool detailedLogging = true, GestureProcessor? gesture = null,
-        RuntimeSettingsStore? settings = null, Action? cancelButtons = null, FlightRecorder? flightRecorder = null)
+        ITouchMotion? motion = null, bool detailedLogging = true, GestureProcessor? gesture = null,
+        RuntimeSettingsStore? settings = null, Action? cancelButtons = null, FlightRecorder? flightRecorder = null,
+        MotionTrace? motionTrace = null)
     {
         inputTimeout = timeout ?? InputTimeout;
         if (inputTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
         socket = new UdpClient(endpoint);
         LocalEndpoint = (IPEndPoint)socket.Client.LocalEndPoint!;
         this.motion = motion;
+        this.motionTrace = motionTrace;
         this.gesture = gesture;
         this.detailedLogging = detailedLogging;
         this.settings = settings;
@@ -191,10 +194,11 @@ internal sealed class UdpReceiver : IDisposable
             Interlocked.Exchange(ref lastAcceptedAtTicks, now);
             Interlocked.Exchange(ref lastAcceptedSampleAtTicks, now);
             var snapshot = settings?.Current;
-            if (snapshot is null) { motion?.Process(packet); gesture?.Process(packet); }
+            motionTrace?.Accepted(packet, now);
+            motion?.ProcessAt(packet, now, snapshot);
+            if (snapshot is null) { gesture?.Process(packet); }
             else
             {
-                motion?.Process(packet, snapshot.SensitivityX, snapshot.SensitivityY);
                 gesture?.Process(packet, snapshot.TapMaxDurationMs, snapshot.TapMovementThresholdPx, snapshot.ClickHoldMs,
                     snapshot.DoubleTapIntervalMs);
             }

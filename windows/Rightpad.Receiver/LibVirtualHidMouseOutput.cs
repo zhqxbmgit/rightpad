@@ -15,7 +15,8 @@ internal sealed class LibVirtualHidMouseOutput : IMouseOutput
     public string DeviceIdentity { get; }
     public MouseOutputStats Stats { get { lock (gate) return stats; } }
 
-    public LibVirtualHidMouseOutput(FlightRecorder? recorder = null) : this(new NativeVirtualHidMouse(), recorder) { }
+    public LibVirtualHidMouseOutput(FlightRecorder? recorder = null, MotionTrace? motionTrace = null)
+        : this(new NativeVirtualHidMouse(motionTrace), recorder) { }
     internal LibVirtualHidMouseOutput(IVirtualHidMouse native, FlightRecorder? recorder = null)
     {
         this.native = native;

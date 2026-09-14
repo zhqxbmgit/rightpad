@@ -45,7 +45,7 @@ internal sealed class RawSampleLogger(TextWriter output, bool detailed = true)
 
     public void Stopped() => output.WriteLine("receiver: status=stopped");
 
-    public void Summary(long timeouts, TouchSessionProcessor? motion)
+    public void Summary(long timeouts, ITouchMotion? motion)
     {
         output.WriteLine($"receiver_stats: inputTimeouts={timeouts}");
         if (motion is null) return;

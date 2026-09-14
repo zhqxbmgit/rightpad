@@ -10,10 +10,12 @@ internal sealed class NativeVirtualHidMouse : IVirtualHidMouse
     private const string Library = "Rightpad.VirtualHid.dll";
     private const int BufferSize = 2048;
     private readonly MouseHandle handle;
+    private readonly MotionTrace? motionTrace;
     public string DeviceIdentity { get; }
 
-    public NativeVirtualHidMouse()
+    public NativeVirtualHidMouse(MotionTrace? motionTrace = null)
     {
+        this.motionTrace = motionTrace;
         try
         {
             if (AbiVersion() != 1) throw new IOException("libvirtualhid native bridge ABI/version mismatch (expected 1).");
@@ -29,7 +31,19 @@ internal sealed class NativeVirtualHidMouse : IVirtualHidMouse
     public void Move(int dx, int dy)
     {
         var error = new StringBuilder(BufferSize);
-        Check(MoveNative(handle, dx, dy, error, BufferSize), error);
+        long begin = motionTrace is null ? 0 : System.Diagnostics.Stopwatch.GetTimestamp();
+        int result;
+        try { result = MoveNative(handle, dx, dy, error, BufferSize); }
+        finally
+        {
+            if (motionTrace is not null)
+            {
+                long end = System.Diagnostics.Stopwatch.GetTimestamp();
+                motionTrace.Write(MotionEventKind.NativeBegin, begin, x: dx, y: dy);
+                motionTrace.Write(MotionEventKind.NativeEnd, end, x: dx, y: dy);
+            }
+        }
+        Check(result, error);
     }
     public void LeftDown() => Button(true);
     public void LeftUp() => Button(false);

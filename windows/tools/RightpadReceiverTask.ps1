@@ -2,7 +2,10 @@ param(
     [ValidateSet('Ensure', 'Start', 'Stop', 'Status', 'Run')]
     [string]$Mode = 'Status',
     [ValidateSet('production', 'sendinput', 'virtualhid')]
-    [string]$DevMouseBackend = 'production'
+    [string]$DevMouseBackend = 'production',
+    [ValidateSet('RAW', 'RESAMPLED_250HZ')]
+    [string]$DevMotionMode = 'RAW',
+    [switch]$DevMotionTrace
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,6 +31,16 @@ function Get-ReceiverArguments([string]$LogDirectory, [string]$BackendOverride =
         { $_ -in 'sendinput', 'virtualhid' } { return "$arguments --dev-mouse-backend $BackendOverride" }
         default { throw 'Invalid development mouse backend.' }
     }
+}
+
+function Get-MotionArguments([string]$MotionMode = 'RAW', [string]$TraceDirectory = '') {
+    if ($MotionMode -notin @('RAW', 'RESAMPLED_250HZ')) { throw 'Invalid experimental motion mode.' }
+    $arguments = if ($MotionMode -eq 'RAW') { '' } else { " --dev-motion-mode $MotionMode" }
+    if ($TraceDirectory) {
+        if ($TraceDirectory.Contains('"')) { throw 'Invalid trace directory.' }
+        $arguments += ' --dev-motion-trace-dir "{0}"' -f $TraceDirectory
+    }
+    return $arguments
 }
 
 function Get-DevTask {
@@ -245,15 +258,21 @@ switch ($Mode) {
         if ($jobFlags -band 0x2000) { throw 'Scheduled launcher inherited KILL_ON_JOB_CLOSE; refusing persistent launch.' }
         if (!(Test-Path -LiteralPath $receiverPath)) { throw "Missing Release binary: $receiverPath" }
         $selectedBackend = 'production'
+        $selectedMotion = 'RAW'
+        $selectedTrace = $false
         if (Test-Path -LiteralPath $launchOptionsPath) {
             $selectedBackend = (Get-Content -LiteralPath $launchOptionsPath -Raw | ConvertFrom-Json).MouseBackend
+            $experiment = Get-Content -LiteralPath $launchOptionsPath -Raw | ConvertFrom-Json
+            if ($experiment.MotionMode) { $selectedMotion = $experiment.MotionMode }
+            $selectedTrace = $experiment.MotionTrace -eq $true
         }
         if ($selectedBackend -notin @('production','sendinput','virtualhid')) { throw 'Invalid development mouse backend.' }
         $runDirectory = Join-Path $logRoot ('{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), $PID)
         $null = New-Item -ItemType Directory -Path $runDirectory
         $run = @{ Directory = $runDirectory; StartUtc = [DateTime]::UtcNow.ToString('o');
             WrapperPid = $PID; WrapperStartUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o');
-            SchedulerPid = $parent; Context = $context; ImmediateJobLimitFlags = $jobFlags; MouseBackend = $selectedBackend }
+            SchedulerPid = $parent; Context = $context; ImmediateJobLimitFlags = $jobFlags; MouseBackend = $selectedBackend;
+            MotionMode = $selectedMotion; MotionTrace = $selectedTrace }
         $run | ConvertTo-Json | Set-Content -LiteralPath $currentPath -Encoding UTF8
         $run | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runDirectory 'start.json') -Encoding UTF8
         $exitCode = 1
@@ -265,6 +284,8 @@ switch ($Mode) {
             $start.WorkingDirectory = Split-Path $receiverPath -Parent
             $start.UseShellExecute = $false
             $start.Arguments = Get-ReceiverArguments $runDirectory $selectedBackend
+            $traceDirectory = if ($selectedTrace) { Join-Path $runDirectory 'motion-trace' } else { '' }
+            $start.Arguments += Get-MotionArguments $selectedMotion $traceDirectory
             $receiver = [Diagnostics.Process]::Start($start)
             @{ Pid = $receiver.Id; StartUtc = $receiver.StartTime.ToUniversalTime().ToString('o') } |
                 ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runDirectory 'receiver.json') -Encoding UTF8
@@ -283,7 +304,10 @@ switch ($Mode) {
         if ($task.State -eq 4 -or (Get-OwnedReceiver (Read-Run))) { Stop-Runtime }
         if (@(Get-Port).Count) { throw 'UDP 50000 is occupied; no unrelated process will be stopped.' }
         $null = New-Item -ItemType Directory -Path $logRoot -Force
-        @{ MouseBackend = $DevMouseBackend } | ConvertTo-Json | Set-Content -LiteralPath $launchOptionsPath -Encoding UTF8
+        $options = @{ MouseBackend = $DevMouseBackend }
+        $options.MotionMode = $DevMotionMode
+        $options.MotionTrace = [bool]$DevMotionTrace
+        $options | ConvertTo-Json | Set-Content -LiteralPath $launchOptionsPath -Encoding UTF8
         $null = $task.Run($null)
         $deadline = (Get-Date).AddSeconds(20)
         do {
@@ -313,6 +337,7 @@ switch ($Mode) {
             $stdout -match 'receiver_error:') {
             throw 'Receiver startup logs failed validation; inspect runtime logs.'
         }
+        if ($stdout -notmatch "motion_mode: name=$DevMotionMode ") { throw 'Experimental motion mode did not match the requested launch.' }
         Show-Status
     }
 }

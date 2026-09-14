@@ -6,6 +6,10 @@ internal enum ReceiverPage { Overview, Motion, Tap, Diagnostics }
 
 internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel settings, StartupViewModel startup) : ObservableModel
 {
+    public string MotionModeName => runtime.ActiveMotionMode.ToString();
+    public string MotionExplanation => runtime.ActiveMotionMode == MotionMode.RAW
+        ? "RAW applies a fixed gain without filtering."
+        : "Experimental motion: 250 Hz output opportunities with a fixed 12 ms playback delay.";
     private ReceiverPage currentPage = ReceiverPage.Motion;
     private bool busy;
     private bool running;

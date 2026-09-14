@@ -6,11 +6,13 @@ namespace Rightpad.Receiver;
 internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter output, MouseBackend backend,
     IPEndPoint? endpoint = null, Func<IMouseOutput>? mouseFactory = null, bool rawMouse = true,
     FlightRecorder? flightRecorder = null,
-    IPEndPoint? discoveryEndpoint = null, Func<byte[]>? identityFactory = null)
+    IPEndPoint? discoveryEndpoint = null, Func<byte[]>? identityFactory = null,
+    MotionMode motionMode = MotionMode.RAW, MotionTrace? motionTrace = null)
 {
     private readonly SemaphoreSlim lifecycle = new(1, 1);
     private Run? current;
     private long nextRunId;
+    public MotionMode ActiveMotionMode => motionMode;
     public IPEndPoint? LocalEndpoint => Volatile.Read(ref current)?.Receiver?.LocalEndpoint;
     public Task Completion => Volatile.Read(ref current)?.Task ?? Task.CompletedTask;
     public IPEndPoint? DiscoveryEndpoint => Volatile.Read(ref current)?.Discovery?.LocalEndpoint;
@@ -24,7 +26,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         public UdpReceiver? Receiver;
         public DiscoveryResponder? Discovery;
         public IMouseOutput? Mouse;
-        public TouchSessionProcessor? Motion;
+        public ITouchMotion? Motion;
         public int State = (int)ReceiverState.Starting;
         public string? Error;
     }
@@ -73,7 +75,9 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     {
         IMouseOutput? mouse = null;
         LeftButtonController? buttons = null;
-        TouchSessionProcessor? motion = null;
+        ITouchMotion? motion = null;
+        MotionClock? motionClock = null;
+        CancellationTokenRegistration motionCancellation = default;
         GestureProcessor? gesture = null;
         HapticFeedbackSender? haptics = null;
         UdpReceiver? receiver = null;
@@ -81,11 +85,27 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         {
             var initial = settings.Current;
             flightRecorder?.Event("runtime_start", ("runtimeRunId", run.Id));
-            mouse = rawMouse ? (mouseFactory is not null ? mouseFactory() : MouseOutputFactory.Create(backend, flightRecorder)) : null;
+            mouse = rawMouse ? (mouseFactory is not null ? mouseFactory() : MouseOutputFactory.Create(backend, flightRecorder, motionTrace)) : null;
             if (rawMouse && mouse is null) throw new InvalidOperationException("Mouse output factory returned no backend.");
             output.WriteLine($"mouse_backend: name={mouse?.BackendName ?? "None (diagnostics)"} device={mouse?.DeviceIdentity ?? "none"}");
             flightRecorder?.Event("mouse_backend", ("runtimeRunId", run.Id), ("mouseBackend", mouse?.BackendName), ("deviceIdentity", mouse?.DeviceIdentity));
-            motion = mouse is null ? null : new(mouse.Move, initial.SensitivityX, initial.SensitivityY);
+            if (mouse is not null)
+            {
+                Action<int, int> nativeMove = mouse.Move;
+                Action<int, int> move = motionTrace is null ? nativeMove : (x, y) => motionTrace.Move(nativeMove, x, y);
+                motion = motionMode switch
+                {
+                    MotionMode.RAW => new TouchSessionProcessor(move, initial.SensitivityX, initial.SensitivityY),
+                    MotionMode.RESAMPLED_250HZ => new ResampledMotion(move, initial.SensitivityX, initial.SensitivityY, trace: motionTrace),
+                    _ => throw new ArgumentOutOfRangeException(nameof(motionMode))
+                };
+                if (motion is ResampledMotion resampled)
+                {
+                    motionCancellation = run.Cancellation.Token.Register(resampled.Reset);
+                    motionClock = new(resampled, run.Cancellation.Cancel);
+                }
+            }
+            output.WriteLine($"motion_mode: name={motionMode} periodMs={(motionMode == MotionMode.RAW ? 0 : 4)} playoutDelayMs={(motionMode == MotionMode.RAW ? 0 : 12)} trace={(motionTrace is null ? "off" : "on")}");
             Volatile.Write(ref run.Mouse, mouse);
             Volatile.Write(ref run.Motion, motion);
             buttons = mouse is null ? null : new(mouse.LeftDown, mouse.LeftUp, output.WriteLine,
@@ -107,7 +127,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 output.WriteLine(FormattableString.Invariant($"gesture: singleTap=enabled doubleTapDrag=enabled tapMaxDurationMs={initial.TapMaxDurationMs} tapMovementThresholdPx={initial.TapMovementThresholdPx} clickHoldMs={initial.ClickHoldMs} doubleTapIntervalMs={initial.DoubleTapIntervalMs}"));
             receiver = new UdpReceiver(endpoint ?? new(IPAddress.Any, UdpReceiver.Port), output,
                 motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings,
-                cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder);
+                cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder, motionTrace: motionTrace);
             Volatile.Write(ref run.Receiver, receiver);
             // Explicit touch endpoints are test-only; opt into discovery there with its own endpoint.
             if (endpoint is null || discoveryEndpoint is not null)
@@ -139,6 +159,15 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         }
         finally
         {
+            // Join the motion writer before releasing buttons or disposing the shared native device.
+            motionCancellation.Dispose();
+            motionClock?.Dispose();
+            if (motionClock?.Failure is { } clockFailure)
+            {
+                Volatile.Write(ref run.Error, clockFailure.Message);
+                output.WriteLine($"motion_clock_error: {clockFailure.Message}");
+            }
+            (motion as IDisposable)?.Dispose();
             run.Discovery?.Dispose();
             buttons?.Dispose();
             if (buttons?.Failure is { } failure) Volatile.Write(ref run.Error, failure.Message);
