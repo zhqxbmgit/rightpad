@@ -1,5 +1,17 @@
 # Motion 第一轮 A/B 实验（2026-09-13）
 
+> **Product-priority note:** This document preserves the first B experiment and
+> its measurements as historical evidence. Subsequent product-priority guidance
+> has evolved: the current Motion quality hierarchy and binding Fixed Feel rules
+> are defined by `AGENTS.md` and `docs/MOTION_ENGINE.md`. The original experiment's
+> tradeoff weighting is not the final product priority, and B remains a comparison
+> baseline rather than a preselected final algorithm.
+
+> **Current qualification (2026-09-14):** B is the active use baseline. K24 is
+> FAIL_ENDPOINT; K35 is NOT_QUALIFIED / NOT_RUN_SHARED_Q0_GATE_BLOCKED. Earlier
+> deployment plans and test counts below are historical; the latest checkpoint
+> at the end and `PROJECT_STATE.md` section 17 define the current research status.
+
 本轮是实验原型，等待真人游戏评价，未定稿、未 commit、未 push。目标是 relative displacement semantics + gimbal-like trajectory quality。A 为现有 RAW；B 为固定 250 Hz 输出机会、固定 12 ms 播放延迟、累计位置线性重采样。没有加入滤波、加速度、动态增益、预测、惯性或 glide。
 
 ## 后续实验的 Fixed Feel 约束
@@ -194,3 +206,45 @@ trace 全过程分配：A 138,237,440 bytes / 673.004 s；B 43,191,448 bytes / 1
 ## 用户要求的 32 项报告索引
 
 1 起点：第 1 节；2 文件：第 1 节；3 A 兼容：第 2 节；4 数学：第 3 节；5 buffer：第 4 节；6 时钟映射：第 4 节；7 timer：第 5 节；8 missed：第 5/9 节；9 starvation：第 5/9 节；10 timestamp 异常：第 4/8/9 节；11 UP fence：第 6 节；12 stale Move：第 6/10 节；13 lifecycle：第 6 节；14 residual：第 3 节；15 新增测试：第 7 节；16 构建测试：第 7 节；17 离线：第 8 节；18 当前真机：第 9 节；19 interval：第 8/9 节；20 burst：第 8/9 节；21 lateness：第 9 节；22 starvation：第 8/9 节；23 UP 分布：第 10 节；24 stop tail：第 10 节；25 reversal：第 10 节；26 endpoint/path：第 8/10 节；27 native duration：第 9/11 节；28 CPU/allocation：第 9/11 节；29 未测指标：第 11 节；30 当前 mode：第 12 节与 final 证据；31 PID/backend/connection：final 证据；32 真人动作：第 12 节。
+
+## 2026-09-14：固定有限临界形状核 Runtime Prototype（初次门槛历史记录）
+
+新增明确开发模式 `RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5`（tau=24 ms，T=120 ms）与 `RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4`（tau=35 ms，T=140 ms）。B 与已有 F4/F8 保留；模式仅在新 Receiver run 选择，没有任意 tau/support CLI，没有热切换。两种新模式的 sensitivity 使用 run 启动快照；现有设置页的 sensitivity 修改在下一次 Receiver run 生效。
+
+生产定义为 `P(t)=integral[0,T] k(u)R(t-u)du`，`k(u)=u*exp(-u/tau)/(tau^2*M)`，`M=1-exp(-T/tau)*(1+T/tau)`。共同前级仍是 B 的 250 Hz、4 ms 机会、12 ms 固定 playout、arrival-aware realized PL history；后级仍是原 RawMotionProcessor Q0。每段使用解析指数矩与短区间稳定级数，并以当前 R 为 local position anchor。DOWN 前 zero history，始终完整支撑；不作 startup 重归一化、epsilon snap、无限 follower 或终点速度积分。
+
+固定 4096 项 history ring 只保留所选 T 的交叠段及边界段。溢出/非有限值/不连续历史抛出显式错误并清空输入，沿既有 Runtime Error 清理路径结束本 run；不自动改 tau、支撑或模式。原 MotionClock 的高精度 waitable timer、QPC 绝对相位和 skip-obsolete 策略不变。UP 仍将 q_end-P 净补量交给 Q0，然后 fence；trace 分列 base pending、kernel pending、combined flush。
+
+自动测试 Debug/Release 均为 379/379，构建均 0 warning / 0 error。冻结 oracle 直接调用生产核共 291,864 个位置（含 UP），最大轴误差 1.8189894035458565e-12 count。129 个真人接触的完整生产管线回放，两候选各 45,737 个 tick 的整数累计位置全部匹配；24 个不规则探针也无整数差异。
+
+**真人部署门槛未通过：** 110 个合成用例中，速度 40 的正/负反向归零各使 K24、K35 出现一处 Q0 整数 delta 差异，共 4 处。连续位置已精确归零，但极小浮点差异经原 Q0 residual 累积后跨过整数边界。生产输出在最后一 tick 清掉 1 count，冻结 reference 留下符号对应的 1 count。没有修改 Q0、添加 epsilon 或改写冻结 reference 来掩盖差异。按本任务明确要求，候选不留给真人；最终现场恢复 B、trace OFF、production libvirtualhid。候选实际 native/game 验证尚未完成，不能把已实现或 unit tests PASS 写成真人 ready。
+
+本轮证据与逐项报告：`windows/test-results/motion-finite-kernel-runtime-20260914/REPORT.md`（ignored），包括起始工作树快照、生产数学 oracle、性能、真实时钟内存输出探针及最终 B 原生 smoke。后续首先需在保留原 Q0 和冻结 reference 的前提下解决或另行明确裁定整数门槛；放行后才按用户指定顺序先 K35、必要时 K24 开展游戏 A/B。K35 的微小修正、反向/停止和 UP 跳动仍需人因判断；Moonlight 仅作参考。
+
+## 2026-09-14：Oracle v2 与最新 native checkpoint
+
+上述初次门槛及其后续计划为历史记录。随后 Q0 Mathematical Oracle v2 对当时冻结
+corpus 完成认证：K24 与 K35 各自 **319/319 PASS_EXACT、0 FAIL、0 INCONCLUSIVE**。
+该 certification 只覆盖冻结输入，不证明任意未来输入，也不意味着 native/game ready。
+
+最新真实 Android → UDP → Receiver → libvirtualhid → Raw Input 的 K24 `left_right`
+contact 出现新反例：连续有限核 P exact 回到 0，production Q0-I 因 incremental
+residual roundoff 得到 `total = 0x1.fffffffffffffp-1`，漏掉最后 +1 count；managed
+与 Raw Input 最终均为 **(-1,0)**，held 与 UP 后永久不汇合。same-P production
+replay 100% 复现（0 mismatch），不是 HID 丢报。因此 **K24 = FAIL_ENDPOINT**。
+K35 因 shared Q0-I gate 被阻断，为 **NOT_QUALIFIED / NOT_RUN_SHARED_Q0_GATE_BLOCKED**，
+并未执行本轮 native qualification，不能称为 K35 已实测失败。
+
+B 继续作为实际 production-use baseline：`RESAMPLED_250HZ`、250 Hz / 4 ms / 12 ms、
+production Q0-I，已有正面真人游戏评价。F4/F8 是已实现的 causal boxcar research
+prototypes；K24/K35 也是显式开发/研究模式，均不是最终产品选择。无参数 EXE/launcher
+默认仍是历史 RAW；本 checkpoint 保留该行为，不自动启用任何 F/K，也不改动当前 B 实例。
+Debug/Release 自动 unit/regression tests 各 379/379 通过与 K24 native endpoint
+失败同时成立，不能将前者写成所有 correctness gates 通过。
+
+下一研究方向为 K family 的 canonical exact-state quantization / Q0 numerical
+realization，必须保护 B/F legacy Q0-I behavior；Q0-C 尚未实现，不在此 checkpoint
+修复或重新调 kernel。新 numerical/native 门槛通过前不放行 K 真人游戏 A/B。
+Fixed Feel、no prediction/glide/adaptation 与 Moonlight reference-not-target 保持。
+认证和反例证据分别位于 ignored `windows/test-results/motion-q0-gate-v2-20260914/`
+与 `windows/test-results/motion-finite-kernel-native-20260914/`，不随 checkpoint 提交。

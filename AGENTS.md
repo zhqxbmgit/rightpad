@@ -116,6 +116,14 @@ Do not implement:
 - Auto-centering
 - Momentum movement
 
+`Mouse stops` means that the Motion Engine does not create new artificial
+movement, drift indefinitely or continue after release as a velocity-controlled
+device. A selected fixed deterministic filter may have a short, measurable
+settling period in which it finishes displacement already earned by the finger.
+That settling must converge to the existing target, remain fixed for the selected
+configuration and be validated in real games. It must not integrate old velocity
+to invent additional distance.
+
 ---
 
 # 5. Motion Feeling Requirements
@@ -131,6 +139,42 @@ The target feeling:
 The same physical finger movement should always create the same response.
 
 Avoid hidden behavior changes.
+
+## Motion Quality Priority / Not Esports-Latency-First
+
+Rightpad is game-first, but it is not esports-latency-first. The leading Motion
+objective is continuous camera quality: smooth motion, low wobble, stable velocity,
+natural continuity and gimbal-like visual stability. Precise micro-control,
+natural control feel and long-session comfort follow closely. Fixed deterministic
+feel, predictability and muscle-memory consistency remain mandatory foundations.
+
+Fast-turn responsiveness, reversal response, stop response and absolute minimum
+latency still matter and must be measured, reported and validated with human game
+testing. They are not the sole ranking criteria. Do not reject a candidate merely
+because it adds a fixed 10, 20, 30 or other number of milliseconds relative to the
+current baseline. A fixed, deterministic and predictable response cost may be
+accepted when it produces a meaningful improvement in trajectory stability and
+does not noticeably damage control in real games. No universal acceptable or
+unacceptable millisecond threshold is established; objective evidence and human
+game experience decide the tradeoff together.
+
+Stronger smoothing does not authorize adaptive feel. It means selecting one
+stronger fixed configuration whose gain, tau, damping, coefficients, window,
+cadence, playout delay and quantization behavior remain fixed for the run.
+
+## Settling Is Not Glide
+
+A fixed filter or follower may finish displacement already accumulated from real
+finger movement after the true target displacement becomes fixed. This is filter
+settling or completion of previously accumulated real displacement. It is allowed
+only when it is deterministic, measurable, converges to that existing target and
+does not continue indefinitely.
+
+Glide or artificial inertia instead integrates old velocity or otherwise creates
+distance beyond the real target. It remains prohibited. A fixed filter may finish
+already-earned displacement; it may not invent new displacement. This distinction
+preserves Relative Mouse semantics and does not permit momentum or joystick
+behavior.
 
 ## Fixed Feel / No Runtime Adaptation
 
@@ -195,6 +239,22 @@ This section is the binding project-level rule. `docs/MOTION_ENGINE.md` must con
 to it, and experiment or reference documents must conform to both. An adaptive
 candidate is ineligible as a product Motion solution unless the user explicitly
 changes this requirement.
+
+## Reference Implementations Are Not Targets
+
+Moonlight TrackpadContext is a reference, a known-smoother baseline and design
+evidence. It is not Rightpad's target, upper bound, gold standard, required
+architecture or required parameter set. Its fixed-rate output, follower and other
+trajectory-shaping choices may inform experiments, but its second-order model,
+time constant, caps, glide and output semantics do not become Rightpad requirements.
+Glide remains incompatible with the current Rightpad product constraints.
+
+Rightpad should not merely match Moonlight. The long-term goal is to find the best
+fixed-feel Motion system under Rightpad's own Relative Mouse, control-quality and
+gaming requirements, and where practical to outperform both the current Rightpad
+baseline and the current Moonlight reference. This is a product goal, not a claim
+that either comparison has already been won. No reference implementation or
+experimental candidate preselects the final algorithm.
 
 ---
 

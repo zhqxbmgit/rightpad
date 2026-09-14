@@ -3,7 +3,7 @@ param(
     [string]$Mode = 'Status',
     [ValidateSet('production', 'sendinput', 'virtualhid')]
     [string]$DevMouseBackend = 'production',
-    [ValidateSet('RAW', 'RESAMPLED_250HZ')]
+    [ValidateSet('RAW', 'RESAMPLED_250HZ', 'RESAMPLED_250HZ_BOXCAR_4MS', 'RESAMPLED_250HZ_BOXCAR_8MS', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5', 'RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4')]
     [string]$DevMotionMode = 'RAW',
     [switch]$DevMotionTrace
 )
@@ -34,7 +34,7 @@ function Get-ReceiverArguments([string]$LogDirectory, [string]$BackendOverride =
 }
 
 function Get-MotionArguments([string]$MotionMode = 'RAW', [string]$TraceDirectory = '') {
-    if ($MotionMode -notin @('RAW', 'RESAMPLED_250HZ')) { throw 'Invalid experimental motion mode.' }
+    if ($MotionMode -notin @('RAW', 'RESAMPLED_250HZ', 'RESAMPLED_250HZ_BOXCAR_4MS', 'RESAMPLED_250HZ_BOXCAR_8MS', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5', 'RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4')) { throw 'Invalid experimental motion mode.' }
     $arguments = if ($MotionMode -eq 'RAW') { '' } else { " --dev-motion-mode $MotionMode" }
     if ($TraceDirectory) {
         if ($TraceDirectory.Contains('"')) { throw 'Invalid trace directory.' }

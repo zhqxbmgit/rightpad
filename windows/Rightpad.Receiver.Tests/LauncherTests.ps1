@@ -37,3 +37,15 @@ if ((& $motionProbe 'RAW') -cne '') { throw 'RAW must inherit the EXE default.' 
 if ((& $motionProbe 'RESAMPLED_250HZ') -cne ' --dev-motion-mode RESAMPLED_250HZ') { throw 'B mode argument mismatch.' }
 if ((& $motionProbe 'RAW' 'C:\trace space') -cne ' --dev-motion-trace-dir "C:\trace space"') { throw 'Trace quoting mismatch.' }
 'PASS motion launcher default, experiment selection and trace path (3 cases)'
+foreach ($mode in @('RESAMPLED_250HZ_BOXCAR_4MS','RESAMPLED_250HZ_BOXCAR_8MS')) {
+    if ((& $motionProbe $mode) -cne " --dev-motion-mode $mode") { throw "Fixed boxcar argument mismatch: $mode" }
+    $paramProbe = [scriptblock]::Create($parameters + "`n" + '$DevMotionMode')
+    if ((& $paramProbe -DevMotionMode $mode) -cne $mode) { throw "Launcher mode validation mismatch: $mode" }
+}
+'PASS fixed F4 / F8 launcher validation and arguments'
+foreach ($mode in @('RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5','RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4')) {
+    if ((& $motionProbe $mode) -cne " --dev-motion-mode $mode") { throw "Fixed finite critical argument mismatch: $mode" }
+    $paramProbe = [scriptblock]::Create($parameters + "`n" + '$DevMotionMode')
+    if ((& $paramProbe -DevMotionMode $mode) -cne $mode) { throw "Launcher finite mode validation mismatch: $mode" }
+}
+'PASS fixed K24-r5 / K35-r4 launcher validation and arguments'

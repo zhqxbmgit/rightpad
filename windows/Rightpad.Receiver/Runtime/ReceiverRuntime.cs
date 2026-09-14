@@ -96,7 +96,11 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 motion = motionMode switch
                 {
                     MotionMode.RAW => new TouchSessionProcessor(move, initial.SensitivityX, initial.SensitivityY),
-                    MotionMode.RESAMPLED_250HZ => new ResampledMotion(move, initial.SensitivityX, initial.SensitivityY, trace: motionTrace),
+                    MotionMode.RESAMPLED_250HZ or MotionMode.RESAMPLED_250HZ_BOXCAR_4MS or MotionMode.RESAMPLED_250HZ_BOXCAR_8MS or
+                    MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 =>
+                        new ResampledMotion(move, initial.SensitivityX, initial.SensitivityY, trace: motionTrace,
+                            boxcarWindowMs: MotionModes.BoxcarWindowMs(motionMode),
+                            finiteCriticalMode: MotionModes.IsFiniteCritical(motionMode) ? motionMode : MotionMode.RESAMPLED_250HZ),
                     _ => throw new ArgumentOutOfRangeException(nameof(motionMode))
                 };
                 if (motion is ResampledMotion resampled)
@@ -105,7 +109,12 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                     motionClock = new(resampled, run.Cancellation.Cancel);
                 }
             }
-            output.WriteLine($"motion_mode: name={motionMode} periodMs={(motionMode == MotionMode.RAW ? 0 : 4)} playoutDelayMs={(motionMode == MotionMode.RAW ? 0 : 12)} trace={(motionTrace is null ? "off" : "on")}");
+            output.WriteLine($"motion_mode: name={motionMode} periodMs={(motionMode == MotionMode.RAW ? 0 : 4)} playoutDelayMs={(motionMode == MotionMode.RAW ? 0 : 12)} boxcarWindowMs={MotionModes.BoxcarWindowMs(motionMode)} trace={(motionTrace is null ? "off" : "on")}");
+            if (MotionModes.IsFiniteCritical(motionMode))
+            {
+                var kernel = MotionModes.FiniteCriticalParameters(motionMode);
+                output.WriteLine(FormattableString.Invariant($"finite_critical: tauMs={kernel.TauMs} supportMs={kernel.SupportMs} normalization={kernel.Normalization:R} quantizer=Q0 sensitivity=fixed-for-run"));
+            }
             Volatile.Write(ref run.Mouse, mouse);
             Volatile.Write(ref run.Motion, motion);
             buttons = mouse is null ? null : new(mouse.LeftDown, mouse.LeftUp, output.WriteLine,

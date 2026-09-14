@@ -11,6 +11,12 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     private readonly long frequency, period, delay;
     private readonly double sensitivityX, sensitivityY;
     private readonly MotionTrace? trace;
+    private readonly CausalBoxcar? boxcar;
+    private readonly CausalFiniteCritical? finiteCritical;
+    private bool HasPositionFilter => boxcar is not null || finiteCritical is not null;
+    private long SupportTicks => boxcar?.WindowTicks ?? finiteCritical!.SupportTicks;
+    private long integratedAt;
+    private double baseX, baseY, integratedX, integratedY;
     private readonly RawMotionProcessor quantizer = new(); // Already scaled Q: unit gain, original residual owner.
     private readonly record struct Point(long Time, double X, double Y);
     private readonly Point[] points = new Point[Capacity];
@@ -41,9 +47,18 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     public long TotalDy => Interlocked.Read(ref totalY);
     public (long Generation, long? Deadline) Schedule { get { lock (gate) return (generation, nextDeadline == 0 ? null : nextDeadline); } }
     public (double X, double Y) Pending { get { lock (gate) return (targetX - playedX, targetY - playedY); } }
+    public (double X, double Y) Position { get { lock (gate) return (playedX, playedY); } }
+    public (double X, double Y) BasePending { get { lock (gate) return (targetX - baseX, targetY - baseY); } }
+    public (double X, double Y) BoxcarPending { get { lock (gate) return (baseX - playedX, baseY - playedY); } }
+    public int BoxcarWindowMs => boxcar?.WindowMs ?? 0;
+    public (double X, double Y) KernelPending { get { lock (gate) return (baseX - playedX, baseY - playedY); } }
+    public int KernelTauMs => finiteCritical?.TauMs ?? 0;
+    public int KernelSupportMs => finiteCritical?.SupportMs ?? 0;
+    public int KernelSegmentsIntegrated => finiteCritical?.LastIntegratedSegments ?? 0;
 
     public ResampledMotion(Action<int, int> output, double sensitivityX = 1, double sensitivityY = 1,
-        Func<long>? monotonicNow = null, long? clockFrequency = null, MotionTrace? trace = null)
+        Func<long>? monotonicNow = null, long? clockFrequency = null, MotionTrace? trace = null, int boxcarWindowMs = 0,
+        MotionMode finiteCriticalMode = MotionMode.RESAMPLED_250HZ)
     {
         this.output = output; now = monotonicNow ?? Stopwatch.GetTimestamp;
         frequency = clockFrequency ?? Stopwatch.Frequency;
@@ -51,6 +66,12 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
         _ = new RawMotionProcessor(sensitivityX, sensitivityY);
         this.sensitivityX = sensitivityX; this.sensitivityY = sensitivityY; this.trace = trace;
         period = frequency / 250; delay = period * 3;
+        boxcar = boxcarWindowMs == 0 ? null : new CausalBoxcar(boxcarWindowMs, frequency);
+        if (finiteCriticalMode != MotionMode.RESAMPLED_250HZ)
+        {
+            if (boxcar is not null) throw new ArgumentException("Position filters cannot be combined.");
+            finiteCritical = new CausalFiniteCritical(finiteCriticalMode, frequency);
+        }
     }
 
     public void Process(TouchPacket packet) => Process(packet, sensitivityX, sensitivityY);
@@ -60,6 +81,8 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
 
     private void Enqueue(TouchPacket packet, long receivedAt, double sx, double sy)
     {
+        // Each finite-kernel experiment keeps its startup sensitivity for the whole run.
+        if (finiteCritical is not null) { sx = sensitivityX; sy = sensitivityY; }
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
@@ -81,6 +104,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
             try
             {
                 EndStarvation(receivedAt);
+                if (HasPositionFilter) AdvanceHistory(receivedAt);
                 foreach (var s in packet.Samples)
                 {
                     targetX += ((double)s.X - rawX) * sx; targetY += ((double)s.Y - rawY) * sy;
@@ -98,7 +122,14 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                     generation++; nextDeadline = 0;
                     UpFlushCount++;
                     trace?.Write(MotionEventKind.UpFlush, now(), run: run, session: h.SessionId,
-                        x: targetX - playedX, y: targetY - playedY, count: generation);
+                        x: targetX - playedX, y: targetY - playedY,
+                        a: targetX - baseX, b: targetY - baseY, count: generation);
+                    if (boxcar is not null)
+                        trace?.Write(MotionEventKind.BoxcarUpPending, now(), run: run, session: h.SessionId,
+                            x: baseX - playedX, y: baseY - playedY, count: generation);
+                    if (finiteCritical is not null)
+                        trace?.Write(MotionEventKind.KernelUpPending, now(), run: run, session: h.SessionId,
+                            x: baseX - playedX, y: baseY - playedY, count: generation);
                     Emit(targetX, targetY, now());
                     trace?.Write(MotionEventKind.Fence, now(), run: run, session: h.SessionId, count: generation);
                     Clear(now(), aborted: false);
@@ -139,6 +170,49 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     }
 
     private Point At(int i) => points[(head + i) % Capacity];
+
+    private void AdvanceHistory(long at)
+    {
+        // Admit packets only after recording the trajectory that was actually known before them.
+        // A packet waiting on the motion gate cannot retroactively rewrite this history.
+        if (at <= integratedAt) return;
+        long cursor = Math.Max(integratedAt, at - SupportTicks);
+        boxcar?.Trim(at - SupportTicks); finiteCritical?.Trim(at - SupportTicks);
+        while (cursor < at)
+        {
+            while (count > 1 && At(1).Time <= cursor) { head = (head + 1) % Capacity; count--; }
+            Point p = At(0);
+            long end = at;
+            double x0, y0, x1, y1;
+            if (cursor < p.Time)
+            {
+                end = Math.Min(at, p.Time);
+                x0 = x1 = integratedX; y0 = y1 = integratedY;
+            }
+            else if (count == 1) { x0 = x1 = p.X; y0 = y1 = p.Y; }
+            else
+            {
+                var right = At(1); end = Math.Min(at, right.Time);
+                double f0 = (cursor - p.Time) / (double)(right.Time - p.Time);
+                double f1 = (end - p.Time) / (double)(right.Time - p.Time);
+                x0 = p.X + (right.X - p.X) * f0; y0 = p.Y + (right.Y - p.Y) * f0;
+                x1 = p.X + (right.X - p.X) * f1; y1 = p.Y + (right.Y - p.Y) * f1;
+            }
+            boxcar?.Add(cursor, end, x0, y0, x1, y1);
+            if (finiteCritical is not null)
+            {
+                try { finiteCritical.Add(cursor, end, x0, y0, x1, y1); }
+                catch
+                {
+                    trace?.Write(MotionEventKind.KernelHistoryError, at, run: run, session: session ?? 0,
+                        count: finiteCritical.SegmentCount);
+                    throw;
+                }
+            }
+            cursor = end; integratedX = x1; integratedY = y1;
+        }
+        integratedAt = at;
+    }
     private void Append(Point point)
     {
         if (count > 0 && At(count - 1).Time == point.Time) { points[(head + count - 1) % Capacity] = point; return; }
@@ -158,15 +232,19 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
             if (disposed || session is null || generation != expectedGeneration || nextDeadline == 0 || actualWake < nextDeadline) return;
             try
             {
+                // A wake sampled before another gate owner ran must not rewind F's causal history.
+                if (HasPositionFilter) actualWake = Math.Max(actualWake, integratedAt);
                 long deadline = nextDeadline, missed = (actualWake - deadline) / period;
                 MissedTicks += missed; TickCount++;
                 nextDeadline = deadline + (missed + 1) * period;
                 trace?.Write(MotionEventKind.Tick, actualWake, deadline, run, session.Value, a: count,
                     b: (lastPointTime - actualWake) * 1000.0 / frequency, count: missed);
+                long kernelStarted = finiteCritical is not null && trace is not null ? Stopwatch.GetTimestamp() : 0;
+                if (HasPositionFilter) AdvanceHistory(actualWake);
                 while (count > 1 && At(1).Time <= actualWake) { head = (head + 1) % Capacity; count--; }
                 Point p = At(0);
                 double x = p.X, y = p.Y;
-                if (actualWake < p.Time) { x = playedX; y = playedY; }
+                if (actualWake < p.Time) { x = HasPositionFilter ? integratedX : playedX; y = HasPositionFilter ? integratedY : playedY; }
                 else if (count > 1)
                 {
                     var right = At(1);
@@ -175,12 +253,37 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                 }
                 trace?.Write(MotionEventKind.Position, actualWake, lastPointTime, run, session.Value,
                     x: x, y: y, a: targetX - x, b: targetY - y, count: generation);
+                baseX = x; baseY = y;
+                if (boxcar is not null)
+                {
+                    (x, y) = boxcar.Average(actualWake, x, y);
+                    trace?.Write(MotionEventKind.BoxcarPosition, actualWake, lastPointTime, run, session.Value,
+                        x: x, y: y, a: baseX - x, b: baseY - y, count: generation);
+                }
+                if (finiteCritical is not null)
+                {
+                    (x, y) = finiteCritical.Position(actualWake, x, y);
+                    if (trace is not null)
+                    {
+                        long finished = Stopwatch.GetTimestamp();
+                        trace.Write(MotionEventKind.KernelPosition, actualWake, lastPointTime, run, session.Value,
+                            x: x, y: y, a: baseX - x, b: baseY - y, count: generation);
+                        trace.Write(MotionEventKind.KernelIntegration, finished, kernelStarted, run, session.Value,
+                            count: finiteCritical.LastIntegratedSegments);
+                    }
+                }
                 Emit(x, y, actualWake);
                 if (count == 1 && actualWake >= p.Time)
                 {
                     // No future segment: hold the known endpoint and park, never invent velocity.
-                    nextDeadline = 0; starvationAt = actualWake; Starvations++;
-                    trace?.Write(MotionEventKind.StarvationStart, actualWake, run: run, session: session.Value);
+                    // A jump exactly at this boundary has not occupied any integration time yet.
+                    if (!HasPositionFilter || (integratedX == baseX && integratedY == baseY &&
+                        (boxcar?.IsSettled(actualWake) ?? finiteCritical!.IsSettled(actualWake)))) nextDeadline = 0;
+                    if (starvationAt == 0)
+                    {
+                        starvationAt = actualWake; Starvations++;
+                        trace?.Write(MotionEventKind.StarvationStart, actualWake, run: run, session: session.Value);
+                    }
                 }
             }
             catch { Clear(now(), aborted: true); throw; }
@@ -214,6 +317,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
         trace?.Write(MotionEventKind.Reset, at, run: run, session: session ?? 0, x: aborted ? distance : 0, count: generation);
         generation++; session = null; head = count = 0; nextDeadline = 0; fallback = false;
         rawX = rawY = targetX = targetY = playedX = playedY = 0; quantizer.Reset();
+        baseX = baseY = integratedX = integratedY = 0; integratedAt = at; boxcar?.Reset(at); finiteCritical?.Reset(at);
         Changed?.Invoke();
     }
     public void Reset() { lock (gate) Clear(now(), aborted: true); }

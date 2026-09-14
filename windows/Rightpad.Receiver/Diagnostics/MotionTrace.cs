@@ -8,7 +8,8 @@ namespace Rightpad.Receiver;
 internal enum MotionEventKind
 {
     Sample, Enqueue, Tick, Position, Logical, ManagedBegin, ManagedEnd, NativeBegin, NativeEnd,
-    UpFlush, Fence, Reset, StarvationStart, StarvationEnd, DuplicateTimestamp, BackwardTimestamp, LateSample, BufferOverflow
+    UpFlush, Fence, Reset, StarvationStart, StarvationEnd, DuplicateTimestamp, BackwardTimestamp, LateSample, BufferOverflow,
+    BoxcarPosition, BoxcarUpPending, KernelPosition, KernelUpPending, KernelIntegration, KernelHistoryError
 }
 
 internal readonly record struct MotionTraceEvent(MotionEventKind Kind, long Qpc, long ReferenceQpc,
@@ -92,7 +93,10 @@ internal sealed class MotionTrace : IDisposable
                 {
                     Mode = mode.ToString(), Frequency = Stopwatch.Frequency, StartQpc = start, EndQpc = end,
                     Events = length, Overwritten = overwritten, AllocatedBytes = allocated, ProcessCpuMs = cpuMs,
-                    PeriodMs = 4, PlayoutDelayMs = 12, Pid = Environment.ProcessId,
+                    PeriodMs = 4, PlayoutDelayMs = 12, BoxcarWindowMs = MotionModes.BoxcarWindowMs(mode), Pid = Environment.ProcessId,
+                    TauMs = MotionModes.FiniteCriticalParameters(mode).TauMs,
+                    SupportMs = MotionModes.FiniteCriticalParameters(mode).SupportMs,
+                    KernelNormalization = MotionModes.FiniteCriticalParameters(mode).Normalization,
                     Scope = "Managed and native-call boundaries; no VHF submit or hardware timestamp. CPU/allocation are whole-process including instrumentation."
                 }, new JsonSerializerOptions { WriteIndented = true }));
             });

@@ -1,10 +1,21 @@
 # rightpad Project State
 
-Updated: 2026-09-13
+Updated: 2026-09-14
 
 ## 1. Current Phase
 
 当前阶段：
+
+Motion research checkpoint (2026-09-14): B remains the active production-use
+baseline (`RESAMPLED_250HZ`, fixed 250 Hz / 4 ms / 12 ms, production Q0-I), with
+positive human/game A/B evidence. F4/F8 and K24/K35 research prototypes are
+implemented. K24 native qualification is **FAIL_ENDPOINT**; K35 is
+**NOT_QUALIFIED / NOT_RUN_SHARED_Q0_GATE_BLOCKED**, not an observed K35 native
+failure. See section 17 for the frozen numerical certification and new counterexample.
+The current B instance is retained; this checkpoint does not deploy or switch modes.
+
+The following completed-feature records retain their original validation dates,
+test counts and runtime identities; they are not the current Motion qualification.
 
 Normal-click phone haptics implemented; automated device acceptance passed
 (2026-09-13). Windows remains the sole gesture authority. Independent
@@ -281,12 +292,19 @@ RAW Mouse 与 Single Tap 的真人验证均已通过。
 
 输入目标：
 
-- smooth
-- stable
-- predictable
-- low latency
+- continuous camera smoothness and low wobble
+- stable velocity and natural, gimbal-like motion
+- precise micro-control and long-session comfort
+- fixed, deterministic and predictable feel
+- measured fast-turn, reversal, stop/settling and latency behavior
 - no obvious inertia
 - no dynamic feel changes
+
+Rightpad is game-first, but it is not esports-latency-first. Absolute minimum
+latency is not the leading Motion objective. Fixed response cost may be accepted
+when objective measurements and human game testing show a meaningful visual and
+control-quality gain; no universal acceptable millisecond threshold is currently
+established.
 
 ---
 
@@ -675,7 +693,10 @@ Gesture processing must not alter motion feel.
 
 ## 16. Moonlight Reference
 
-旧 Moonlight Noir 只作为参考实现。
+旧 Moonlight Noir 只作为 reference、known-smoother baseline 和 design evidence。
+它不是 Rightpad 的 target、upper bound、gold standard、required architecture
+或 required parameter set。当前主观比较中 Moonlight 比 B 更丝滑，但 Moonlight
+自身也不是最终满意方案；这不能写成 Rightpad 已经超过 Moonlight。
 
 已知特点：
 
@@ -702,30 +723,94 @@ Gesture processing must not alter motion feel.
 - velocity / acceleration caps
 - unnecessary streaming architecture
 
-最终 Motion Engine 尚未选择。
+这些特征证明更强的 trajectory shaping 可能改善视觉丝滑度，但不能推导出
+second-order follower、约 35 ms time constant、caps 或 glide 必须进入 Rightpad。
+Glide 仍违反当前 Relative Mouse / no artificial inertia 约束。
+
+Rightpad 的目标不是简单复制或匹配 Moonlight，而是在自身 Fixed Feel、Relative
+Mouse、视觉稳定、微操和自然控制要求下找到最佳 Motion 系统，并在可行时争取超过
+当前 B 与当前 Moonlight reference。最终 Motion Engine 尚未选择。
 
 ---
 
 ## 17. Motion Engine Candidate Status
 
-当前正式 baseline：Mode 0 — RAW。
+RAW → B 真人游戏 A/B 已完成，B 明显更好，因此当前实际使用与研究 baseline 是 B：
+`RESAMPLED_250HZ`，固定 250 Hz / 4 ms 输出机会、固定 12 ms playout、
+timestamp-aware reconstruction，后级保留 production Q0-I。
+这描述当前使用选择：EXE 与 launcher 的无参数默认仍是历史 RAW，本 checkpoint
+不改变启动默认值。F/K 仅通过显式 development/research mode 选择，不能自动启用。
 
-尚未实现、只作为候选：
+B 的已验证主观优点：
 
-- Mode 1 — Short FIR
-- Mode 2 — Second-order critically damped follower without glide / velocity cap / acceleration cap
+- smoother movement
+- better micro-control
+- better fast turn and reversal
+- clean stop
+- subjectively unnoticeable UP
+
+B 的剩余问题是 sustained movement 仍有明显 wobble。在两台 Windows PC 上的
+主观手感基本一致，因此该波浪不太像单一 PC 特有问题。当前 Moonlight reference
+主观更丝滑，但同样不是最终满意方案。
+
+F4/F8 已实现为固定 4/8 ms causal boxcar position-average research prototypes，
+不是最终产品选择。K24-r5 / K35-r4 已实现为 fixed causal finite-support,
+normalized critical-damping-shaped position convolution：
+
+| Explicit research mode | tau | T |
+|---|---:|---:|
+| `RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5` | 24 ms | 120 ms |
+| `RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4` | 35 ms | 140 ms |
+
+K 的共同配置为固定 250 Hz、4 ms output opportunity、12 ms playout；完整有限
+支撑、DOWN 前 zero history、run 固定参数，no prediction / glide / adaptation。
+它们保留 production RawMotionProcessor Q0-I，并未获准作为最终产品 Motion。
+
+Q0 Mathematical Oracle v2 对当时冻结 corpus 的认证结果：K24 与 K35 **各自
+319/319 PASS_EXACT、0 FAIL、0 INCONCLUSIVE**。该认证只覆盖冻结输入，
+不证明任意未来输入；不能替代 native qualification 或真人游戏验证。
+
+最新真实 Android → UDP → Receiver → libvirtualhid → Raw Input 的 K24
+`left_right` contact 中，连续有限核最终 P exact 回到 0，但 production Q0-I
+的 incremental residual roundoff 使最后 `total = 0x1.fffffffffffffp-1`，
+未输出最后 +1 count。managed 与 Raw Input 最终均为 **(-1,0)**，held 和 UP
+后仍永久不汇合。same-P actual production replay 100% 复现（0 mismatch），
+故该反例不是 HID 丢报。**K24 = FAIL_ENDPOINT**。
+
+由于该反例暴露 shared production Q0-I endpoint issue，K35 后续 native
+qualification 被阻断：**NOT_QUALIFIED / NOT_RUN_SHARED_Q0_GATE_BLOCKED**。
+K35 未执行本轮 native qualification，不能描述为 K35 已实测失败或 ready。
+自动 unit/regression tests Debug/Release 各 379/379 通过，均 0 failed；
+但 K24 native qualification 当前 endpoint 失败，不能泛称所有 correctness gates 通过。
+
+下一研究方向是 K family 的 canonical exact-state quantization / Q0 numerical
+realization，而非重新调 kernel；必须保护 B/F legacy Q0-I behavior。
+Q0-C 尚未实现。新的 numerical/native 门槛通过前，不放行 K family 真人游戏 A/B。
+原始认证与 native 反例分别保留在 ignored
+`windows/test-results/motion-q0-gate-v2-20260914/` 和
+`windows/test-results/motion-finite-kernel-native-20260914/`，本 checkpoint 不提交这些证据。
+
+后续仍以动作标签明确的真人轨迹和固定候选比较评估平滑质量。Latency、reversal
+和 stop 不作为最高排序优先级，但必须完整测量、报告并由真人游戏验证。
 
 不要提前认定任何滤波器为最终方案。
 
 算法选择必须基于：
 
-- RAW 真人手感
+- B 与固定候选的真人游戏体验
 - real touch datasets
+- continuous smoothness / wobble attenuation
+- velocity stability
+- micro-control and long-session comfort
 - stop response
 - reverse response
-- speed stability
-- micro movement
-- subjective gaming feel
+- path and UP behavior
+- added fixed latency
+
+Fixed Feel 完全保持：更强平滑只能来自一个明确选择的固定配置，不能根据速度、
+噪声、采样率、网络、FPS、游戏或系统负载动态改变 tau、window、gain、delay 或模式。
+固定 filter settling 可以完成已经积累的真实位移；glide 或旧速度产生的人工距离
+仍然禁止。
 
 ---
 
@@ -755,7 +840,9 @@ Immediate:
 1. Validate automatic discovery on the second physical PC at its separate location
 2. Run the formal SendInput vs Virtual HID A/B measurement when separately requested
 3. Run the diagnostic-only Flight Recorder with cursor/input-environment witnesses during normal use; freeze the next real CASE 5 before probing
-4. Compare RAW directly against Moonlight Noir if further motion evaluation is needed
+4. Research K-family canonical exact-state quantization / Q0 numerical realization
+   after the native endpoint counterexample, preserving B/F legacy Q0-I behavior;
+   qualify numerical/native gates before resuming K human game A/B
 5. Continue monitoring Single Tap feel and accidental clicks during normal use
 
 Evaluate:
@@ -768,7 +855,9 @@ Evaluate:
 - sudden reverse
 - packet batching / pulse feeling
 
-Only after RAW human feedback: decide whether Motion Laboratory / filter implementation is required.
+Use offline evidence and controlled human game A/B before selecting or promoting
+any new Motion algorithm. Do not choose by lowest latency or resemblance to
+Moonlight alone.
 
 ---
 
@@ -776,7 +865,7 @@ Only after RAW human feedback: decide whether Motion Laboratory / filter impleme
 
 Do not implement yet:
 
-- Motion filter
+- Final product Motion-filter selection/promotion (F4/F8 and K24/K35 research prototypes are implemented)
 - Double Tap Drag: completed; see current validation above
 - game profiles
 - network optimization
@@ -797,7 +886,10 @@ claims established by this adoption. Keep the explicit development override for
 those comparisons and diagnostics, with no automatic fallback.
 
 Motion-filter selection remains separate and evidence-driven. Do not implement a
-complicated filter before RAW measurements demonstrate a specific need.
+complicated filter without a measured need and an explicit fixed candidate. Rank
+candidates by continuous smoothness, wobble and velocity stability, micro-control,
+natural feel and comfort together with measured path, UP, reversal, stop/settling
+and latency costs. No candidate algorithm is selected by this project-state update.
 
 ## Maintenance Rule
 

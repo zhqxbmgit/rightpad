@@ -33,6 +33,8 @@ internal static class Program
         (string Name, Func<Task> Run)[] tests =
         [
             .. ResampledMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. BoxcarMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. FiniteCriticalMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             ("haptic codec / golden unsigned identities / malformed", Sync(HapticFeedbackTests.Codec)),
             ("haptic accepted input / normal versus drag / lifecycle gate", Sync(HapticFeedbackTests.InputGate)),
             ("haptic actual button output / queued cancellation / failure", HapticFeedbackTests.Buttons),

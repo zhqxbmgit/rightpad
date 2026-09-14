@@ -24,14 +24,23 @@ The Motion Engine is the core component responsible for the physical feeling of 
 
 The desired feeling:
 
-- Smooth
-- Stable
-- Predictable
-- Low latency
-- No shaking
-- Suitable for games
+- Smooth continuous camera motion
+- Low wobble and stable velocity
+- Natural, gimbal-like visual stability
+- Precise micro-control
+- Natural long-session control feel
+- Fixed, predictable and muscle-memory-consistent behavior
+- Measured fast-turn, reversal, stop and latency behavior
 
 The system should feel more stable than a normal touchpad while preserving touchpad behavior.
+
+Rightpad is game-first, but it is not esports-latency-first. Absolute minimum
+latency, shortest reversal delay and shortest stop tail are not the highest Motion
+priorities when achieving them would sacrifice a meaningful improvement in
+continuous visual stability, micro-control or comfort. These response costs remain
+important measurements and cannot degrade without bound. A fixed, deterministic
+cost is evaluated together with its smoothness benefit through objective evidence
+and human game testing; there is no universal millisecond acceptance threshold.
 
 ---
 
@@ -64,22 +73,26 @@ It is NOT a joystick.
 
 ## Rule 2: No Inertia
 
-After finger release:
+After finger movement ends, the target displacement stops changing. The normal
+product meaning of `Mouse stops` is that Motion creates no new artificial movement,
+does not drift indefinitely and does not behave like a velocity-controlled
+joystick. It is not a requirement that every valid fixed filter produce exactly
+zero output at the same instant as the final finger sample.
 
 Allowed:
 
 ```text id="xq8v3m"
-Almost invisible residual processing delay
+Fixed deterministic filter settling that finishes already-earned displacement
 ```
 
 Not allowed:
 
 ```text id="zv5vfo"
-Finger stops
+True target is complete
 
 ↓
 
-Mouse continues moving noticeably
+Old velocity creates additional distance beyond that target
 ```
 
 Do not implement:
@@ -87,6 +100,20 @@ Do not implement:
 - Glide
 - Momentum
 - Scroll-like inertia
+
+### Settling vs Glide
+
+Settling is completion of previously accumulated real displacement. Once the true
+target is fixed, a fixed filter or follower may continue a bounded or converging
+response until it reaches that already-existing target. Its duration, coefficients
+and endpoint behavior must be fixed, deterministic and measurable, and its effect
+on control must be validated with human game testing.
+
+Glide or artificial inertia creates distance that is not required to reach the
+real target, commonly by continuing to integrate old velocity. It remains
+prohibited. A fixed filter may finish already-earned displacement; it may not
+invent new displacement. UP and lifecycle behavior must prevent unbounded or stale
+post-contact motion.
 
 ---
 
@@ -208,13 +235,19 @@ Filtering exists only to reduce:
 - Sensor noise
 - Micro jitter
 - Unstable sampling artifacts
+- Measured wobble and velocity variation in continuous movement
 
 Filtering must NOT create:
 
-- Noticeable lag
+- Unmeasured or uncontrolled response cost
 - Mouse drift
 - Inertia
 - Different behavior at different speeds
+
+A stronger fixed filter is eligible when it produces a meaningful measured gain
+in smoothness, wobble attenuation, velocity stability or natural camera motion.
+Its fixed latency, reversal, stop/settling and UP costs must be reported and tested,
+but a nonzero fixed cost does not by itself disqualify the filter.
 
 ---
 
@@ -484,7 +517,8 @@ Filtering should not permanently remove movement.
 
 # 12. Stop Behavior
 
-Stop response is critical.
+Stop response must be measured and validated together with smoothness and
+micro-control. The shortest tail does not automatically win.
 
 Test:
 
@@ -499,7 +533,9 @@ STOP
 Expected:
 
 ```text id="o7b9gu"
-Mouse movement stops immediately
+No new artificial distance is created
+
+Any fixed filter settling completes only already-earned displacement
 ```
 
 Avoid:
@@ -526,7 +562,12 @@ The system should:
 
 - Change direction quickly
 - Not feel sticky
-- Not have a long tail
+- Have a fixed, predictable response
+
+Long or disruptive reversal behavior may make a candidate unacceptable, but a
+candidate is not rejected solely because its fixed reversal delay is longer than
+the current baseline. Objective measurements and real-game control decide whether
+the tradeoff is worthwhile.
 
 ---
 
@@ -576,11 +617,38 @@ Use:
 
 Metrics:
 
-- Added latency
-- Movement variance
-- Stop distance
-- Direction accuracy
-- Subjective feel
+- Continuous smoothness and wobble attenuation
+- Parallel velocity stability and orthogonal motion
+- Micro-control and small-displacement completion
+- Path preservation, endpoint and UP behavior
+- Fast-turn response and direction accuracy
+- Reversal response
+- Stop and settling distance or duration
+- Added fixed latency
+- Subjective real-game feel and long-session comfort
+
+Compare fixed candidates as a multi-dimensional Pareto problem. Do not assume that
+lowest latency, shortest stop tail or closest resemblance to Moonlight wins. A
+candidate must satisfy the fixed-feel and Relative Mouse rules before its quality
+tradeoffs are considered.
+
+## Reference Baselines
+
+- RAW is the direct relative-motion reference and historical baseline. It does not
+  define the final quality ceiling.
+- B is the current human-preferred Rightpad baseline: fixed 250 Hz output
+  opportunities, fixed 12 ms playout and timestamp-aware reconstruction. It is a
+  baseline for further comparison, not a preselected final Motion Engine.
+- Moonlight TrackpadContext is a known-smoother reference and design evidence. Its
+  approximate 4 ms ticker, second-order follower, default time constant around
+  35 ms, velocity and acceleration caps, glide, quantization and output semantics
+  describe that implementation; they are not a required Rightpad architecture or
+  parameter set. In particular, its glide remains prohibited for Rightpad.
+
+Rightpad should seek the best fixed-feel Motion design under its own requirements
+and, where practical, outperform both B and the current Moonlight reference.
+Moonlight is not a target, upper bound or gold standard, and no current evidence
+establishes that Rightpad has already surpassed it.
 
 ---
 
@@ -592,7 +660,9 @@ The preferred solution:
 
 - Small
 - Deterministic
-- Low latency
+- Visually smooth and stable in sustained game-camera movement
+- Precise and natural in micro-control
+- Predictable in latency, reversal, settling and UP behavior
 - Easy to tune
 - Easy to understand
 

@@ -131,7 +131,11 @@ internal static class Program
                 {
                     "RAW" => MotionMode.RAW,
                     "RESAMPLED_250HZ" => MotionMode.RESAMPLED_250HZ,
-                    _ => throw new ArgumentException("--dev-motion-mode requires RAW or RESAMPLED_250HZ.")
+                    "RESAMPLED_250HZ_BOXCAR_4MS" => MotionMode.RESAMPLED_250HZ_BOXCAR_4MS,
+                    "RESAMPLED_250HZ_BOXCAR_8MS" => MotionMode.RESAMPLED_250HZ_BOXCAR_8MS,
+                    "RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5" => MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5,
+                    "RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4" => MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4,
+                    _ => throw new ArgumentException("--dev-motion-mode requires RAW, RESAMPLED_250HZ, RESAMPLED_250HZ_BOXCAR_4MS or RESAMPLED_250HZ_BOXCAR_8MS.")
                 };
                 else if (arg == "--dev-motion-trace-dir") motionTrace = args[i];
                 else if (arg == "--dev-log-dir") log = args[i]; else settings = args[i];
