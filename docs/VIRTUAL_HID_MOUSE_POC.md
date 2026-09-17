@@ -19,6 +19,19 @@ protocol used by the client from version 4 to version 5. The public runtime,
 mouse, profile and license APIs consumed by Rightpad are source-compatible, so
 the native bridge ABI and managed Receiver contract remain unchanged.
 
+## Before upgrading libvirtualhid / Sunshine
+
+Before upgrading, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File windows/tools/CheckVirtualHidCompatibility.ps1 -TargetTag <target tag>
+```
+
+`SAFE TO UPDATE` means the upgrade can continue. `RIGHTPAD UPDATE REQUIRED BEFORE
+DRIVER UPGRADE` means both Rightpad libvirtualhid pins must be updated and Rightpad
+must be rebuilt and tested before upgrading the system driver/Broker. Not every
+Sunshine update requires a Rightpad change.
+
 `dotnet build windows/Rightpad.Receiver.Tests -c Release` automatically builds the
 native bridge and copies it and dependency license notices to the output. Native
 source/build/downloads are under ignored `windows/native/Rightpad.VirtualHid/obj/`;
