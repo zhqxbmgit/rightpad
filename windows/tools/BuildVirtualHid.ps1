@@ -16,7 +16,7 @@ function Get-PinnedSource([string]$Path, [string]$Url, [string]$Commit) {
     Invoke-Checked 'git' @('-C',$Path,'diff','--exit-code','HEAD','--','src','CMakeLists.txt')
 }
 # Explicit clones also work with minimal Git distributions lacking git-submodule shell utilities.
-Get-PinnedSource $dependency 'https://github.com/LizardByte/libvirtualhid.git' '6fdb8bd4de3b68d96c30e5303ac2ebb333c09746'
+Get-PinnedSource $dependency 'https://github.com/LizardByte/libvirtualhid.git' '53e1a949fc0784af716b782ddfa6c647cafd1f05'
 Get-PinnedSource (Join-Path $dependency 'third-party\lizardbyte-common') 'https://github.com/LizardByte/lizardbyte-common.git' 'f9d91e1d29b7473f58e43acde4579da4e56c4abe'
 $cmakeCommand = Get-Command cmake -ErrorAction SilentlyContinue
 $cmake = if ($cmakeCommand) { $cmakeCommand.Source } else { 'C:\msys64\ucrt64\bin\cmake.exe' }

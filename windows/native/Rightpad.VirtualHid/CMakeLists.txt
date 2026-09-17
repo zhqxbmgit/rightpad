@@ -14,7 +14,7 @@ set(LIBVIRTUALHID_INSTALL OFF CACHE BOOL "" FORCE)
 set(LIBVIRTUALHID_ENABLE_PACKAGING OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(libvirtualhid
     GIT_REPOSITORY https://github.com/LizardByte/libvirtualhid.git
-    GIT_TAG 6fdb8bd4de3b68d96c30e5303ac2ebb333c09746
+    GIT_TAG 53e1a949fc0784af716b782ddfa6c647cafd1f05
     GIT_SUBMODULES third-party/lizardbyte-common)
 FetchContent_MakeAvailable(libvirtualhid)
 add_library(Rightpad.VirtualHid SHARED bridge.cpp)

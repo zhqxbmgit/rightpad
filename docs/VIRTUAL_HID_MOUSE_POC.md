@@ -8,11 +8,16 @@ Android, Protocol v2, motion math and Single Tap semantics are unchanged.
 
 ## Pinned dependency and build
 
-- libvirtualhid: `6fdb8bd4de3b68d96c30e5303ac2ebb333c09746`
+- libvirtualhid: `53e1a949fc0784af716b782ddfa6c647cafd1f05`
 - Its lizardbyte-common dependency: `f9d91e1d29b7473f58e43acde4579da4e56c4abe`
-- Validated installed driver: `2026.905.2300.20`; licensed local broker required.
-- Public API/source: [pinned runtime header](https://github.com/LizardByte/libvirtualhid/blob/6fdb8bd4de3b68d96c30e5303ac2ebb333c09746/src/include/libvirtualhid/runtime.hpp),
-  [pinned Windows backend](https://github.com/LizardByte/libvirtualhid/blob/6fdb8bd4de3b68d96c30e5303ac2ebb333c09746/src/platform/windows/windows_backend.cpp).
+- Validated installed driver/Broker: `2026.914.1218.10`; licensed local broker required.
+- Public API/source: [pinned runtime header](https://github.com/LizardByte/libvirtualhid/blob/53e1a949fc0784af716b782ddfa6c647cafd1f05/src/include/libvirtualhid/runtime.hpp),
+  [pinned Windows backend](https://github.com/LizardByte/libvirtualhid/blob/53e1a949fc0784af716b782ddfa6c647cafd1f05/src/platform/windows/windows_backend.cpp).
+
+The `2026.914.1218.10` compatibility migration updates the Windows Broker
+protocol used by the client from version 4 to version 5. The public runtime,
+mouse, profile and license APIs consumed by Rightpad are source-compatible, so
+the native bridge ABI and managed Receiver contract remain unchanged.
 
 `dotnet build windows/Rightpad.Receiver.Tests -c Release` automatically builds the
 native bridge and copies it and dependency license notices to the output. Native
