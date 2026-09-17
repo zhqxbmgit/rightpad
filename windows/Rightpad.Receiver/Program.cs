@@ -9,7 +9,8 @@ internal static class Program
 {
     internal enum LaunchMode { Gui, Diagnostics, RawMouse }
     internal sealed record LaunchOptions(LaunchMode Mode, Options Input, string? LogDirectory, string? SettingsPath,
-        MouseBackend Backend, MotionMode Motion = MotionMode.RAW, string? MotionTraceDirectory = null);
+        MouseBackend Backend, MotionMode Motion = MotionMode.RAW, string? MotionTraceDirectory = null,
+        bool MotionExplicit = false);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AttachConsole(uint processId);
@@ -56,9 +57,10 @@ internal static class Program
         var loaded = SettingsFileStore.Load(path);
         var file = new SettingsFileStore(path);
         var store = new RuntimeSettingsStore(loaded.Settings);
-        using var motionTrace = launch.MotionTraceDirectory is null ? null : new MotionTrace(launch.MotionTraceDirectory, launch.Motion);
+        MotionMode selectedMotion = ResolveGuiMotionMode(launch);
+        using var motionTrace = launch.MotionTraceDirectory is null ? null : new MotionTrace(launch.MotionTraceDirectory, selectedMotion);
         var runtime = new ReceiverRuntime(store, log, flightRecorder: flightRecorder, backend: launch.Backend,
-            motionMode: launch.Motion, motionTrace: motionTrace);
+            motionMode: selectedMotion, motionTrace: motionTrace);
         flightRecorder.StartSnapshots(runtime.CaptureSnapshot);
         var app = new App();
         app.InitializeComponent();
@@ -75,6 +77,9 @@ internal static class Program
         Directory.CreateDirectory(directory);
         return TextWriter.Synchronized(new StreamWriter(Path.Combine(directory, "receiver.log"), append: true) { AutoFlush = true });
     }
+
+    internal static MotionMode ResolveGuiMotionMode(LaunchOptions launch) =>
+        launch.MotionExplicit ? launch.Motion : MotionModes.ProductionMode;
 
     private static async Task<int> RunDevelopmentAsync(LaunchOptions launch, TextWriter log)
     {
@@ -134,8 +139,11 @@ internal static class Program
                     "RESAMPLED_250HZ_BOXCAR_4MS" => MotionMode.RESAMPLED_250HZ_BOXCAR_4MS,
                     "RESAMPLED_250HZ_BOXCAR_8MS" => MotionMode.RESAMPLED_250HZ_BOXCAR_8MS,
                     "RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5" => MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5,
+                    "RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE" => MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE,
+                    "RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE" => MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE,
+                    "RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE" => MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE,
                     "RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4" => MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4,
-                    _ => throw new ArgumentException("--dev-motion-mode requires RAW, RESAMPLED_250HZ, RESAMPLED_250HZ_BOXCAR_4MS or RESAMPLED_250HZ_BOXCAR_8MS.")
+                    _ => throw new ArgumentException("--dev-motion-mode requires one of the supported fixed development modes.")
                 };
                 else if (arg == "--dev-motion-trace-dir") motionTrace = args[i];
                 else if (arg == "--dev-log-dir") log = args[i]; else settings = args[i];
@@ -150,7 +158,7 @@ internal static class Program
             throw new ArgumentException("--dev-mouse-backend requires mouse output, not --diagnostics.");
         if (diagnostics && (seen.Contains("--dev-motion-mode") || motionTrace is not null))
             throw new ArgumentException("Motion experiments require mouse output.");
-        return new(mode, options, log, settings, backend, motion, motionTrace);
+        return new(mode, options, log, settings, backend, motion, motionTrace, seen.Contains("--dev-motion-mode"));
     }
     internal readonly record struct Options(bool RawMouse, double SensitivityX, double SensitivityY,
         int TapMaxDurationMs = 300, double TapMovementThresholdPx = 8, int ClickHoldMs = 25, int DoubleTapIntervalMs = RuntimeSettings.DefaultDoubleTapIntervalMs);

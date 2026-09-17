@@ -9,7 +9,8 @@ internal enum MotionEventKind
 {
     Sample, Enqueue, Tick, Position, Logical, ManagedBegin, ManagedEnd, NativeBegin, NativeEnd,
     UpFlush, Fence, Reset, StarvationStart, StarvationEnd, DuplicateTimestamp, BackwardTimestamp, LateSample, BufferOverflow,
-    BoxcarPosition, BoxcarUpPending, KernelPosition, KernelUpPending, KernelIntegration, KernelHistoryError
+    BoxcarPosition, BoxcarUpPending, KernelPosition, KernelUpPending, KernelIntegration, KernelHistoryError,
+    SettleStart, SettleComplete, SettleContinue
 }
 
 internal readonly record struct MotionTraceEvent(MotionEventKind Kind, long Qpc, long ReferenceQpc,
@@ -22,10 +23,12 @@ internal sealed class MotionTrace : IDisposable
     private readonly object gate = new();
     private readonly MotionTraceEvent[] events;
     private readonly string directory;
-    private readonly MotionMode mode;
     private readonly System.Threading.Timer requests;
-    private readonly long start = Stopwatch.GetTimestamp(), allocationStart = GC.GetTotalAllocatedBytes();
-    private readonly TimeSpan cpuStart = Process.GetCurrentProcess().TotalProcessorTime;
+    private MotionMode mode;
+    private long runtimeRunId;
+    private long start, allocationStart;
+    private TimeSpan cpuStart;
+    private readonly int[] gcStart = new int[3];
     private int head, length;
     private long overwritten;
     private bool frozen;
@@ -37,7 +40,33 @@ internal sealed class MotionTrace : IDisposable
         this.directory = directory; this.mode = mode;
         Directory.CreateDirectory(directory);
         events = new MotionTraceEvent[capacity];
+        ResetAccounting();
         requests = new(_ => { if (File.Exists(Path.Combine(directory, "freeze.request"))) Freeze(); }, null, 1000, 1000);
+    }
+
+    // A trace export is one Runtime run. Switching cadence starts a fresh segment so
+    // events from different fixed configurations can never share ambiguous metadata.
+    public void BeginRuntimeRun(long id, MotionMode activeMode)
+    {
+        lock (gate)
+        {
+            if (frozen) return;
+            runtimeRunId = id;
+            mode = activeMode;
+            head = length = 0;
+            overwritten = 0;
+            ResetAccounting();
+        }
+    }
+
+    private void ResetAccounting()
+    {
+        start = Stopwatch.GetTimestamp();
+        allocationStart = GC.GetTotalAllocatedBytes();
+        cpuStart = Process.GetCurrentProcess().TotalProcessorTime;
+        gcStart[0] = GC.CollectionCount(0);
+        gcStart[1] = GC.CollectionCount(1);
+        gcStart[2] = GC.CollectionCount(2);
     }
 
     public void Write(MotionEventKind kind, long at = 0, long reference = 0, ulong run = 0,
@@ -79,6 +108,9 @@ internal sealed class MotionTrace : IDisposable
             frozen = true;
             long end = Stopwatch.GetTimestamp(), allocated = GC.GetTotalAllocatedBytes() - allocationStart;
             double cpuMs = (Process.GetCurrentProcess().TotalProcessorTime - cpuStart).TotalMilliseconds;
+            int[] collections = [GC.CollectionCount(0) - gcStart[0], GC.CollectionCount(1) - gcStart[1], GC.CollectionCount(2) - gcStart[2]];
+            MotionMode exportedMode = mode;
+            long exportedRuntimeRunId = runtimeRunId, exportedStart = start;
             export = Task.Run(() =>
             {
                 using var writer = new StreamWriter(Path.Combine(directory, "motion.csv"));
@@ -91,12 +123,16 @@ internal sealed class MotionTrace : IDisposable
                 }
                 File.WriteAllText(Path.Combine(directory, "metadata.json"), JsonSerializer.Serialize(new
                 {
-                    Mode = mode.ToString(), Frequency = Stopwatch.Frequency, StartQpc = start, EndQpc = end,
+                    Mode = exportedMode.ToString(), RuntimeRunId = exportedRuntimeRunId,
+                    Frequency = Stopwatch.Frequency, StartQpc = exportedStart, EndQpc = end,
+                    Quantizer = MotionModes.QuantizerName(exportedMode),
                     Events = length, Overwritten = overwritten, AllocatedBytes = allocated, ProcessCpuMs = cpuMs,
-                    PeriodMs = 4, PlayoutDelayMs = 12, BoxcarWindowMs = MotionModes.BoxcarWindowMs(mode), Pid = Environment.ProcessId,
-                    TauMs = MotionModes.FiniteCriticalParameters(mode).TauMs,
-                    SupportMs = MotionModes.FiniteCriticalParameters(mode).SupportMs,
-                    KernelNormalization = MotionModes.FiniteCriticalParameters(mode).Normalization,
+                    PeriodMs = MotionModes.PeriodMs(exportedMode), PlayoutDelayMs = exportedMode == MotionMode.RAW ? 0 : 12,
+                    BoxcarWindowMs = MotionModes.BoxcarWindowMs(exportedMode), Pid = Environment.ProcessId,
+                    GcCollections = collections, LogicalProcessors = Environment.ProcessorCount,
+                    TauMs = MotionModes.FiniteCriticalParameters(exportedMode).TauMs,
+                    SupportMs = MotionModes.FiniteCriticalParameters(exportedMode).SupportMs,
+                    KernelNormalization = MotionModes.FiniteCriticalParameters(exportedMode).Normalization,
                     Scope = "Managed and native-call boundaries; no VHF submit or hardware timestamp. CPU/allocation are whole-process including instrumentation."
                 }, new JsonSerializerOptions { WriteIndented = true }));
             });

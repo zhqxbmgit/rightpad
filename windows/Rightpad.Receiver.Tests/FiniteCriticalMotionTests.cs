@@ -133,7 +133,7 @@ internal static class FiniteCriticalMotionTests
             using var h=new H(mode);for(int t=4;t<=800;t+=4)h.Send(t,S(t,sign*speed*t/1000f));h.Advance(812+h.Motion.KernelSupportMs);
             Near(sign*speed*.8,h.Motion.Position.X,1e-4);Check(h.Motion.Schedule.Deadline is null,"stop finite park");
             for(int t=1004;t<=1800;t+=4)h.Send(t,S(t,sign*speed*(1800-t)/1000f));h.Advance(1812+h.Motion.KernelSupportMs);
-            Equal(0.0,h.Motion.Position.X,"reversal net endpoint");Check(Math.Abs(h.X)<=1,"existing residual budget");Check(h.Moves.Any(m=>Math.Sign(m.X)==-sign),"opposite output");
+            Equal(0.0,h.Motion.Position.X,"reversal net endpoint");Equal(0,h.X,"Q0C exact return to zero");Check(h.Moves.Any(m=>Math.Sign(m.X)==-sign),"opposite output");
         }
     }
     private static void Late(MotionMode mode)
@@ -222,6 +222,7 @@ internal static class FiniteCriticalMotionTests
             var lines=File.ReadAllLines(Path.Combine(dir,"motion.csv"));foreach(string kind in new[]{"KernelPosition,","KernelIntegration,","KernelUpPending,","Fence,"})Check(lines.Any(x=>x.StartsWith(kind)),kind);
             var up=lines.Single(x=>x.StartsWith("UpFlush,")).Split(',');var debt=lines.Single(x=>x.StartsWith("KernelUpPending,")).Split(',');Near(double.Parse(up[7],System.Globalization.CultureInfo.InvariantCulture),double.Parse(up[9],System.Globalization.CultureInfo.InvariantCulture)+double.Parse(debt[7],System.Globalization.CultureInfo.InvariantCulture));
             using var meta=JsonDocument.Parse(File.ReadAllText(Path.Combine(dir,"metadata.json")));Equal(MotionModes.FiniteCriticalParameters(mode).SupportMs,meta.RootElement.GetProperty("SupportMs").GetInt32(),"fixed metadata");
+            Equal("Q0C",meta.RootElement.GetProperty("Quantizer").GetString()!,"quantizer trace identity");
         }
         finally {Directory.Delete(dir,true);}
     }
@@ -229,5 +230,6 @@ internal static class FiniteCriticalMotionTests
     {
         Equal(mode,Receiver.Program.ParseLaunchArguments(["--dev-motion-mode",mode.ToString()]).Motion,"explicit CLI");var r=new ReceiverRuntime(new(),TextWriter.Null,MouseBackend.VirtualHid,motionMode:mode);var vm=new MainViewModel(r,null!,null!);
         Check(vm.MotionModeName.Contains("FINITE CRITICAL"),"actual readonly mode");Check(vm.MotionExplanation.Contains($"support {MotionModes.FiniteCriticalParameters(mode).SupportMs} ms"),"correct fixed support");
+        Check(vm.MotionModeName.Contains("quantizer=Q0C"),"explicit readonly quantizer");
     }
 }

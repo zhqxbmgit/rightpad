@@ -140,4 +140,46 @@ internal static class SettingsTests
         Equal(Rightpad.Receiver.Program.LaunchMode.Gui, gui.Mode, "dev GUI still GUI");
         Equal("test.json", gui.SettingsPath, "isolated test settings");
     }
+    public static void ProductMotion()
+    {
+        var ordinary = Rightpad.Receiver.Program.ParseLaunchArguments([]);
+        Equal(MotionModes.ProductionMode, Rightpad.Receiver.Program.ResolveGuiMotionMode(ordinary),
+            "ordinary GUI fixed to production 1000");
+        foreach (var item in new[]
+        {
+            (Name: "RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE", Mode: MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE),
+            (Name: "RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE", Mode: MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE),
+            (Name: "RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE", Mode: MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE)
+        })
+        {
+            var explicitDevelopment = Rightpad.Receiver.Program.ParseLaunchArguments(["--dev-motion-mode", item.Name]);
+            Equal(item.Mode, Rightpad.Receiver.Program.ResolveGuiMotionMode(explicitDevelopment),
+                $"explicit development mode {item.Name}");
+        }
+    }
+    public static async Task LegacyCadence()
+    {
+        foreach (int legacyCadence in new[] { 250, 1000 })
+        {
+            using var files = new Files();
+            File.WriteAllText(files.PathName, $$"""
+                {"sensitivityX":9,"sensitivityY":9,"tapMaxDurationMs":300,"tapMovementThresholdPx":8,"clickHoldMs":25,"doubleTapIntervalMs":130,"motionCadenceHz":{{legacyCadence}}}
+                """);
+            var loaded = SettingsFileStore.Load(files.PathName);
+            Check(loaded.Warning is null, $"legacy cadence {legacyCadence} ignored without warning");
+            Equal(new RuntimeSettings(9, 9, 300, 8, 25, 130), loaded.Settings,
+                $"legacy cadence {legacyCadence} absent from runtime settings");
+            Equal(MotionModes.ProductionMode,
+                Rightpad.Receiver.Program.ResolveGuiMotionMode(Rightpad.Receiver.Program.ParseLaunchArguments([])),
+                $"legacy cadence {legacyCadence} cannot affect ordinary launch");
+
+            var file = new SettingsFileStore(files.PathName);
+            file.Schedule(loaded.Settings);
+            await file.FlushAsync();
+            using var saved = JsonDocument.Parse(File.ReadAllText(files.PathName));
+            Check(!saved.RootElement.TryGetProperty("motionCadenceHz", out _),
+                $"legacy cadence {legacyCadence} removed on normal save");
+            Equal(6, saved.RootElement.EnumerateObject().Count(), "saved schema remains six fields");
+        }
+    }
 }

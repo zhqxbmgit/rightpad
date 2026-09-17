@@ -3,26 +3,50 @@ namespace Rightpad.Receiver;
 internal enum MotionMode
 {
     RAW, RESAMPLED_250HZ, RESAMPLED_250HZ_BOXCAR_4MS, RESAMPLED_250HZ_BOXCAR_8MS,
-    RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5, RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4
+    RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5, RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4,
+    RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE,
+    RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE,
+    RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE
 }
 
 internal static class MotionModes
 {
+    public const MotionMode ProductionMode = MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE;
+    public static int PeriodMs(MotionMode mode) => mode switch
+    {
+        MotionMode.RAW => 0,
+        MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE => 2,
+        MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE => 1,
+        _ when Enum.IsDefined(mode) => 4,
+        _ => throw new ArgumentOutOfRangeException(nameof(mode))
+    };
+    public static string QuantizerName(MotionMode mode) => IsFiniteCritical(mode) ? "Q0C" : "Q0I";
     public static int BoxcarWindowMs(MotionMode mode) => mode switch
     {
         MotionMode.RAW or MotionMode.RESAMPLED_250HZ or
-        MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 => 0,
+        MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 or
+        MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE or
+        MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE or
+        MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE => 0,
         MotionMode.RESAMPLED_250HZ_BOXCAR_4MS => 4,
         MotionMode.RESAMPLED_250HZ_BOXCAR_8MS => 8,
         _ => throw new ArgumentOutOfRangeException(nameof(mode))
     };
     public static bool IsFiniteCritical(MotionMode mode) => mode is
-        MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4;
+        MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 or
+        MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE or
+        MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE or
+        MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE;
+    public static bool IsEarnedSettle(MotionMode mode) => mode is
+        MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE or
+        MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE or
+        MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE;
     public static (int TauMs, int SupportMs, double Normalization) FiniteCriticalParameters(MotionMode mode)
     {
         (int tau, int support) = mode switch
         {
-            MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 => (24, 120),
+            MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE or
+            MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE or MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE => (24, 120),
             MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 => (35, 140),
             _ => (0, 0)
         };

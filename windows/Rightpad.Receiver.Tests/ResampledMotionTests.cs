@@ -47,6 +47,7 @@ internal static class ResampledMotionTests
         ("resample bounded buffer", Bound), ("resample UP and tick race", FenceRace),
         ("resample run/presence/dispose gate", Presence), ("resample gesture fence and rearm", Gesture),
         ("resample mode arguments", Arguments), ("resample trace ring and freeze", Trace),
+        ("motion trace Runtime run metadata follows cadence", TraceRuntimeMetadata),
         ("resample actual timer native failure cleanup", RuntimeFailure)
     ];
     private static void Near(double expected, double actual, double epsilon = 1e-8) => Check(Math.Abs(expected - actual) <= epsilon, $"expected {expected}, actual {actual}");
@@ -147,6 +148,54 @@ internal static class ResampledMotionTests
             using var json=JsonDocument.Parse(File.ReadAllText(Path.Combine(dir,"metadata.json")));Equal(2L,json.RootElement.GetProperty("Overwritten").GetInt64(),"overwrite visible");
         }
         finally{Directory.Delete(dir,true);}
+    }
+    private static void TraceRuntimeMetadata() => TraceRuntimeMetadataAsync().GetAwaiter().GetResult();
+    private static async Task TraceRuntimeMetadataAsync()
+    {
+        await TraceRuntimeScenario(MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE, 4);
+        await TraceRuntimeScenario(MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE, 2);
+        await TraceRuntimeScenario(MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE, 1);
+        await TraceRuntimeScenario(MotionModes.ProductionMode, 1, restart: true);
+    }
+    private static async Task TraceRuntimeScenario(MotionMode mode, int expectedPeriodMs, bool restart = false)
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "rightpad-motion-run-test-" + Guid.NewGuid());
+        try
+        {
+            using (var trace = new MotionTrace(dir, mode, 16))
+            {
+                var runtime = new ReceiverRuntime(new(), TextWriter.Null, MouseBackend.SendInput,
+                    new(IPAddress.Loopback, 0), () => new WindowsMouseOutput(
+                        (uint _, ref WindowsMouseOutput.NativeInput _, int _) => 1, () => 0),
+                    motionMode: mode, motionTrace: trace);
+                try
+                {
+                    await runtime.StartAsync();
+                    trace.Write(MotionEventKind.Tick, 100 + runtime.CaptureSnapshot().RunId);
+                    if (restart)
+                    {
+                        await runtime.StopAsync();
+                        await runtime.StartAsync();
+                        trace.Write(MotionEventKind.Tick, 100 + runtime.CaptureSnapshot().RunId);
+                    }
+                    await runtime.StopAsync();
+                    trace.Freeze();
+                }
+                finally { await runtime.StopAsync(); }
+            }
+
+            using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, "metadata.json")));
+            var root = json.RootElement;
+            long expectedRunId = restart ? 2 : 1;
+            Equal(mode.ToString(), root.GetProperty("Mode").GetString(), "trace active mode");
+            Equal(expectedPeriodMs, root.GetProperty("PeriodMs").GetInt32(), "trace active period");
+            Equal(expectedRunId, root.GetProperty("RuntimeRunId").GetInt64(), "trace Runtime run id");
+            long[] qpcs = File.ReadAllLines(Path.Combine(dir, "motion.csv")).Skip(1)
+                .Select(line => long.Parse(line.Split(',')[1])).ToArray();
+            Check(qpcs.Contains(100 + expectedRunId), "trace contains current Runtime run marker");
+            if (expectedRunId > 1) Check(!qpcs.Contains(101), "trace segment excludes prior Runtime run");
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
     private static void RuntimeFailure()
     {

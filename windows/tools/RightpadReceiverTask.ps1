@@ -3,12 +3,13 @@ param(
     [string]$Mode = 'Status',
     [ValidateSet('production', 'sendinput', 'virtualhid')]
     [string]$DevMouseBackend = 'production',
-    [ValidateSet('RAW', 'RESAMPLED_250HZ', 'RESAMPLED_250HZ_BOXCAR_4MS', 'RESAMPLED_250HZ_BOXCAR_8MS', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5', 'RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4')]
+    [ValidateSet('RAW', 'RESAMPLED_250HZ', 'RESAMPLED_250HZ_BOXCAR_4MS', 'RESAMPLED_250HZ_BOXCAR_8MS', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5', 'RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE')]
     [string]$DevMotionMode = 'RAW',
     [switch]$DevMotionTrace
 )
 
 $ErrorActionPreference = 'Stop'
+$devMotionExplicit = $PSBoundParameters.ContainsKey('DevMotionMode')
 $taskName = 'Rightpad Receiver Dev'
 $taskDescription = 'rightpad independent interactive development Receiver (project launcher).'
 $windowsRoot = Split-Path $PSScriptRoot -Parent
@@ -33,9 +34,9 @@ function Get-ReceiverArguments([string]$LogDirectory, [string]$BackendOverride =
     }
 }
 
-function Get-MotionArguments([string]$MotionMode = 'RAW', [string]$TraceDirectory = '') {
-    if ($MotionMode -notin @('RAW', 'RESAMPLED_250HZ', 'RESAMPLED_250HZ_BOXCAR_4MS', 'RESAMPLED_250HZ_BOXCAR_8MS', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5', 'RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4')) { throw 'Invalid experimental motion mode.' }
-    $arguments = if ($MotionMode -eq 'RAW') { '' } else { " --dev-motion-mode $MotionMode" }
+function Get-MotionArguments([string]$MotionMode = '', [string]$TraceDirectory = '') {
+    if ($MotionMode -and $MotionMode -notin @('RAW', 'RESAMPLED_250HZ', 'RESAMPLED_250HZ_BOXCAR_4MS', 'RESAMPLED_250HZ_BOXCAR_8MS', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5', 'RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE')) { throw 'Invalid experimental motion mode.' }
+    $arguments = if ($MotionMode) { " --dev-motion-mode $MotionMode" } else { '' }
     if ($TraceDirectory) {
         if ($TraceDirectory.Contains('"')) { throw 'Invalid trace directory.' }
         $arguments += ' --dev-motion-trace-dir "{0}"' -f $TraceDirectory
@@ -258,7 +259,7 @@ switch ($Mode) {
         if ($jobFlags -band 0x2000) { throw 'Scheduled launcher inherited KILL_ON_JOB_CLOSE; refusing persistent launch.' }
         if (!(Test-Path -LiteralPath $receiverPath)) { throw "Missing Release binary: $receiverPath" }
         $selectedBackend = 'production'
-        $selectedMotion = 'RAW'
+        $selectedMotion = ''
         $selectedTrace = $false
         if (Test-Path -LiteralPath $launchOptionsPath) {
             $selectedBackend = (Get-Content -LiteralPath $launchOptionsPath -Raw | ConvertFrom-Json).MouseBackend
@@ -305,7 +306,7 @@ switch ($Mode) {
         if (@(Get-Port).Count) { throw 'UDP 50000 is occupied; no unrelated process will be stopped.' }
         $null = New-Item -ItemType Directory -Path $logRoot -Force
         $options = @{ MouseBackend = $DevMouseBackend }
-        $options.MotionMode = $DevMotionMode
+        $options.MotionMode = if ($devMotionExplicit) { $DevMotionMode } else { '' }
         $options.MotionTrace = [bool]$DevMotionTrace
         $options | ConvertTo-Json | Set-Content -LiteralPath $launchOptionsPath -Encoding UTF8
         $null = $task.Run($null)
@@ -337,7 +338,11 @@ switch ($Mode) {
             $stdout -match 'receiver_error:') {
             throw 'Receiver startup logs failed validation; inspect runtime logs.'
         }
-        if ($stdout -notmatch "motion_mode: name=$DevMotionMode ") { throw 'Experimental motion mode did not match the requested launch.' }
+        if ($devMotionExplicit) {
+            if ($stdout -notmatch "motion_mode: name=$DevMotionMode ") { throw 'Experimental motion mode did not match the requested launch.' }
+        } elseif ($stdout -notmatch 'motion_mode: name=RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE ') {
+            throw 'Ordinary launch did not use the fixed 1000 Hz product mode.'
+        }
         Show-Status
     }
 }

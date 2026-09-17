@@ -16,4 +16,5 @@ internal sealed record RuntimeStatsSnapshot(long RunId, ReceiverState RuntimeSta
     long IntendedRelativeDxTotal = 0, long IntendedRelativeDyTotal = 0,
     long IntendedAbsDxTotal = 0, long IntendedAbsDyTotal = 0,
     long MouseOutputSuccesses = 0, long MouseOutputFailures = 0,
-    long LastSuccessfulMouseOutputAtTicks = 0, long LastFailedMouseOutputAtTicks = 0);
+    long LastSuccessfulMouseOutputAtTicks = 0, long LastFailedMouseOutputAtTicks = 0,
+    string MotionModeName = "RAW", long MotionClockTicks = 0, long MissedMotionClockTicks = 0);

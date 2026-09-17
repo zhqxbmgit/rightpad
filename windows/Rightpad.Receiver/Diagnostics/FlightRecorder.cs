@@ -88,6 +88,8 @@ internal sealed class FlightRecorder : IDisposable
         v["heartbeatPackets"] = s.HeartbeatPackets; v["gap"] = s.GapCount; v["old"] = s.OldCount; v["duplicate"] = s.DuplicateCount;
         v["invalid"] = s.InvalidCount; v["outdatedRunPackets"] = s.OutdatedRunPackets; v["presenceTimeouts"] = s.PresenceTimeouts;
         v["inputTimeouts"] = s.InputTimeoutCount; v["activeTouchSessionId"] = s.ActiveTouchSessionId < 0 ? null : s.ActiveTouchSessionId;
+        v["motionMode"] = s.MotionModeName; v["motionClockTicks"] = s.MotionClockTicks;
+        v["missedMotionClockTicks"] = s.MissedMotionClockTicks;
         v["motionOutputEvents"] = s.MotionOutputEvents; v["sendInputSuccesses"] = s.SendInputSuccesses;
         v["sendInputFailures"] = s.SendInputFailures; v["lastError"] = s.LastError;
         v["mouseBackend"] = s.MouseBackend;

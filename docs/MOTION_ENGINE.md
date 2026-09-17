@@ -652,7 +652,122 @@ establishes that Rightpad has already surpassed it.
 
 ---
 
-# 17. Current Philosophy
+# 17. K24 Earned-Settle Lifecycle (2026-09-15; product status updated 2026-09-16)
+
+Mode `RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE` retains the K24-r5
+kernel (tau 24 ms, finite support 120 ms), Q0-C, 250 Hz / 4 ms opportunities,
+12 ms playout, startup-fixed sensitivity and libvirtualhid output. The original
+`RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5` remains the instant-flush control.
+This lifecycle began as a research candidate. The selected production configuration
+is now the 1000 Hz K24-r5 Earned-Settle mode. The 250 Hz and 500 Hz variants remain
+explicit development, regression, benchmark and diagnostic modes. This status
+supersedes the earlier prototype and product-selector classifications.
+
+UP includes its last real coordinate, freezes the earned cumulative target and
+ends the touch session for Gesture. It emits no immediate Motion flush. The same
+MotionClock continues evaluating the original K24 against the realized history
+until the full finite support has become constant. The normal Q0-C submission
+completes that endpoint, then the clock parks and the completed chain is cleared.
+No velocity is integrated after release and no distance beyond the target is
+created. Integer endpoints finish exactly; fractional endpoints retain Q0-C's
+existing direction/history-dependent sub-count semantics.
+
+A new DOWN from the same Sender during settlement preserves the cumulative
+target, realized history, played position, canonical integer ledger and absolute
+MotionClock phase at the selected fixed cadence. It establishes only the new raw
+touch origin and its fixed 12 ms timestamp mapping. Subsequent sample deltas add
+to the existing target;
+DOWN itself emits nothing and does not liquidate the previous backlog. Contacts
+in an unfinished chain share quantizer state; after full settlement a new contact
+starts a fresh chain. MOVE/UP without a new DOWN cannot alter a frozen target.
+
+Sender replacement, presence disconnection, Reset, Stop, disposal and output
+failure cancel the old tail under the existing motion lock and generation fence.
+They do not pay discarded movement later. The existing no-adaptation rules apply.
+
+Gesture still consumes accepted raw packets independently. Single tap timing,
+double-tap drag and drag re-arm are unchanged; button UP occurs on raw UP, not at
+Motion settlement completion. Remaining earned Motion can therefore occur after
+a drag button has been released, and can overlap the next contact's button state.
+This interaction is intentional in the current product Motion lifecycle and
+remains covered by regression and game validation.
+
+Validation is bounded build/test and Android-to-Virtual-HID Raw Input comparison,
+not a new numerical certification. Evidence:
+`windows/test-results/k24-earned-settle-20260915/` (ignored).
+
+# 18. K24 Earned-Settle Cadence A/B (2026-09-15)
+
+The three fixed modes below differ only in output opportunity period. Production
+uses 1000 Hz only; 250 Hz and 500 Hz remain explicit development modes:
+
+| Mode | Fixed period |
+|---|---|
+| `RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE` | 4 ms |
+| `RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE` | 2 ms |
+| `RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE` | 1 ms |
+
+All three retain K24-r5, tau 24 ms, support 120 ms, Earned-Settle, Q0-C,
+run-fixed sensitivity (9/9 for this A/B), fixed 12 ms playout and libvirtualhid.
+The former 250/1000 product selector and its persisted cadence field were removed
+when 1000 Hz was selected as the sole production cadence. The Motion page has no
+cadence control. Ordinary GUI and launcher starts always use the 1000 Hz mode,
+independent of any legacy `motionCadenceHz` JSON field. An explicit
+`--dev-motion-mode` remains authoritative for development runs and can select the
+fixed 250/500/1000 modes before startup. There is no live cadence switch or runtime
+adaptation: the active cadence cannot change in response to velocity, input, jitter
+or load.
+Playout and kernel support are converted from durations independently of the output period. The existing
+continuous convolution, realized history and settlement tests use actual QPC
+times; there is no tick-count-based 4 ms kernel/completion approximation.
+
+MotionClock retains its high-resolution waitable timer and absolute QPC phase.
+A late wake evaluates once at its actual time, skips overdue opportunities and
+arms the next phase-aligned deadline. It does not replay missed ticks or emit
+fractional fake events when Q0-C returns zero counts. The phase persists across
+contacts that join unfinished settlement, at the selected fixed period.
+
+The optional MotionTrace records the active period and whole-process GC
+collection deltas alongside its existing CPU/allocation measurements. Capture
+and trace observations must distinguish internal ticks, zero-count Logical
+outputs and Raw Input delivery. Nominal 1000 Hz does not require 1000 nonzero
+Raw Input reports; frame continuity across render rates is the comparison target.
+Each new Receiver Runtime run begins a fresh MotionTrace segment. `BeginRuntimeRun`
+refreshes the active MotionMode, RuntimeRunId and PeriodMs, and clears the previous
+run ring before the new run can record events, so events from different Runtime
+runs cannot be silently mixed.
+The low-frequency Flight Recorder snapshots expose the actual run's mode and
+cumulative clock/missed-tick counters for trace-OFF cadence verification; they do
+not influence scheduling or Motion output.
+
+Bounded cadence tests and Android/Raw Input evidence are stored under
+`windows/test-results/k24-settle-cadence-ab-20260915/` (ignored). This is a cadence
+A/B, not a new kernel or Q0-C numerical certification. A selected human-test run
+uses trace OFF; instrumentation-on CPU is reported with that scope.
+
+The earlier approximately 125 nonzero-report/s observation came from a background
+Raw Input observer and does not describe foreground game-style delivery. The N60
+control observed approximately 1000 Hz while foreground, approximately 125 Hz
+while background, and approximately 1000 Hz again after foreground was restored.
+This identifies a foreground/background observation effect; it does not establish
+a global Windows 125 Hz limit or a specific responsible Windows kernel component.
+
+With the observer foreground, fixed central 10-second windows measured about
+238.5 / 466.2 / 883.5 Hz Raw nonzero delivery at configured 250 / 500 / 1000 Hz,
+and about 238.5 / 466.2 / 882.5 Hz independent dispatch. Actual MotionClock rates
+were about 250.0 / 499.6 / 996.1 Hz. The remaining difference is primarily Q0-C
+zero-count logical ticks plus very few skipped opportunities; this is not evidence
+of 1000 nonzero events/s, eliminated latency, or a universal best cadence.
+
+Matched replay of the same accepted real Android traces produced identical final
+integer dx/dy in all 18/18 paired 250-vs-1000 runs, with Earned-Settle completing
+in all 36/36 arms. Formal cost windows show higher active-motion CPU, allocation
+and context-switch cost at 1000 Hz, while recording a very low missed-opportunity
+ratio, no catch-up replay, no mouse-output failure, and no runtime error or
+disconnect. They remain historical objective evidence for the production decision,
+not a claim that 1000 Hz is universally best.
+
+# 19. Current Philosophy
 
 The best Motion Engine is not the most complicated one.
 

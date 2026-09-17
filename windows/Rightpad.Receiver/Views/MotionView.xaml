@@ -2,10 +2,9 @@
   <StackPanel><TextBlock Text="Motion" Style="{StaticResource PageTitle}"/>
     <Border Style="{StaticResource Card}"><StackPanel MaxWidth="720" HorizontalAlignment="Left">
       <TextBlock Text="Motion settings" Style="{StaticResource SectionTitle}"/>
-      <Grid Height="34" Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="210"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="Mode" Style="{StaticResource Muted}"/><TextBlock Grid.Column="1" Text="{Binding MotionModeName}" FontWeight="SemiBold"/></Grid>
       <local:NumericEditor DataContext="{Binding Settings.SensitivityX}"/>
       <local:NumericEditor DataContext="{Binding Settings.SensitivityY}"/>
-      <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,14,0,0" Padding="0,12,0,0"><TextBlock Text="{Binding MotionExplanation}" TextWrapping="Wrap" Style="{StaticResource Muted}" FontSize="13"/></Border>
+      <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,14,0,0" Padding="0,12,0,0"><TextBlock Text="Production motion: fixed 1000 Hz K24-r5 Earned-Settle · tau 24 ms · support 120 ms · Q0-C · 12 ms playout. Sensitivity is fixed for each Receiver run." TextWrapping="Wrap" Style="{StaticResource Muted}" FontSize="13"/></Border>
     </StackPanel></Border>
   </StackPanel>
 </UserControl>

@@ -50,7 +50,7 @@ internal sealed class MotionClock : IDisposable
                 }
             }
             catch (Exception e) { Volatile.Write(ref failure, e); motion.Reset(); onFailure(); }
-        }) { IsBackground = true, Name = "rightpad motion 250Hz" };
+        }) { IsBackground = true, Name = $"rightpad motion {1000 / motion.PeriodMs}Hz" };
         thread.Start();
     }
     public void Dispose()

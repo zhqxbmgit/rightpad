@@ -51,7 +51,7 @@ Four UserControls selected by a ListBox / ReceiverPage enum / ContentControl:
 | Page | Contents |
 |---|---|
 | Overview | Connection: status, current presence Android IP, Last Seen, listener, sample/packet Hz, Gap/Old/Invalid. Receiver: runtime state, a compact Start with Windows toggle, and one Start/Stop button. |
-| Motion (default) | Read-only RAW; Sensitivity X/Y numeric editors. No slider or mode dropdown. |
+| Motion (default) | Sensitivity X/Y numeric editors and a read-only summary of the fixed production Motion configuration. No cadence selector, slider or mode dropdown. |
 | Tap | Tap settings: duration, movement threshold, click hold. No Enabled row or toggle. |
 | Diagnostics | Input/Transport: sample/packet Hz, Gap/Old/Invalid/Duplicate/Input Timeout, Heartbeat Packets, Presence Timeouts, Outdated Run Packets. Receiver: state, backend, touch session, last accepted age, last remote IP. |
 
@@ -106,7 +106,7 @@ neither Euclidean distance nor desktop pixels; small RAW motion is not suppresse
 
 ## Runtime settings boundaries
 
-RuntimeSettings is an immutable five-field record. RuntimeSettingsStore publishes
+RuntimeSettings is an immutable seven-field record. RuntimeSettingsStore publishes
 the complete reference using Interlocked.Exchange; readers use Volatile.Read.
 
 - Sensitivity: once per accepted packet, all historical/current samples use that
@@ -128,7 +128,8 @@ click durations. No packet reordering, filtering or output scheduling is added.
   "sensitivityY": 7.0,
   "tapMaxDurationMs": 300,
   "tapMovementThresholdPx": 8.0,
-  "clickHoldMs": 25
+  "clickHoldMs": 25,
+  "doubleTapIntervalMs": 130
 }
 ```
 
@@ -136,6 +137,11 @@ System.Text.Json only. Missing file uses defaults. Invalid JSON/root or read
 failure uses defaults; invalid/missing/null/wrong-type/out-of-range fields fall
 back individually, preserving valid fields. Unknown fields are ignored. Settings
 problems never prevent Receiver startup; recoverable warnings are nonmodal.
+`motionCadenceHz` is no longer part of the six-field product schema. Older files
+that contain either 250 or 1000 are accepted without warning; the field is ignored,
+ordinary startup still uses fixed production 1000 Hz, and the next normal settings
+save omits it. Explicit `--dev-motion-mode` remains authoritative and can select
+the retained fixed 250/500/1000 development modes without adding a product UI.
 
 Valid UI edits immediately publish to memory and restart a 500 ms debounce.
 Background I/O writes a same-directory temporary file then replaces the target.
@@ -200,6 +206,11 @@ cancels and awaits input, clears gesture and queued clicks, attempts LEFT UP,
 resets motion/session and releases the port. A new Run cannot start until the old
 task and its cleanup complete. Errors stop only the runtime; GUI can retry.
 
+Ordinary GUI startup constructs the Runtime with the sole 1000 Hz product mode.
+Cadence does not change during that process lifetime. General Stop/Start still uses
+the same serialized cleanup path and restarts the same fixed mode; explicit
+development modes are chosen only by launch arguments.
+
 No-argument entry is GUI. Explicit `--diagnostics` preserves protocol diagnostics;
 `--raw-mouse` preserves RAW dev CLI and tuning options. Both reuse ReceiverRuntime.
 Dev modes attach to a parent console when available for Ctrl+C and explicitly
@@ -210,7 +221,9 @@ write receiver.log (`--dev-log-dir`, default LocalAppData/rightpad/diagnostics).
 InteractiveToken/Limited Scheduled Task starts GUI with --dev-log-dir, retains the
 process handle, waits for exit, and records receiver.log / identity / PID / exit.
 Status checks user, explorer SessionId, Medium integrity, Default desktop and UDP
-50000. Normal product exit is the tray **Exit** command.
+50000. With no explicit development Motion option it uses the fixed 1000 Hz product
+mode; an explicit mode (including retained 250/500 Hz modes) remains a development
+override. Normal product exit is the tray **Exit** command.
 No Codex-shell persistent child, watchdog or product scheduler. Product login
 startup is the separate HKCU Run value and never calls or modifies this launcher.
 
@@ -223,7 +236,8 @@ The independent interactive launcher requirement remains unchanged.
 ## Verification and non-goals
 
 Retain all existing valid tests, update entry coverage, and test settings fallback,
-five-field persistence, debounce/latest-wins/flush/failure, atomic publication,
+six-field persistence, legacy cadence-field removal, debounce/latest-wins/flush/
+failure, atomic publication,
 packet consistency and residual retention, gesture and click snapshot boundaries,
 Start/Stop/error recovery/old callback isolation, statistics and UI independence.
 No large UI automation framework. Real WPF and SendInput/Android checks are

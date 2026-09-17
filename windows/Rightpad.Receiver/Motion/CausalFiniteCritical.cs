@@ -23,13 +23,14 @@ internal sealed class CausalFiniteCritical
     {
         (TauMs, SupportMs) = mode switch
         {
-            MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 => (24, 120),
+            MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE or
+            MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE or MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE => (24, 120),
             MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 => (35, 140),
             _ => throw new ArgumentOutOfRangeException(nameof(mode))
         };
         if (frequency < 1000 || frequency % 250 != 0) throw new ArgumentOutOfRangeException(nameof(frequency));
         this.frequency = frequency; tau = TauMs / 1000.0;
-        SupportTicks = frequency / 250 * (SupportMs / 4);
+        SupportTicks = checked(frequency * SupportMs) / 1000;
         double r = SupportMs / (double)TauMs;
         Normalization = 1 - Math.Exp(-r) * (1 + r);
     }

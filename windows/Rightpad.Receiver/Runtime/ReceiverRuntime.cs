@@ -13,13 +13,15 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     private Run? current;
     private long nextRunId;
     public MotionMode ActiveMotionMode => motionMode;
+    public bool MotionTraceEnabled => motionTrace is not null;
     public IPEndPoint? LocalEndpoint => Volatile.Read(ref current)?.Receiver?.LocalEndpoint;
     public Task Completion => Volatile.Read(ref current)?.Task ?? Task.CompletedTask;
     public IPEndPoint? DiscoveryEndpoint => Volatile.Read(ref current)?.Discovery?.LocalEndpoint;
 
-    private sealed class Run(long id)
+    private sealed class Run(long id, MotionMode motionMode)
     {
         public readonly long Id = id;
+        public readonly MotionMode MotionMode = motionMode;
         public readonly CancellationTokenSource Cancellation = new();
         public readonly TaskCompletionSource<bool> Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task Task = Task.CompletedTask;
@@ -34,45 +36,50 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     public async Task StartAsync()
     {
         await lifecycle.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            var previous = current;
-            if (previous is not null)
-            {
-                if (!previous.Task.IsCompleted) return;
-                await previous.Task.ConfigureAwait(false);
-                previous.Cancellation.Dispose();
-            }
-            var run = new Run(++nextRunId);
-            Volatile.Write(ref current, run);
-            run.Task = Task.Run(() => RunAsync(run));
-            await run.Started.Task.ConfigureAwait(false);
-            if ((ReceiverState)Volatile.Read(ref run.State) == ReceiverState.Error)
-                await run.Task.ConfigureAwait(false);
-        }
+        try { await StartLockedAsync().ConfigureAwait(false); }
         finally { lifecycle.Release(); }
     }
 
     public async Task StopAsync()
     {
         await lifecycle.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            var run = current;
-            if (run is null) return;
-            if (!run.Task.IsCompleted)
-            {
-                Volatile.Write(ref run.State, (int)ReceiverState.Stopping);
-                run.Cancellation.Cancel();
-                await run.Task.ConfigureAwait(false);
-            }
-            if (run.Error is null) Volatile.Write(ref run.State, (int)ReceiverState.Stopped);
-        }
+        try { await StopLockedAsync().ConfigureAwait(false); }
         finally { lifecycle.Release(); }
+    }
+
+    private async Task StartLockedAsync()
+    {
+        var previous = current;
+        if (previous is not null)
+        {
+            if (!previous.Task.IsCompleted) return;
+            await previous.Task.ConfigureAwait(false);
+            previous.Cancellation.Dispose();
+        }
+        var run = new Run(++nextRunId, motionMode);
+        Volatile.Write(ref current, run);
+        run.Task = Task.Run(() => RunAsync(run));
+        await run.Started.Task.ConfigureAwait(false);
+        if ((ReceiverState)Volatile.Read(ref run.State) == ReceiverState.Error)
+            await run.Task.ConfigureAwait(false);
+    }
+
+    private async Task StopLockedAsync()
+    {
+        var run = current;
+        if (run is null) return;
+        if (!run.Task.IsCompleted)
+        {
+            Volatile.Write(ref run.State, (int)ReceiverState.Stopping);
+            run.Cancellation.Cancel();
+            await run.Task.ConfigureAwait(false);
+        }
+        if (run.Error is null) Volatile.Write(ref run.State, (int)ReceiverState.Stopped);
     }
 
     private async Task RunAsync(Run run)
     {
+        MotionMode motionMode = run.MotionMode;
         IMouseOutput? mouse = null;
         LeftButtonController? buttons = null;
         ITouchMotion? motion = null;
@@ -83,6 +90,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         UdpReceiver? receiver = null;
         try
         {
+            motionTrace?.BeginRuntimeRun(run.Id, motionMode);
             var initial = settings.Current;
             flightRecorder?.Event("runtime_start", ("runtimeRunId", run.Id));
             mouse = rawMouse ? (mouseFactory is not null ? mouseFactory() : MouseOutputFactory.Create(backend, flightRecorder, motionTrace)) : null;
@@ -97,7 +105,10 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 {
                     MotionMode.RAW => new TouchSessionProcessor(move, initial.SensitivityX, initial.SensitivityY),
                     MotionMode.RESAMPLED_250HZ or MotionMode.RESAMPLED_250HZ_BOXCAR_4MS or MotionMode.RESAMPLED_250HZ_BOXCAR_8MS or
-                    MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 =>
+                    MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 or
+                    MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE or
+                    MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE or
+                    MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE =>
                         new ResampledMotion(move, initial.SensitivityX, initial.SensitivityY, trace: motionTrace,
                             boxcarWindowMs: MotionModes.BoxcarWindowMs(motionMode),
                             finiteCriticalMode: MotionModes.IsFiniteCritical(motionMode) ? motionMode : MotionMode.RESAMPLED_250HZ),
@@ -109,11 +120,13 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                     motionClock = new(resampled, run.Cancellation.Cancel);
                 }
             }
-            output.WriteLine($"motion_mode: name={motionMode} periodMs={(motionMode == MotionMode.RAW ? 0 : 4)} playoutDelayMs={(motionMode == MotionMode.RAW ? 0 : 12)} boxcarWindowMs={MotionModes.BoxcarWindowMs(motionMode)} trace={(motionTrace is null ? "off" : "on")}");
+            output.WriteLine($"motion_mode: name={motionMode} quantizer={MotionModes.QuantizerName(motionMode)} periodMs={MotionModes.PeriodMs(motionMode)} playoutDelayMs={(motionMode == MotionMode.RAW ? 0 : 12)} boxcarWindowMs={MotionModes.BoxcarWindowMs(motionMode)} trace={(motionTrace is null ? "off" : "on")}");
+            flightRecorder?.Event("motion_configuration", ("runtimeRunId", run.Id), ("mode", motionMode.ToString()), ("quantizer", MotionModes.QuantizerName(motionMode)));
             if (MotionModes.IsFiniteCritical(motionMode))
             {
                 var kernel = MotionModes.FiniteCriticalParameters(motionMode);
-                output.WriteLine(FormattableString.Invariant($"finite_critical: tauMs={kernel.TauMs} supportMs={kernel.SupportMs} normalization={kernel.Normalization:R} quantizer=Q0 sensitivity=fixed-for-run"));
+                output.WriteLine(FormattableString.Invariant($"finite_critical: tauMs={kernel.TauMs} supportMs={kernel.SupportMs} normalization={kernel.Normalization:R} quantizer=Q0C sensitivity=fixed-for-run"));
+                output.WriteLine($"motion_lifecycle: up={(MotionModes.IsEarnedSettle(motionMode) ? "earned_settle contacts=continuous_until_settled" : "instant_flush contacts=independent")}");
             }
             Volatile.Write(ref run.Mouse, mouse);
             Volatile.Write(ref run.Motion, motion);
@@ -209,12 +222,15 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     {
         var run = Volatile.Read(ref current);
         string selectedName = rawMouse ? MouseOutputFactory.Name(backend) : "None (diagnostics)";
-        if (run is null) return new(0, ReceiverState.Stopped, MouseBackend: selectedName);
+        if (run is null) return new(0, ReceiverState.Stopped, MouseBackend: selectedName,
+            MotionModeName: ActiveMotionMode.ToString());
         var state = (ReceiverState)Volatile.Read(ref run.State);
         var r = Volatile.Read(ref run.Receiver);
-        if (r is null) return new(run.Id, state, MouseBackend: Volatile.Read(ref run.Mouse)?.BackendName ?? selectedName, LastError: Volatile.Read(ref run.Error));
+        if (r is null) return new(run.Id, state, MouseBackend: Volatile.Read(ref run.Mouse)?.BackendName ?? selectedName,
+            LastError: Volatile.Read(ref run.Error), MotionModeName: run.MotionMode.ToString());
         var s = r.Statistics;
         var motion = Volatile.Read(ref run.Motion);
+        var resampled = motion as ResampledMotion;
         var mouse = Volatile.Read(ref run.Mouse);
         var stats = mouse?.Stats ?? default;
         // Historical SendInput fields remain specific to that implementation.
@@ -228,6 +244,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             motion?.OutputEvents ?? 0, motion?.LastOutputAtTicks ?? 0,
             sendInput.Successes, sendInput.Failures, sendInput.LastSuccessAtTicks, sendInput.LastFailureAtTicks,
             stats.RelativeDx, stats.RelativeDy, stats.AbsDx, stats.AbsDy,
-            stats.Successes, stats.Failures, stats.LastSuccessAtTicks, stats.LastFailureAtTicks);
+            stats.Successes, stats.Failures, stats.LastSuccessAtTicks, stats.LastFailureAtTicks,
+            run.MotionMode.ToString(), resampled?.TickCount ?? 0, resampled?.MissedTicks ?? 0);
     }
 }

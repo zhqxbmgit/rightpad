@@ -4,7 +4,8 @@ namespace Rightpad.Receiver;
 
 internal sealed class ResampledMotion : ITouchMotion, IDisposable
 {
-    public const int PeriodMs = 4, PlayoutDelayMs = 12, Capacity = 4096;
+    public const int PlayoutDelayMs = 12, Capacity = 4096;
+    public int PeriodMs { get; }
     private readonly object gate = new();
     private readonly Action<int, int> output;
     private readonly Func<long> now;
@@ -13,18 +14,20 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     private readonly MotionTrace? trace;
     private readonly CausalBoxcar? boxcar;
     private readonly CausalFiniteCritical? finiteCritical;
+    private readonly bool earnedSettle;
     private bool HasPositionFilter => boxcar is not null || finiteCritical is not null;
     private long SupportTicks => boxcar?.WindowTicks ?? finiteCritical!.SupportTicks;
     private long integratedAt;
     private double baseX, baseY, integratedX, integratedY;
     private readonly RawMotionProcessor quantizer = new(); // Already scaled Q: unit gain, original residual owner.
+    private readonly CanonicalPositionQuantizer? canonicalQuantizer;
     private readonly record struct Point(long Time, double X, double Y);
     private readonly Point[] points = new Point[Capacity];
     private int head, count;
     private uint? session;
     private ulong run, androidOrigin, lastAndroid;
-    private long origin, generation, nextDeadline, lastPointTime, starvationAt;
-    private bool fallback, disposed;
+    private long origin, cadenceOrigin, generation, nextDeadline, lastPointTime, starvationAt;
+    private bool fallback, disposed, settling;
     private double rawX, rawY, targetX, targetY, playedX, playedY;
     private long processed, ignored, outputEvents, lastOutput, totalX, totalY;
     public Action? Changed { get; set; }
@@ -38,7 +41,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     public long UpFlushCount { get; private set; }
     public long BufferOverflows { get; private set; }
     public double LifecycleAbortDiscardedDistance { get; private set; }
-    public uint? ActiveSessionId { get { lock (gate) return session; } }
+    public uint? ActiveSessionId { get { lock (gate) return settling ? null : session; } }
     public long ProcessedMotionSamples => Interlocked.Read(ref processed);
     public long IgnoredSessionPackets => Interlocked.Read(ref ignored);
     public long OutputEvents => Interlocked.Read(ref outputEvents);
@@ -62,15 +65,21 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     {
         this.output = output; now = monotonicNow ?? Stopwatch.GetTimestamp;
         frequency = clockFrequency ?? Stopwatch.Frequency;
-        if (frequency < 1000 || frequency % 250 != 0) throw new ArgumentOutOfRangeException(nameof(clockFrequency));
+        PeriodMs = MotionModes.PeriodMs(finiteCriticalMode);
+        if (PeriodMs == 0 || frequency < 1000 || frequency % (1000 / PeriodMs) != 0)
+            throw new ArgumentOutOfRangeException(nameof(clockFrequency));
         _ = new RawMotionProcessor(sensitivityX, sensitivityY);
         this.sensitivityX = sensitivityX; this.sensitivityY = sensitivityY; this.trace = trace;
-        period = frequency / 250; delay = period * 3;
+        earnedSettle = MotionModes.IsEarnedSettle(finiteCriticalMode);
+        period = frequency / (1000 / PeriodMs);
+        // Playout is a fixed duration, independent of the selected output cadence.
+        delay = checked(frequency * PlayoutDelayMs) / 1000;
         boxcar = boxcarWindowMs == 0 ? null : new CausalBoxcar(boxcarWindowMs, frequency);
         if (finiteCriticalMode != MotionMode.RESAMPLED_250HZ)
         {
             if (boxcar is not null) throw new ArgumentException("Position filters cannot be combined.");
             finiteCritical = new CausalFiniteCritical(finiteCriticalMode, frequency);
+            canonicalQuantizer = new();
         }
     }
 
@@ -89,13 +98,36 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
             var h = packet.Header;
             if (h.EventType == TouchEventType.Down)
             {
+                if (earnedSettle && settling && run == h.SenderRunId)
+                {
+                    try
+                    {
+                        // Continue the same earned ledger and realized history. DOWN itself
+                        // creates no displacement, emits nothing and keeps the clock phase.
+                        AdvanceHistory(receivedAt);
+                        EndStarvation(receivedAt);
+                        session = h.SessionId; settling = false; fallback = false;
+                        var first = packet.Samples[0];
+                        androidOrigin = lastAndroid = first.TimestampNs; origin = receivedAt;
+                        rawX = first.X; rawY = first.Y;
+                        lastPointTime = Math.Max(lastPointTime, origin + delay);
+                        Append(new(lastPointTime, targetX, targetY));
+                        trace?.Write(MotionEventKind.SettleContinue, receivedAt, run: run, session: h.SessionId,
+                            x: targetX, y: targetY, a: playedX, b: playedY, count: generation);
+                        Changed?.Invoke();
+                        return;
+                    }
+                    catch { Clear(now(), aborted: true); throw; }
+                }
                 Clear(receivedAt, aborted: true);
                 session = h.SessionId; run = h.SenderRunId;
                 var s = packet.Samples[0]; androidOrigin = lastAndroid = s.TimestampNs;
-                origin = receivedAt; lastPointTime = origin + delay;
+                origin = cadenceOrigin = receivedAt; lastPointTime = origin + delay;
                 rawX = s.X; rawY = s.Y; Append(new(lastPointTime, 0, 0));
                 return;
             }
+            // The UP endpoint is frozen. A late MOVE/UP cannot add to a released contact.
+            if (settling) { ignored++; return; }
             if (session != h.SessionId || run != h.SenderRunId)
             {
                 if (session is not null) Clear(receivedAt, aborted: true);
@@ -118,6 +150,15 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                 }
                 if (h.EventType == TouchEventType.Up)
                 {
+                    if (earnedSettle)
+                    {
+                        settling = true;
+                        trace?.Write(MotionEventKind.SettleStart, receivedAt, lastPointTime, run, h.SessionId,
+                            x: targetX, y: targetY, a: targetX - playedX, b: targetY - playedY, count: generation);
+                        ArmClock(receivedAt);
+                        Changed?.Invoke();
+                        return;
+                    }
                     // This local motion lock covers the final write too. Gesture runs only after return.
                     generation++; nextDeadline = 0;
                     UpFlushCount++;
@@ -136,8 +177,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                 }
                 else if (nextDeadline == 0)
                 {
-                    long baseTime = origin + delay;
-                    nextDeadline = receivedAt < baseTime ? baseTime : baseTime + ((receivedAt - baseTime) / period + 1) * period;
+                    ArmClock(receivedAt);
                 }
                 Changed?.Invoke();
             }
@@ -213,6 +253,13 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
         }
         integratedAt = at;
     }
+
+    private void ArmClock(long receivedAt)
+    {
+        if (nextDeadline != 0) return;
+        long baseTime = cadenceOrigin + delay;
+        nextDeadline = receivedAt < baseTime ? baseTime : baseTime + ((receivedAt - baseTime) / period + 1) * period;
+    }
     private void Append(Point point)
     {
         if (count > 0 && At(count - 1).Time == point.Time) { points[(head + count - 1) % Capacity] = point; return; }
@@ -278,7 +325,17 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                     // No future segment: hold the known endpoint and park, never invent velocity.
                     // A jump exactly at this boundary has not occupied any integration time yet.
                     if (!HasPositionFilter || (integratedX == baseX && integratedY == baseY &&
-                        (boxcar?.IsSettled(actualWake) ?? finiteCritical!.IsSettled(actualWake)))) nextDeadline = 0;
+                        (boxcar?.IsSettled(actualWake) ?? finiteCritical!.IsSettled(actualWake))))
+                    {
+                        nextDeadline = 0;
+                        if (settling)
+                        {
+                            trace?.Write(MotionEventKind.SettleComplete, actualWake, run: run, session: session.Value,
+                                x: targetX, y: targetY, count: generation);
+                            Clear(actualWake, aborted: false);
+                            return;
+                        }
+                    }
                     if (starvationAt == 0)
                     {
                         starvationAt = actualWake; Starvations++;
@@ -292,12 +349,16 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
 
     private void Emit(double x, double y, long at)
     {
-        var delta = quantizer.Process(x - playedX, y - playedY);
+        var delta = canonicalQuantizer is null
+            ? quantizer.Process(x - playedX, y - playedY)
+            : canonicalQuantizer.Submit(x, y, output);
         playedX = x; playedY = y;
         trace?.Write(MotionEventKind.Logical, at, run: run, session: session!.Value,
-            x: delta.X, y: delta.Y, a: quantizer.ResidualX, b: quantizer.ResidualY, count: generation);
+            x: delta.X, y: delta.Y,
+            a: canonicalQuantizer is null ? quantizer.ResidualX : x - canonicalQuantizer.EmittedX,
+            b: canonicalQuantizer is null ? quantizer.ResidualY : y - canonicalQuantizer.EmittedY, count: generation);
         if (delta.X == 0 && delta.Y == 0) return;
-        output(delta.X, delta.Y);
+        if (canonicalQuantizer is null) output(delta.X, delta.Y);
         outputEvents++; lastOutput = now(); totalX += delta.X; totalY += delta.Y;
     }
 
@@ -315,8 +376,9 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
         double distance = Math.Sqrt(Math.Pow(targetX - playedX, 2) + Math.Pow(targetY - playedY, 2));
         if (aborted) LifecycleAbortDiscardedDistance += distance;
         trace?.Write(MotionEventKind.Reset, at, run: run, session: session ?? 0, x: aborted ? distance : 0, count: generation);
-        generation++; session = null; head = count = 0; nextDeadline = 0; fallback = false;
+        generation++; session = null; head = count = 0; nextDeadline = 0; fallback = settling = false;
         rawX = rawY = targetX = targetY = playedX = playedY = 0; quantizer.Reset();
+        canonicalQuantizer?.Reset();
         baseX = baseY = integratedX = integratedY = 0; integratedAt = at; boxcar?.Reset(at); finiteCritical?.Reset(at);
         Changed?.Invoke();
     }

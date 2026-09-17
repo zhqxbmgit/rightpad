@@ -26,7 +26,9 @@ internal static class FlightRecorderTests
         recorder.Snapshot(new RuntimeStatsSnapshot(3, ReceiverState.Running, now - Stopwatch.Frequency,
             ReceivedPackets: 11, AcceptedPackets: 7, AcceptedSamples: 9, Presence: new(0xAB, now, true, "127.0.0.1"),
             HeartbeatPackets: 4, LastHeartbeatAtTicks: now, LastTouchDatagramAtTicks: now - 2 * Stopwatch.Frequency,
-            MotionOutputEvents: 5, SendInputSuccesses: 6));
+            MotionOutputEvents: 5, SendInputSuccesses: 6,
+            MotionModeName: "RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE", MotionClockTicks: 997,
+            MissedMotionClockTicks: 3));
         await RuntimeTests.Until(() => storage.Lines.Count == 1);
         var j = Json(storage.Lines.Single());
         Equal("snapshot", j.GetProperty("type").GetString(), "snapshot type");
@@ -34,6 +36,9 @@ internal static class FlightRecorderTests
         Equal("00000000000000AB", j.GetProperty("senderRunId").GetString(), "run formatting");
         Equal(2000d, j.GetProperty("lastTouchDatagramAgeMs").GetDouble(), "monotonic age");
         Equal(5L, j.GetProperty("motionOutputEvents").GetInt64(), "existing motion counter");
+        Equal("RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE", j.GetProperty("motionMode").GetString(), "actual motion mode");
+        Equal(997L, j.GetProperty("motionClockTicks").GetInt64(), "actual motion clock ticks");
+        Equal(3L, j.GetProperty("missedMotionClockTicks").GetInt64(), "missed clock opportunities");
     }
 
     public static async Task PeriodicSnapshot()

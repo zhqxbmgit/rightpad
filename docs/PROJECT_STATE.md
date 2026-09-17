@@ -1,18 +1,91 @@
 # rightpad Project State
 
-Updated: 2026-09-14
+Updated: 2026-09-16
 
 ## 1. Current Phase
 
 当前阶段：
 
-Motion research checkpoint (2026-09-14): B remains the active production-use
-baseline (`RESAMPLED_250HZ`, fixed 250 Hz / 4 ms / 12 ms, production Q0-I), with
-positive human/game A/B evidence. F4/F8 and K24/K35 research prototypes are
-implemented. K24 native qualification is **FAIL_ENDPOINT**; K35 is
-**NOT_QUALIFIED / NOT_RUN_SHARED_Q0_GATE_BLOCKED**, not an observed K35 native
-failure. See section 17 for the frozen numerical certification and new counterexample.
-The current B instance is retained; this checkpoint does not deploy or switch modes.
+**Production Motion cadence is fixed at 1000 Hz (2026-09-16, uncommitted).**
+Ordinary GUI and launcher startup always construct
+`RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE`: 1 ms period, K24 tau24/T120,
+Earned-Settle, Q0-C, 12 ms playout, run-fixed sensitivity, libvirtualhid and
+MotionTrace off by default. The Motion page has no cadence selector or current-
+cadence status. Product cadence is not persisted.
+
+`motionCadenceHz` was removed from the formal six-field RuntimeSettings schema.
+An older settings file containing either 250 or 1000 is accepted without warning;
+the unknown field cannot affect startup and is omitted by the next normal settings
+save. Explicit `--dev-motion-mode` remains authoritative. Fixed 250 Hz / 4 ms and
+500 Hz / 2 ms K24-r5 Earned-Settle modes remain for development, regression,
+benchmarking and diagnostics, alongside explicit development 1000 Hz.
+
+The former 250/1000 product-selector implementation and its live-switch evidence
+remain historical experiment context under ignored test results; there is no
+product cadence switch lifecycle now. General Receiver Stop/Start, Android
+reconnection, Virtual HID cleanup and diagnostics lifecycles remain unchanged.
+Trace-off Flight Recorder snapshots continue to expose the actual run mode and
+Motion clock/missed-tick counters for bounded verification.
+
+Motion research state (2026-09-15, uncommitted): K24/K35 now use canonical
+exact-state Q0-C; B/F retain legacy Q0-I. The original K24 permanent endpoint
+counterexample is PASS_EXACT with Q0-C. New numerical certification v3 and
+independent K24/K35 native qualification passed for the instant-flush modes.
+**K24-r5 Earned-Settle production configuration selected**: the sole product mode is
+`RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE`, tau24/T120, Q0-C,
+1000Hz/1ms/12ms, startup-fixed sensitivity, trace OFF by default, libvirtualhid.
+Fixed 250Hz/4ms and 500Hz/2ms remain available only through explicit development
+mode selection.
+No mode switches frequency automatically. UP freezes the
+earned target and the original K24 continues until settled; a new DOWN during
+settlement continues the same cumulative ledger without flushing old backlog.
+Raw-UP click/drag/button timing stays independent of Motion settlement.
+
+Cadence Debug/Release builds and all 423 tests passed. The same Android workload
+ran after independent 250/500/1000 Receiver restarts. Constant-motion interiors
+had 0 skipped/catch-up ticks in all three modes; the complete 1000Hz trace had
+one correctly skipped opportunity among 12017 opportunities, with no replay.
+Endpoints and gesture/button release checks passed. Final trace-OFF 1000Hz PID
+31524 passed a separate minimal movement/click/drag smoke and is left for human
+game testing, Running/Connected, LastError null. Automatic input is stopped.
+Evidence: `windows/test-results/k24-settle-cadence-ab-20260915/`.
+
+The earlier measured medium/fast delivery of about 125 nonzero reports/s at every
+internal cadence used a background Raw Input observer. N60 control testing found
+about 1000 Hz foreground dispatch, about 125 Hz background dispatch, and about
+1000 Hz again after foreground restoration. The old result therefore cannot
+represent foreground game-style Raw Input delivery and does not establish either
+a global Windows 125 Hz limit or a specific responsible kernel component.
+
+Formal foreground central 10-second windows measured Raw/nonzero and independent
+dispatch rates of approximately 238.5/238.5 Hz at 250 mode, 466.2/466.2 Hz at
+500 mode, and 883.5/882.5 Hz at 1000 mode. Corresponding actual MotionClock rates
+were approximately 250.0/499.6/996.1 Hz. Q0-C zero-count logical ticks and very
+few skipped opportunities account for the main remaining gap from nominal clock;
+1000 mode is not claimed to emit 1000 nonzero events, eliminate latency, or be
+universally best.
+
+Matched replay used the same accepted real Android traces in both arms: 18/18
+paired final integer dx/dy results were identical and all 36/36 Earned-Settle arms
+completed. Formal cost windows measured higher active-motion CPU, allocation and
+context-switch cost at 1000 Hz, with a very low missed-opportunity ratio, no
+catch-up replay, no mouse-output failure, and no runtime error or disconnect.
+These results remain objective historical evidence for selecting production
+1000 Hz; they do not establish that 1000 Hz is universally best.
+
+The preceding 250Hz lifecycle prototype passed Debug/Release and all 406 tests.
+Its bounded Android-to-libvirtualhid
+Raw Input control/settle comparison preserved 90/900/0-count endpoints for a
+single short swipe, ten same-direction swipes and ten alternating swipes.
+Single tap, double-tap drag and re-arm passed with released buttons. The final
+independent trace-OFF Receiver was Running/Connected, LastError null, with final
+movement/click/drag smoke passed and automatic input stopped. Evidence is under
+`windows/test-results/k24-earned-settle-20260915/`. This is not a new numerical
+certification or a claim of improved human game feel. The existing instant-flush
+K24 remains a development control. The later production status above
+supersedes this prototype-era classification.
+See `docs/MOTION_ENGINE.md` sections 17–18 for settlement, button and cadence semantics, and
+section 17 below for the preceding Q0-C qualification evidence.
 
 The following completed-feature records retain their original validation dates,
 test counts and runtime identities; they are not the current Motion qualification.
@@ -524,7 +597,7 @@ Fractional residual：
 
 ## 11. Current Sensitivity
 
-RAW default：
+Historical RAW baseline sensitivity：
 
 ```text
 sensitivityX = 7.0
@@ -729,17 +802,22 @@ Glide 仍违反当前 Relative Mouse / no artificial inertia 约束。
 
 Rightpad 的目标不是简单复制或匹配 Moonlight，而是在自身 Fixed Feel、Relative
 Mouse、视觉稳定、微操和自然控制要求下找到最佳 Motion 系统，并在可行时争取超过
-当前 B 与当前 Moonlight reference。最终 Motion Engine 尚未选择。
+当前 B 与当前 Moonlight reference。当前选定产品 Motion 是固定 1000 Hz K24-r5
+Q0-C Earned-Settle；未来替代候选仍必须以证据评估。
 
 ---
 
 ## 17. Motion Engine Candidate Status
 
-RAW → B 真人游戏 A/B 已完成，B 明显更好，因此当前实际使用与研究 baseline 是 B：
+RAW → B 真人游戏 A/B 已完成，B 明显更好，因此已有真人验证的研究 baseline 是 B：
 `RESAMPLED_250HZ`，固定 250 Hz / 4 ms 输出机会、固定 12 ms playout、
 timestamp-aware reconstruction，后级保留 production Q0-I。
-这描述当前使用选择：EXE 与 launcher 的无参数默认仍是历史 RAW，本 checkpoint
-不改变启动默认值。F/K 仅通过显式 development/research mode 选择，不能自动启用。
+This is historical comparison context, not the current launch contract. Ordinary
+GUI launch and the launcher without an explicit development Motion option always
+use fixed 1000 Hz K24-r5 Earned-Settle. The product UI has no cadence selector.
+Legacy `motionCadenceHz` is ignored and removed on the next settings save. Fixed
+250/500 Hz and other research controls require explicit `--dev-motion-mode`, which
+remains authoritative for development runs.
 
 B 的已验证主观优点：
 
@@ -764,13 +842,38 @@ normalized critical-damping-shaped position convolution：
 
 K 的共同配置为固定 250 Hz、4 ms output opportunity、12 ms playout；完整有限
 支撑、DOWN 前 zero history、run 固定参数，no prediction / glide / adaptation。
-它们保留 production RawMotionProcessor Q0-I，并未获准作为最终产品 Motion。
+2026-09-15：K family 已从 Q0-I prototype 升级为 Q0-C，权威状态为当前
+binary64 cumulative P 与已成功提交的 Int64 cumulative I，逐轴 exact truncate(P-I)。
+normal tick 与 UP 使用同一合同；B/F legacy Q0-I、kernel、tau/T、cadence、
+playout 与 sensitivity mapping 未改变。GUI、startup、trace、diagnostics 明示
+quantizer=Q0C/Q0I。当前产品状态仅包括 1000 Hz K24-r5 Earned-Settle；
+250/500 Hz SETTLE 及其它 K/B/F 模式仍是显式 development/research controls。
+
+新 `rightpad.k-q0c-oracle/3.0.0`：K24/K35 冻结 corpus 各 319 PASS_EXACT，
+加本轮 micro/chatter、boundary 与原 native failure，共 **726 PASS_EXACT、
+0 PASS_BOUNDARY_PAIRED、0 FAIL、0 INCONCLUSIVE**；Debug/Release rebuild
+均 0 warning/error，tests 各 **391/391 PASS**。原 failure 的 normal tick 输出
+缺失的 +1，held/UP 与追加 1000 个恒零机会保持 I=0，无 terminal special case。
+
+B control → K24 → K35 依次独立 Stop/Start native 验证通过。K24/K35 首项
+left_right gate 的 normal/held/UP 与 Raw Input endpoint 均为 (0,0)；完整
+qualification 各 39 contacts，无 endpoint/post-fence 失败，含 6 个大积压
+立即 UP 的 drag contacts，motion flush/button release 顺序正确、click haptic
+确认通过。trace ON 两个 K 均无 missed/skipped/catch-up。当前留下 K35/Q0C
+trace OFF 供真人测试；Android 原 MainActivity/PID 保持前台，未重启。
+UP backlog 风险仍在：本轮运动 combined pending 的 p95/max 约为 K24
+614/651、K35 814/856 counts，必须由真人游戏评估控制感；不代表 kernel 已改善。
+详细研究、数值合同与 native 报告保留在 ignored
+`windows/test-results/motion-k-q0c-20260915/` 与
+`windows/test-results/motion-k-q0c-certification-20260915/`；未 commit/push。
+
+### Historical Q0-I prototype qualification (2026-09-14)
 
 Q0 Mathematical Oracle v2 对当时冻结 corpus 的认证结果：K24 与 K35 **各自
 319/319 PASS_EXACT、0 FAIL、0 INCONCLUSIVE**。该认证只覆盖冻结输入，
 不证明任意未来输入；不能替代 native qualification 或真人游戏验证。
 
-最新真实 Android → UDP → Receiver → libvirtualhid → Raw Input 的 K24
+当日真实 Android → UDP → Receiver → libvirtualhid → Raw Input 的 K24
 `left_right` contact 中，连续有限核最终 P exact 回到 0，但 production Q0-I
 的 incremental residual roundoff 使最后 `total = 0x1.fffffffffffffp-1`，
 未输出最后 +1 count。managed 与 Raw Input 最终均为 **(-1,0)**，held 和 UP
@@ -779,13 +882,12 @@ Q0 Mathematical Oracle v2 对当时冻结 corpus 的认证结果：K24 与 K35 *
 
 由于该反例暴露 shared production Q0-I endpoint issue，K35 后续 native
 qualification 被阻断：**NOT_QUALIFIED / NOT_RUN_SHARED_Q0_GATE_BLOCKED**。
-K35 未执行本轮 native qualification，不能描述为 K35 已实测失败或 ready。
+K35 未执行该轮 native qualification，不能描述为当时 K35 已实测失败或 ready。
 自动 unit/regression tests Debug/Release 各 379/379 通过，均 0 failed；
-但 K24 native qualification 当前 endpoint 失败，不能泛称所有 correctness gates 通过。
+但当时 K24 native qualification endpoint 失败，不能泛称所有 correctness gates 通过。
 
-下一研究方向是 K family 的 canonical exact-state quantization / Q0 numerical
-realization，而非重新调 kernel；必须保护 B/F legacy Q0-I behavior。
-Q0-C 尚未实现。新的 numerical/native 门槛通过前，不放行 K family 真人游戏 A/B。
+该反例促成本轮 K-only canonical exact-state quantization；当时 Q0-C 尚未
+实现，K 真人游戏 A/B 被阻断。2026-09-15 的新资格结论见上，不覆盖历史失败证据。
 原始认证与 native 反例分别保留在 ignored
 `windows/test-results/motion-q0-gate-v2-20260914/` 和
 `windows/test-results/motion-finite-kernel-native-20260914/`，本 checkpoint 不提交这些证据。
@@ -840,9 +942,9 @@ Immediate:
 1. Validate automatic discovery on the second physical PC at its separate location
 2. Run the formal SendInput vs Virtual HID A/B measurement when separately requested
 3. Run the diagnostic-only Flight Recorder with cursor/input-environment witnesses during normal use; freeze the next real CASE 5 before probing
-4. Research K-family canonical exact-state quantization / Q0 numerical realization
-   after the native endpoint counterexample, preserving B/F legacy Q0-I behavior;
-   qualify numerical/native gates before resuming K human game A/B
+4. Run human game A/B of qualified K24/K35 Q0-C against B, emphasizing continuous
+   stability, micro-control, reversal/stop and immediate-UP backlog; decide on
+   promotion/commit only after human results, preserving B/F legacy Q0-I
 5. Continue monitoring Single Tap feel and accidental clicks during normal use
 
 Evaluate:
@@ -865,7 +967,7 @@ Moonlight alone.
 
 Do not implement yet:
 
-- Final product Motion-filter selection/promotion (F4/F8 and K24/K35 research prototypes are implemented)
+- Alternative Motion-filter research beyond the selected production 1000 Hz K24-r5 configuration
 - Double Tap Drag: completed; see current validation above
 - game profiles
 - network optimization
@@ -885,11 +987,11 @@ latency, jitter and stability remain separate work when requested; they are not
 claims established by this adoption. Keep the explicit development override for
 those comparisons and diagnostics, with no automatic fallback.
 
-Motion-filter selection remains separate and evidence-driven. Do not implement a
-complicated filter without a measured need and an explicit fixed candidate. Rank
-candidates by continuous smoothness, wobble and velocity stability, micro-control,
-natural feel and comfort together with measured path, UP, reversal, stop/settling
-and latency costs. No candidate algorithm is selected by this project-state update.
+Future Motion changes remain evidence-driven. Do not replace the selected fixed
+1000 Hz K24-r5 product configuration with a complicated filter without a measured
+need and an explicit fixed candidate. Rank candidates by continuous smoothness,
+wobble and velocity stability, micro-control, natural feel and comfort together
+with measured path, UP, reversal, stop/settling and latency costs.
 
 ## Maintenance Rule
 
