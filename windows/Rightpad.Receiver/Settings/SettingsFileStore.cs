@@ -35,12 +35,14 @@ internal sealed class SettingsFileStore(string path)
                 fallback = true;
                 return defaultValue;
             }
+            double ReadOptional(string name, double defaultValue, double min, double max, bool integer = false) =>
+                root.TryGetProperty(name, out _) ? Read(name, defaultValue, min, max, integer) : defaultValue;
             var settings = new RuntimeSettings(Read("sensitivityX", 7, .1, 30), Read("sensitivityY", 7, .1, 30),
                 (int)Read("tapMaxDurationMs", 300, 50, 1500, true), Read("tapMovementThresholdPx", 8, .5, 100),
                 (int)Read("clickHoldMs", 25, 1, 200, true),
-                root.TryGetProperty("doubleTapIntervalMs", out _)
-                    ? (int)Read("doubleTapIntervalMs", RuntimeSettings.Default.DoubleTapIntervalMs, 50, 1000, true)
-                    : RuntimeSettings.Default.DoubleTapIntervalMs);
+                (int)ReadOptional("doubleTapIntervalMs", RuntimeSettings.Default.DoubleTapIntervalMs, 50, 1000, true),
+                (int)ReadOptional("smoothingTauMs", RuntimeSettings.DefaultSmoothingTauMs, 8, 60, true),
+                (int)ReadOptional("smoothingSupportMs", RuntimeSettings.DefaultSmoothingSupportMs, 40, 300, true));
             return (settings, fallback ? "Some settings were invalid or missing. Defaults were used for those fields." : null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
@@ -74,7 +76,41 @@ internal sealed class SettingsFileStore(string path)
         catch (OperationCanceledException) { }
     }
 
-    private async Task WriteLatestAsync()
+    public async Task<bool> SaveNowAsync(RuntimeSettings settings)
+    {
+        if (!settings.IsProductValid) throw new ArgumentOutOfRangeException(nameof(settings));
+        long immediateRevision;
+        lock (gate)
+        {
+            if (closing)
+            {
+                Volatile.Write(ref saveError, "Settings save failed. Changes were not applied.");
+                return false;
+            }
+            latest = settings;
+            revision++;
+            immediateRevision = revision;
+            delayCancellation?.Cancel();
+            delayCancellation?.Dispose();
+            delayCancellation = null;
+        }
+        bool saved = await WriteLatestAsync().ConfigureAwait(false);
+        if (!saved)
+        {
+            lock (gate)
+            {
+                // A failed explicit Save remains a UI draft. Exit Flush must not retry it.
+                if (revision == immediateRevision)
+                {
+                    latest = null;
+                    savedRevision = immediateRevision;
+                }
+            }
+        }
+        return saved;
+    }
+
+    private async Task<bool> WriteLatestAsync()
     {
         await writer.WaitAsync().ConfigureAwait(false);
         try
@@ -85,7 +121,7 @@ internal sealed class SettingsFileStore(string path)
             {
                 value = latest;
                 writingRevision = revision;
-                if (value is null || writingRevision == savedRevision) return;
+                if (value is null || writingRevision == savedRevision) return true;
             }
             // File operations run off the UI thread, including directory creation and replacement.
             await Task.Run(async () =>
@@ -109,10 +145,12 @@ internal sealed class SettingsFileStore(string path)
             }).ConfigureAwait(false);
             lock (gate) savedRevision = writingRevision;
             Volatile.Write(ref saveError, null);
+            return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            Volatile.Write(ref saveError, "Settings active, save failed.");
+            Volatile.Write(ref saveError, "Settings save failed. Changes were not applied.");
+            return false;
         }
         finally { writer.Release(); }
     }

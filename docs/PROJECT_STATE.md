@@ -1,19 +1,53 @@
 # rightpad Project State
 
-Updated: 2026-09-16
+Updated: 2026-09-18
 
 ## 1. Current Phase
 
 当前阶段：
 
-**Production Motion cadence is fixed at 1000 Hz (2026-09-16, uncommitted).**
-Ordinary GUI and launcher startup always construct
-`RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE`: 1 ms period, K24 tau24/T120,
-Earned-Settle, Q0-C, 12 ms playout, run-fixed sensitivity, libvirtualhid and
-MotionTrace off by default. The Motion page has no cadence selector or current-
-cadence status. Product cadence is not persisted.
+**Live Sensitivity and safe Runtime Restart implemented and verified (2026-09-18,
+uncommitted).** Successful Save publishes an atomic X/Y pair used per real input
+sample before target accumulation. Draft/failed Save and output ticks cannot
+change gain; old targets, pending and history remain intact. Tau/Support remain
+frozen per run. Motion displays actual Active and committed Saved values, with
+a guarded async Restart Receiver action for a mismatch. Restart joins cleanup,
+tries the saved target twice, then restores the previous active Motion config
+with current committed sensitivity; recovery never rolls back persisted settings.
 
-`motionCadenceHz` was removed from the formal six-field RuntimeSettings schema.
+Debug and isolated Release: 448/448 tests passed, zero warnings/errors. Nine new
+tests cover live gain, realized-history preservation, atomic pair publication,
+Save failure, UDP input, lifecycle guards, retry and recovery. Existing 24/120,
+Q0-C, Earned-Settle, 1000 Hz and 12 ms regressions remain passing.
+Real device automation produced 90/30/90 output counts from repeated 10 px
+Android swipes at sensitivity 9/3/9, within WPF PID 408 and Runtime run 1.
+One Android tap per Restart applied 24/120 -> 18/90 -> 24/120, runs 1 -> 2 -> 3,
+with the same WPF PID, natural heartbeat reconnection, movement, click and Android
+haptic performed=true. Final settings are 9/9 and 24/120, Connected, libvirtualhid,
+LastError null and mouseOutputFailures=0. This is automated real-device evidence,
+not a new human game-feel assessment. Evidence: ignored
+`windows/test-results/live-sensitivity-restart-20260918/`.
+
+**Production Motion algorithm is fixed; Tau/Support are configurable per Receiver
+run (2026-09-17, uncommitted).** Ordinary GUI and launcher startup construct the
+1000 Hz / 1 ms finite-critical Earned-Settle Q0-C path with fixed 12 ms playout,
+live committed sensitivity, libvirtualhid and MotionTrace off by default. Product
+defaults remain the validated tau 24 ms / support 120 ms baseline. The Motion page
+edits integer Tau 8..60 ms in 1 ms steps and Support 40..300 ms in 5 ms steps.
+They are independent settings; there is no automatic ratio or `support=tau*5`
+rule. Product cadence and playout are not configurable or persisted.
+
+Each ordinary production Start snapshots the committed settings and constructs
+one immutable run configuration. Saving new values does not hot-switch the active
+kernel; Stop/Start applies them to the next run. The 1000 Hz tick path does not
+read settings or resize/rebuild the kernel. MotionTrace metadata uses the same
+frozen Tau/Support. Explicit `--dev-motion-mode` remains authoritative and keeps
+each development mode's original fixed parameters, including explicit production-
+named K24-r5 mode selection.
+
+`RuntimeSettings` now has eight product fields, adding `smoothingTauMs` and
+`smoothingSupportMs`. Older six-field JSON loads 24/120 without a migration file;
+invalid Tau or Support falls back independently. `motionCadenceHz` remains absent.
 An older settings file containing either 250 or 1000 is accepted without warning;
 the unknown field cannot affect startup and is omitted by the next normal settings
 save. Explicit `--dev-motion-mode` remains authoritative. Fixed 250 Hz / 4 ms and
@@ -31,13 +65,16 @@ Motion research state (2026-09-15, uncommitted): K24/K35 now use canonical
 exact-state Q0-C; B/F retain legacy Q0-I. The original K24 permanent endpoint
 counterexample is PASS_EXACT with Q0-C. New numerical certification v3 and
 independent K24/K35 native qualification passed for the instant-flush modes.
-**K24-r5 Earned-Settle production configuration selected**: the sole product mode is
-`RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE`, tau24/T120, Q0-C,
-1000Hz/1ms/12ms, startup-fixed sensitivity, trace OFF by default, libvirtualhid.
+**Finite-critical Earned-Settle production algorithm selected**: the product path
+uses `RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE` as its retained algorithm-
+family identity, Q0-C, 1000Hz/1ms/12ms, live committed sensitivity, trace OFF by
+default and libvirtualhid. Tau24/Support120 is the validated default baseline;
+ordinary product runs may use other saved legal Tau/Support combinations.
 Fixed 250Hz/4ms and 500Hz/2ms remain available only through explicit development
 mode selection.
-No mode switches frequency automatically. UP freezes the
-earned target and the original K24 continues until settled; a new DOWN during
+No mode switches frequency or parameters automatically. UP freezes the
+earned target and the run-fixed kernel continues until its configured Support is
+settled; a new DOWN during
 settlement continues the same cumulative ledger without flushing old backlog.
 Raw-UP click/drag/button timing stays independent of Motion settlement.
 

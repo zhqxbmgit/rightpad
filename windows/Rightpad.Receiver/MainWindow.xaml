@@ -25,9 +25,29 @@
         <ContentControl x:Name="PageContent" HorizontalContentAlignment="Stretch"/>
       </ScrollViewer>
     </Grid>
-    <StackPanel Grid.Row="2" Margin="204,0,24,12">
-      <TextBlock Text="{Binding Stats.Error}" Foreground="#F0AA91" Style="{StaticResource OptionalNotice}"/>
-      <TextBlock Text="{Binding Settings.Notice}" Style="{StaticResource OptionalNotice}" AutomationProperties.AutomationId="SettingsNotice"/>
-    </StackPanel>
+    <DockPanel Grid.Row="2" Margin="204,0,24,12" LastChildFill="True">
+      <Button DockPanel.Dock="Right" Content="Save" AutomationProperties.AutomationId="SaveSettings" IsEnabled="{Binding Settings.CanSave}" Click="SaveSettings" Margin="16,8,0,0" MinWidth="84" VerticalAlignment="Top">
+        <Button.Style>
+          <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CurrentPage}" Value="{x:Static local:ReceiverPage.Motion}"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
+              <DataTrigger Binding="{Binding CurrentPage}" Value="{x:Static local:ReceiverPage.Tap}"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Button.Style>
+      </Button>
+      <Button DockPanel.Dock="Right" Content="{Binding RestartText}" AutomationProperties.AutomationId="RestartReceiver" IsEnabled="{Binding CanRestart}" Click="RestartReceiver" Margin="16,8,0,0" VerticalAlignment="Top">
+        <Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+          <Setter Property="Visibility" Value="Collapsed"/>
+          <Style.Triggers><DataTrigger Binding="{Binding CurrentPage}" Value="{x:Static local:ReceiverPage.Motion}"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+        </Style></Button.Style>
+      </Button>
+      <StackPanel>
+        <TextBlock Text="{Binding RestartError}" Foreground="#F0AA91" Style="{StaticResource OptionalNotice}" AutomationProperties.AutomationId="RestartError"/>
+        <TextBlock Text="{Binding Stats.Error}" Foreground="#F0AA91" Style="{StaticResource OptionalNotice}"/>
+        <TextBlock Text="{Binding Settings.Notice}" Style="{StaticResource OptionalNotice}" AutomationProperties.AutomationId="SettingsNotice"/>
+      </StackPanel>
+    </DockPanel>
   </Grid>
 </Window>

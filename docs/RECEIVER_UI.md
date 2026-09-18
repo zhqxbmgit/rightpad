@@ -51,7 +51,7 @@ Four UserControls selected by a ListBox / ReceiverPage enum / ContentControl:
 | Page | Contents |
 |---|---|
 | Overview | Connection: status, current presence Android IP, Last Seen, listener, sample/packet Hz, Gap/Old/Invalid. Receiver: runtime state, a compact Start with Windows toggle, and one Start/Stop button. |
-| Motion (default) | Sensitivity X/Y numeric editors and a read-only summary of the fixed production Motion configuration. No cadence selector, slider or mode dropdown. |
+| Motion (default) | Sensitivity X/Y plus integer Smoothing Tau and Support numeric editors, followed by a read-only summary of the fixed production algorithm. No cadence selector, slider or mode dropdown. |
 | Tap | Tap settings: duration, movement threshold, click hold. No Enabled row or toggle. |
 | Diagnostics | Input/Transport: sample/packet Hz, Gap/Old/Invalid/Duplicate/Input Timeout, Heartbeat Packets, Presence Timeouts, Outdated Run Packets. Receiver: state, backend, touch session, last accepted age, last remote IP. |
 
@@ -81,19 +81,24 @@ errors leave a Start retry in Overview and a concise global error message.
 
 ## Parameters and editing
 
-| Parameter | Default | Product range | Button/key step |
-|---|---:|---:|---:|
-| Sensitivity X/Y | 7.00 | 0.10..30.00 | 0.05 |
-| Tap Max Duration | 300 ms | 50..1500 ms, integer | 10 ms |
-| Movement Threshold | 8 px | 0.5..100 px | 0.5 px |
-| Click Hold | 25 ms | 1..200 ms, integer | 1 ms |
+| Parameter | Default | Display precision | Product range | Button/key step |
+|---|---:|---:|---:|---:|
+| Sensitivity X/Y | 7.0 | 1 decimal place | 0.1..30.0 | 0.5 |
+| Smoothing Tau | 24 ms | Integer | 8..60 ms, integer | 1 ms |
+| Support | 120 ms | Integer | 40..300 ms, integer | 5 ms |
+| Tap Max Duration | 300 ms | Integer | 50..1500 ms, integer | 10 ms |
+| Movement Threshold | 8 px | Up to 2 decimal places | 0.5..100 px | 0.5 px |
+| Click Hold | 25 ms | Integer | 1..200 ms, integer | 1 ms |
 
 Native TextBox supports typing and copy/paste; +/- and keyboard Up/Down step.
-Sensitivity displays two decimal places; threshold up to two. Enter/blur formats,
-Escape restores the last effective value. Valid text publishes immediately.
-Empty/unfinished decimal text remains a UI draft; invalid/out-of-range text has
-an inline hint and does not publish or save. No Apply/Save/Restart requirement.
-Step size does not restrict direct integer entries such as 301 ms.
+Sensitivity displays one decimal place and accepts at most one decimal place in
+direct input; Tau and Support accept integers only; threshold displays up to two. Enter/blur formats,
+Escape restores the last successfully saved value. Editors operate only on one
+shared draft across Motion and Tap. Empty/unfinished decimal text remains a UI
+draft; invalid/out-of-range text has an inline hint and disables Save. Only the
+single footer Save button commits settings; Enter, blur, page navigation and Exit
+do not apply or persist a draft. Step size does not restrict direct integer entries
+such as 301 ms.
 
 Ranges for Tap are verified from the old Moonlight PreferenceConfiguration.
 Sensitivity's product range was explicitly approved for rightpad; it is not the
@@ -106,11 +111,33 @@ neither Euclidean distance nor desktop pixels; small RAW motion is not suppresse
 
 ## Runtime settings boundaries
 
-RuntimeSettings is an immutable seven-field record. RuntimeSettingsStore publishes
+RuntimeSettings is an immutable eight-field record. RuntimeSettingsStore publishes
 the complete reference using Interlocked.Exchange; readers use Volatile.Read.
 
-- Sensitivity: once per accepted packet, all historical/current samples use that
-  snapshot. Only subsequent deltas change gain; do not reset position or residual.
+- Sensitivity: successful disk Save followed by committed publication atomically
+  replaces an immutable X/Y pair. Production Motion reads that pair at each real
+  sample's canonical target accumulation, including mid-contact MOVE and the UP
+  endpoint. Draft/failed Save never changes live gain. Existing targets, pending
+  displacement, realized history and Q0-C state are preserved. No settings read
+  is added to the 1000 Hz output tick.
+- Smoothing Tau and Support: captured once when a production Receiver run is
+  constructed. Tau is the finite-critical time constant; Support is the maximum
+  retained history/truncation duration, not a fixed added delay. They are
+  independently configurable and no Tau/Support ratio is imposed. A successful
+  Save updates the committed snapshot but never rebuilds or changes the current
+  run's kernel; Stop/Start constructs the next run from the saved values.
+- Motion shows Active from the actual running MotionConfiguration and Saved from
+  committed settings. A mismatch while running displays Restart required.
+  Restart Receiver is enabled only for that mismatch, outside Save and lifecycle
+  work. During async restart it reads Restarting..., and Save, numeric editors
+  and Start/Stop are disabled. A stopped receiver retains its ordinary Start.
+- Restart holds the Runtime lifecycle lock across complete Stop/cleanup and new
+  Start. It retries the same committed target once, then attempts the previously
+  active Motion configuration with current committed sensitivity and gesture
+  settings. Recovery never writes settings.json or republishes old settings.
+  The WPF process remains alive. Successful recovery shows the old Active/new
+  Saved mismatch and a nonmodal error with both target failures. Failed recovery
+  shows a high-priority error with all failures and leaves manual Start available.
 - Duration/threshold: capture at accepted DOWN, retain for that entire gesture.
 - Click Hold: read when requesting the click. Every queued request owns its hold
   duration; later changes cannot retime an active or queued click.
@@ -126,6 +153,8 @@ click durations. No packet reordering, filtering or output scheduling is added.
 {
   "sensitivityX": 7.0,
   "sensitivityY": 7.0,
+  "smoothingTauMs": 24,
+  "smoothingSupportMs": 120,
   "tapMaxDurationMs": 300,
   "tapMovementThresholdPx": 8.0,
   "clickHoldMs": 25,
@@ -137,20 +166,25 @@ System.Text.Json only. Missing file uses defaults. Invalid JSON/root or read
 failure uses defaults; invalid/missing/null/wrong-type/out-of-range fields fall
 back individually, preserving valid fields. Unknown fields are ignored. Settings
 problems never prevent Receiver startup; recoverable warnings are nonmodal.
-`motionCadenceHz` is no longer part of the six-field product schema. Older files
+Older six-field files that omit `smoothingTauMs` or `smoothingSupportMs` load the
+24/120 validated baseline without a migration file. An invalid Tau or Support
+falls back independently while every other valid field remains loaded.
+`motionCadenceHz` is not part of the eight-field product schema. Older files
 that contain either 250 or 1000 are accepted without warning; the field is ignored,
 ordinary startup still uses fixed production 1000 Hz, and the next normal settings
 save omits it. Explicit `--dev-motion-mode` remains authoritative and can select
-the retained fixed 250/500/1000 development modes without adding a product UI.
+the retained fixed 250/500/1000 development modes with their original fixed
+kernel parameters; product Tau/Support never replace a dev mode's parameters.
 
-Valid UI edits immediately publish to memory and restart a 500 ms debounce.
-Background I/O writes a same-directory temporary file then replaces the target.
-A serialized writer reads the latest revision after acquiring its gate, so old
-work cannot overwrite a newer completed save. No synchronous per-edit disk I/O.
-Save failure leaves current input settings effective and displays
-`Settings active, save failed.` No infinite retry. Normal close cancels the delay
-and flushes the latest pending value. Forced termination/power loss cannot promise
-the last unflushed edit survives.
+UI edits change only the shared draft. Save validates all eight fields, immediately
+writes a same-directory temporary file and replaces the target on background I/O,
+then atomically publishes one complete RuntimeSettings snapshot only after the
+write succeeds. A failed save displays `Settings save failed. Changes were not
+applied.`, leaves Runtime unchanged and retains the retryable draft. Unsaved draft
+is discarded on application exit; shutdown FlushAsync only completes explicitly
+queued or saved committed data. Tap settings from a successful Save affect
+subsequent input actions. The low-level 500 ms Schedule/debounce path remains for
+existing non-UI compatibility and tests, but SettingsViewModel does not use it.
 
 ## Statistics and threading
 
@@ -206,10 +240,14 @@ cancels and awaits input, clears gesture and queued clicks, attempts LEFT UP,
 resets motion/session and releases the port. A new Run cannot start until the old
 task and its cleanup complete. Errors stop only the runtime; GUI can retry.
 
-Ordinary GUI startup constructs the Runtime with the sole 1000 Hz product mode.
-Cadence does not change during that process lifetime. General Stop/Start still uses
-the same serialized cleanup path and restarts the same fixed mode; explicit
-development modes are chosen only by launch arguments.
+Ordinary GUI startup constructs the Runtime with the sole 1000 Hz finite-critical
+Q0-C Earned-Settle product algorithm and fixed 12 ms playout. Cadence does not
+change during that process lifetime. Every Start snapshots committed Tau/Support
+once into an immutable run configuration; the 1 ms tick path never reads the
+settings store, parses strings, resizes history or rebuilds the kernel. General
+Stop/Start uses the same serialized cleanup path and applies the latest saved
+Tau/Support to the fresh run; explicit development modes are chosen only by launch
+arguments and keep their fixed parameters.
 
 No-argument entry is GUI. Explicit `--diagnostics` preserves protocol diagnostics;
 `--raw-mouse` preserves RAW dev CLI and tuning options. Both reuse ReceiverRuntime.
@@ -236,7 +274,7 @@ The independent interactive launcher requirement remains unchanged.
 ## Verification and non-goals
 
 Retain all existing valid tests, update entry coverage, and test settings fallback,
-six-field persistence, legacy cadence-field removal, debounce/latest-wins/flush/
+eight-field persistence, legacy cadence-field removal, debounce/latest-wins/flush/
 failure, atomic publication,
 packet consistency and residual retention, gesture and click snapshot boundaries,
 Start/Stop/error recovery/old callback isolation, statistics and UI independence.

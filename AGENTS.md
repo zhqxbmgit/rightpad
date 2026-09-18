@@ -178,6 +178,13 @@ behavior.
 
 ## Fixed Feel / No Runtime Adaptation
 
+Explicit manual-Save exception (2026-09-18): the user may hot-apply committed
+Sensitivity X/Y after a successful disk Save and settings publication. The pair
+switches atomically for new real input displacement, including mid-contact.
+Existing targets, pending displacement and realized history are never rescaled.
+This is a deliberate user configuration change, never automatic adaptation.
+Tau/Support and all other Motion shaping parameters remain frozen per run.
+
 Runtime motion feel must be stationary. Once a Motion configuration is selected,
 every parameter that affects control feel must remain fixed for that run. The same
 physical finger movement under the same fixed configuration must produce the same

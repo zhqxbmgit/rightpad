@@ -3,8 +3,8 @@ namespace Rightpad.Receiver;
 // Fixed causal position convolution. A bounded history records only already-realized R.
 internal sealed class CausalFiniteCritical
 {
-    // 4096 segments across at most 140 ms: >29k distinct boundaries/s including ticks
-    // and arrivals. Pathological accepted bursts fail visibly; support is never shortened.
+    // 4096 segments across the product maximum 300 ms: >13k distinct boundaries/s including
+    // 1 kHz ticks and arrivals. Pathological accepted bursts fail visibly; support is never shortened.
     public const int Capacity = 4096;
     private readonly record struct Segment(long Start, long End, double X0, double Y0, double X1, double Y1);
     private readonly Segment[] segments = new Segment[Capacity];
@@ -20,14 +20,17 @@ internal sealed class CausalFiniteCritical
     public int LastIntegratedSegments { get; private set; }
 
     public CausalFiniteCritical(MotionMode mode, long frequency)
+        : this(MotionModes.FiniteCriticalParameters(mode).TauMs,
+            MotionModes.FiniteCriticalParameters(mode).SupportMs, frequency)
     {
-        (TauMs, SupportMs) = mode switch
-        {
-            MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE or
-            MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE or MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE => (24, 120),
-            MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 => (35, 140),
-            _ => throw new ArgumentOutOfRangeException(nameof(mode))
-        };
+        if (!MotionModes.IsFiniteCritical(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+    }
+
+    public CausalFiniteCritical(int tauMs, int supportMs, long frequency)
+    {
+        if (tauMs <= 0) throw new ArgumentOutOfRangeException(nameof(tauMs));
+        if (supportMs <= 0) throw new ArgumentOutOfRangeException(nameof(supportMs));
+        TauMs = tauMs; SupportMs = supportMs;
         if (frequency < 1000 || frequency % 250 != 0) throw new ArgumentOutOfRangeException(nameof(frequency));
         this.frequency = frequency; tau = TauMs / 1000.0;
         SupportTicks = checked(frequency * SupportMs) / 1000;

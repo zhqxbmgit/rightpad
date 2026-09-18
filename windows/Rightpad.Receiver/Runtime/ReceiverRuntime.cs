@@ -3,25 +3,48 @@ using System.Net;
 
 namespace Rightpad.Receiver;
 
+internal sealed record ActiveRuntimeSnapshot(RuntimeSettings Settings, MotionConfiguration Motion);
+internal sealed record ReceiverRestartResult(bool Succeeded, bool Restored, string? Error);
+
 internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter output, MouseBackend backend,
     IPEndPoint? endpoint = null, Func<IMouseOutput>? mouseFactory = null, bool rawMouse = true,
     FlightRecorder? flightRecorder = null,
     IPEndPoint? discoveryEndpoint = null, Func<byte[]>? identityFactory = null,
-    MotionMode motionMode = MotionMode.RAW, MotionTrace? motionTrace = null)
+    MotionMode motionMode = MotionMode.RAW, MotionTrace? motionTrace = null,
+    bool useProductMotionSettings = false)
 {
     private readonly SemaphoreSlim lifecycle = new(1, 1);
     private Run? current;
     private long nextRunId;
+    private int restarting;
+    public bool IsRestarting => Volatile.Read(ref restarting) != 0;
+    public SensitivitySnapshot ActiveSensitivity => settings.Sensitivity.Current;
+    public ActiveRuntimeSnapshot? CaptureActiveRuntimeSnapshot()
+    {
+        var run = Volatile.Read(ref current);
+        if (run is null || (ReceiverState)Volatile.Read(ref run.State) != ReceiverState.Running) return null;
+        var sensitivity = settings.Sensitivity.Current;
+        return new(settings.Current with
+        {
+            SensitivityX = sensitivity.X, SensitivityY = sensitivity.Y,
+            SmoothingTauMs = run.MotionConfiguration.FiniteCriticalTauMs,
+            SmoothingSupportMs = run.MotionConfiguration.FiniteCriticalSupportMs
+        }, run.MotionConfiguration);
+    }
     public MotionMode ActiveMotionMode => motionMode;
+    public MotionConfiguration ActiveMotionConfiguration => Volatile.Read(ref current)?.MotionConfiguration ??
+        ResolveMotionConfiguration(settings.Current);
     public bool MotionTraceEnabled => motionTrace is not null;
     public IPEndPoint? LocalEndpoint => Volatile.Read(ref current)?.Receiver?.LocalEndpoint;
     public Task Completion => Volatile.Read(ref current)?.Task ?? Task.CompletedTask;
     public IPEndPoint? DiscoveryEndpoint => Volatile.Read(ref current)?.Discovery?.LocalEndpoint;
 
-    private sealed class Run(long id, MotionMode motionMode)
+    private sealed class Run(long id, RuntimeSettings initialSettings, MotionConfiguration motionConfiguration)
     {
         public readonly long Id = id;
-        public readonly MotionMode MotionMode = motionMode;
+        public readonly RuntimeSettings InitialSettings = initialSettings;
+        public readonly MotionConfiguration MotionConfiguration = motionConfiguration;
+        public MotionMode MotionMode => MotionConfiguration.Mode;
         public readonly CancellationTokenSource Cancellation = new();
         public readonly TaskCompletionSource<bool> Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task Task = Task.CompletedTask;
@@ -31,6 +54,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         public ITouchMotion? Motion;
         public int State = (int)ReceiverState.Starting;
         public string? Error;
+        public SensitivitySnapshot? ReportedSensitivity;
     }
 
     public async Task StartAsync()
@@ -40,6 +64,11 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         finally { lifecycle.Release(); }
     }
 
+    private MotionConfiguration ResolveMotionConfiguration(RuntimeSettings snapshot) =>
+        useProductMotionSettings && motionMode == MotionModes.ProductionMode
+            ? MotionConfiguration.Product(snapshot)
+            : MotionModes.FixedConfiguration(motionMode);
+
     public async Task StopAsync()
     {
         await lifecycle.WaitAsync().ConfigureAwait(false);
@@ -47,7 +76,48 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         finally { lifecycle.Release(); }
     }
 
-    private async Task StartLockedAsync()
+    public async Task<ReceiverRestartResult> RestartAsync()
+    {
+        if (Interlocked.CompareExchange(ref restarting, 1, 0) != 0)
+            return new(false, false, "Receiver restart is already in progress.");
+        await lifecycle.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var previous = CaptureActiveRuntimeSnapshot();
+            if (previous is null) return new(false, false, "Receiver is not running. Use Start Receiver.");
+            // Capture both target and recovery before stopping. Neither path publishes settings.
+            var target = settings.Current;
+            var errors = new List<string>();
+            await StopLockedAsync().ConfigureAwait(false);
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                bool recovery = attempt == 3;
+                try
+                {
+                    await StartLockedAsync(recovery ? previous.Settings : target,
+                        recovery ? previous.Motion : ResolveMotionConfiguration(target)).ConfigureAwait(false);
+                    if (CaptureSnapshot().RuntimeState == ReceiverState.Running)
+                    {
+                        if (!recovery) return new(true, false, null);
+                        return new(false, true,
+                            "Restart failed. Previous receiver configuration was restored. " + string.Join(" | ", errors));
+                    }
+                    errors.Add($"{(recovery ? "Recovery" : $"Target attempt {attempt}")}: {CaptureSnapshot().LastError}");
+                }
+                catch (Exception e) { errors.Add($"Attempt {attempt}: {e}"); }
+                // Join failed initialization and release its socket/device before the next attempt.
+                await StopLockedAsync().ConfigureAwait(false);
+            }
+            return new(false, false, "Receiver restart failed and automatic recovery failed. " + string.Join(" | ", errors));
+        }
+        catch (Exception e)
+        {
+            return new(false, false, "Receiver restart failed and automatic recovery failed. " + e);
+        }
+        finally { lifecycle.Release(); Volatile.Write(ref restarting, 0); }
+    }
+
+    private async Task StartLockedAsync(RuntimeSettings? snapshot = null, MotionConfiguration? configuration = null)
     {
         var previous = current;
         if (previous is not null)
@@ -56,7 +126,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             await previous.Task.ConfigureAwait(false);
             previous.Cancellation.Dispose();
         }
-        var run = new Run(++nextRunId, motionMode);
+        RuntimeSettings initial = snapshot ?? settings.Current;
+        var run = new Run(++nextRunId, initial, configuration ?? ResolveMotionConfiguration(initial));
         Volatile.Write(ref current, run);
         run.Task = Task.Run(() => RunAsync(run));
         await run.Started.Task.ConfigureAwait(false);
@@ -80,6 +151,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     private async Task RunAsync(Run run)
     {
         MotionMode motionMode = run.MotionMode;
+        MotionConfiguration motionConfiguration = run.MotionConfiguration;
         IMouseOutput? mouse = null;
         LeftButtonController? buttons = null;
         ITouchMotion? motion = null;
@@ -90,8 +162,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         UdpReceiver? receiver = null;
         try
         {
-            motionTrace?.BeginRuntimeRun(run.Id, motionMode);
-            var initial = settings.Current;
+            motionTrace?.BeginRuntimeRun(run.Id, motionConfiguration);
+            var initial = run.InitialSettings;
             flightRecorder?.Event("runtime_start", ("runtimeRunId", run.Id));
             mouse = rawMouse ? (mouseFactory is not null ? mouseFactory() : MouseOutputFactory.Create(backend, flightRecorder, motionTrace)) : null;
             if (rawMouse && mouse is null) throw new InvalidOperationException("Mouse output factory returned no backend.");
@@ -111,7 +183,9 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                     MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE =>
                         new ResampledMotion(move, initial.SensitivityX, initial.SensitivityY, trace: motionTrace,
                             boxcarWindowMs: MotionModes.BoxcarWindowMs(motionMode),
-                            finiteCriticalMode: MotionModes.IsFiniteCritical(motionMode) ? motionMode : MotionMode.RESAMPLED_250HZ),
+                            finiteCriticalMode: MotionModes.IsFiniteCritical(motionMode) ? motionMode : MotionMode.RESAMPLED_250HZ,
+                            configuration: MotionModes.IsFiniteCritical(motionMode) ? motionConfiguration : null,
+                            liveSensitivity: settings.Sensitivity),
                     _ => throw new ArgumentOutOfRangeException(nameof(motionMode))
                 };
                 if (motion is ResampledMotion resampled)
@@ -124,8 +198,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             flightRecorder?.Event("motion_configuration", ("runtimeRunId", run.Id), ("mode", motionMode.ToString()), ("quantizer", MotionModes.QuantizerName(motionMode)));
             if (MotionModes.IsFiniteCritical(motionMode))
             {
-                var kernel = MotionModes.FiniteCriticalParameters(motionMode);
-                output.WriteLine(FormattableString.Invariant($"finite_critical: tauMs={kernel.TauMs} supportMs={kernel.SupportMs} normalization={kernel.Normalization:R} quantizer=Q0C sensitivity=fixed-for-run"));
+                output.WriteLine(FormattableString.Invariant($"finite_critical: tauMs={motionConfiguration.FiniteCriticalTauMs} supportMs={motionConfiguration.FiniteCriticalSupportMs} normalization={motionConfiguration.KernelNormalization:R} quantizer=Q0C sensitivity=live-committed-per-sample"));
                 output.WriteLine($"motion_lifecycle: up={(MotionModes.IsEarnedSettle(motionMode) ? "earned_settle contacts=continuous_until_settled" : "instant_flush contacts=independent")}");
             }
             Volatile.Write(ref run.Mouse, mouse);
@@ -225,6 +298,12 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         if (run is null) return new(0, ReceiverState.Stopped, MouseBackend: selectedName,
             MotionModeName: ActiveMotionMode.ToString());
         var state = (ReceiverState)Volatile.Read(ref run.State);
+        var live = settings.Sensitivity.Current;
+        if (state == ReceiverState.Running && Interlocked.Exchange(ref run.ReportedSensitivity, live) != live)
+        {
+            output.WriteLine(FormattableString.Invariant($"live_sensitivity: runtimeRunId={run.Id} sensitivityX={live.X} sensitivityY={live.Y}"));
+            flightRecorder?.Event("live_sensitivity", ("runtimeRunId", run.Id), ("x", live.X), ("y", live.Y));
+        }
         var r = Volatile.Read(ref run.Receiver);
         if (r is null) return new(run.Id, state, MouseBackend: Volatile.Read(ref run.Mouse)?.BackendName ?? selectedName,
             LastError: Volatile.Read(ref run.Error), MotionModeName: run.MotionMode.ToString());

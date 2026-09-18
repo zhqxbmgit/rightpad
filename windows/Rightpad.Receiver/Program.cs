@@ -60,7 +60,8 @@ internal static class Program
         MotionMode selectedMotion = ResolveGuiMotionMode(launch);
         using var motionTrace = launch.MotionTraceDirectory is null ? null : new MotionTrace(launch.MotionTraceDirectory, selectedMotion);
         var runtime = new ReceiverRuntime(store, log, flightRecorder: flightRecorder, backend: launch.Backend,
-            motionMode: selectedMotion, motionTrace: motionTrace);
+            motionMode: selectedMotion, motionTrace: motionTrace,
+            useProductMotionSettings: !launch.MotionExplicit);
         flightRecorder.StartSnapshots(runtime.CaptureSnapshot);
         var app = new App();
         app.InitializeComponent();

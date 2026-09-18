@@ -10,7 +10,7 @@ internal enum MotionEventKind
     Sample, Enqueue, Tick, Position, Logical, ManagedBegin, ManagedEnd, NativeBegin, NativeEnd,
     UpFlush, Fence, Reset, StarvationStart, StarvationEnd, DuplicateTimestamp, BackwardTimestamp, LateSample, BufferOverflow,
     BoxcarPosition, BoxcarUpPending, KernelPosition, KernelUpPending, KernelIntegration, KernelHistoryError,
-    SettleStart, SettleComplete, SettleContinue
+    SettleStart, SettleComplete, SettleContinue, SensitivityChanged
 }
 
 internal readonly record struct MotionTraceEvent(MotionEventKind Kind, long Qpc, long ReferenceQpc,
@@ -24,7 +24,7 @@ internal sealed class MotionTrace : IDisposable
     private readonly MotionTraceEvent[] events;
     private readonly string directory;
     private readonly System.Threading.Timer requests;
-    private MotionMode mode;
+    private MotionConfiguration configuration;
     private long runtimeRunId;
     private long start, allocationStart;
     private TimeSpan cpuStart;
@@ -37,7 +37,7 @@ internal sealed class MotionTrace : IDisposable
     public MotionTrace(string directory, MotionMode mode, int capacity = 262144)
     {
         if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
-        this.directory = directory; this.mode = mode;
+        this.directory = directory; configuration = MotionModes.FixedConfiguration(mode);
         Directory.CreateDirectory(directory);
         events = new MotionTraceEvent[capacity];
         ResetAccounting();
@@ -47,12 +47,15 @@ internal sealed class MotionTrace : IDisposable
     // A trace export is one Runtime run. Switching cadence starts a fresh segment so
     // events from different fixed configurations can never share ambiguous metadata.
     public void BeginRuntimeRun(long id, MotionMode activeMode)
+        => BeginRuntimeRun(id, MotionModes.FixedConfiguration(activeMode));
+
+    public void BeginRuntimeRun(long id, MotionConfiguration activeConfiguration)
     {
         lock (gate)
         {
             if (frozen) return;
             runtimeRunId = id;
-            mode = activeMode;
+            configuration = activeConfiguration;
             head = length = 0;
             overwritten = 0;
             ResetAccounting();
@@ -109,7 +112,8 @@ internal sealed class MotionTrace : IDisposable
             long end = Stopwatch.GetTimestamp(), allocated = GC.GetTotalAllocatedBytes() - allocationStart;
             double cpuMs = (Process.GetCurrentProcess().TotalProcessorTime - cpuStart).TotalMilliseconds;
             int[] collections = [GC.CollectionCount(0) - gcStart[0], GC.CollectionCount(1) - gcStart[1], GC.CollectionCount(2) - gcStart[2]];
-            MotionMode exportedMode = mode;
+            MotionConfiguration exportedConfiguration = configuration;
+            MotionMode exportedMode = exportedConfiguration.Mode;
             long exportedRuntimeRunId = runtimeRunId, exportedStart = start;
             export = Task.Run(() =>
             {
@@ -130,9 +134,9 @@ internal sealed class MotionTrace : IDisposable
                     PeriodMs = MotionModes.PeriodMs(exportedMode), PlayoutDelayMs = exportedMode == MotionMode.RAW ? 0 : 12,
                     BoxcarWindowMs = MotionModes.BoxcarWindowMs(exportedMode), Pid = Environment.ProcessId,
                     GcCollections = collections, LogicalProcessors = Environment.ProcessorCount,
-                    TauMs = MotionModes.FiniteCriticalParameters(exportedMode).TauMs,
-                    SupportMs = MotionModes.FiniteCriticalParameters(exportedMode).SupportMs,
-                    KernelNormalization = MotionModes.FiniteCriticalParameters(exportedMode).Normalization,
+                    TauMs = exportedConfiguration.FiniteCriticalTauMs,
+                    SupportMs = exportedConfiguration.FiniteCriticalSupportMs,
+                    KernelNormalization = exportedConfiguration.KernelNormalization,
                     Scope = "Managed and native-call boundaries; no VHF submit or hardware timestamp. CPU/allocation are whole-process including instrumentation."
                 }, new JsonSerializerOptions { WriteIndented = true }));
             });

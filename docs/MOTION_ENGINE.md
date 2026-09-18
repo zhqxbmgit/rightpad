@@ -129,6 +129,14 @@ including any mapping, sensitivity, gain, filter coefficients, time constants,
 damping parameters, windows, output cadence and playout timing. The implementation
 must not alter them in response to the current input or environment.
 
+The explicit manual-Save exception approved on 2026-09-18 allows live committed
+Sensitivity X/Y changes. Only a successful disk Save and committed publication
+can switch the immutable pair. Each new real sample reads one pair immediately
+before canonical target accumulation; old displacement, pending, filter history
+and quantizer state retain their earned values. The output tick never reads this
+source. Tau/Support and all timing/filter parameters remain frozen per run.
+This user action is not speed-, noise-, environment- or intent-based adaptation.
+
 Avoid:
 
 - Dynamic sensitivity
@@ -177,7 +185,7 @@ glide or inertia for that goal.
 
 # 4. Processing Pipeline
 
-Current target pipeline:
+Current production pipeline:
 
 ```text id="my1w23"
 Raw Touch Sample
@@ -188,15 +196,15 @@ Position Delta Calculation
 
         ↓
 
-Motion Filtering
+Live Committed Sensitivity Scaling / Canonical Target Accumulation
 
         ↓
 
-Sensitivity Scaling
+Fixed Finite-Critical Motion Filtering
 
         ↓
 
-Fractional Accumulator
+Q0-C Canonical Position Quantization
 
         ↓
 
@@ -420,13 +428,13 @@ Not appropriate for deterministic input.
 
 # 9. Sensitivity
 
-Sensitivity is a fixed multiplier.
+Sensitivity is a constant multiplier between explicit successful user Saves.
+Production applies it to new real displacement before filtering:
 
 Formula:
 
 ```
-mouseDelta =
-filteredDelta × sensitivity
+earnedTarget += rawDelta × committedSensitivity
 ```
 
 Example:
@@ -446,6 +454,12 @@ means:
 ```
 
 No hidden curves.
+
+The immutable X/Y pair is read once per real sample, not at filtered output time.
+An explicit Save may switch gain mid-contact; previous target/history/pending
+counts remain untouched. Failed Save and draft edits leave the pair unchanged.
+MotionTrace records SensitivityChanged when a real sample first uses a new pair;
+run metadata continues to describe the actual frozen Tau/Support configuration.
 
 ---
 
@@ -652,21 +666,23 @@ establishes that Rightpad has already surpassed it.
 
 ---
 
-# 17. K24 Earned-Settle Lifecycle (2026-09-15; product status updated 2026-09-16)
+# 17. Finite-Critical Earned-Settle Lifecycle (product status updated 2026-09-17)
 
 Mode `RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE` retains the K24-r5
 kernel (tau 24 ms, finite support 120 ms), Q0-C, 250 Hz / 4 ms opportunities,
 12 ms playout, startup-fixed sensitivity and libvirtualhid output. The original
 `RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5` remains the instant-flush control.
-This lifecycle began as a research candidate. The selected production configuration
-is now the 1000 Hz K24-r5 Earned-Settle mode. The 250 Hz and 500 Hz variants remain
+This lifecycle began as a research candidate. The selected production algorithm
+is now the 1000 Hz finite-critical Earned-Settle path. Its default Tau24/Support120
+configuration remains exactly equivalent to the former fixed K24-r5 baseline.
+The 250 Hz and 500 Hz variants remain
 explicit development, regression, benchmark and diagnostic modes. This status
 supersedes the earlier prototype and product-selector classifications.
 
 UP includes its last real coordinate, freezes the earned cumulative target and
 ends the touch session for Gesture. It emits no immediate Motion flush. The same
-MotionClock continues evaluating the original K24 against the realized history
-until the full finite support has become constant. The normal Q0-C submission
+MotionClock continues evaluating the run-fixed finite-critical kernel against the
+realized history until its configured finite Support has become constant. The normal Q0-C submission
 completes that endpoint, then the clock parks and the completed chain is cleared.
 No velocity is integrated after release and no distance beyond the target is
 created. Integer endpoints finish exactly; fractional endpoints retain Q0-C's
@@ -767,7 +783,47 @@ ratio, no catch-up replay, no mouse-output failure, and no runtime error or
 disconnect. They remain historical objective evidence for the production decision,
 not a claim that 1000 Hz is universally best.
 
-# 19. Current Philosophy
+# 19. Product Tau/Support Configuration (2026-09-17)
+
+The production algorithm remains fixed: 1000 Hz / 1 ms cadence, finite-critical
+convolution, Q0-C, Earned-Settle and 12 ms playout. Only two product parameters
+are editable:
+
+| Parameter | Default | Product range | Step |
+|---|---:|---:|---:|
+| Tau | 24 ms | 8..60 ms | 1 ms |
+| Support | 120 ms | 40..300 ms | 5 ms |
+
+Tau is the kernel's main time constant. Support is the maximum causal history and
+truncation duration; it is not a fixed extra delay. Both are positive integers
+and independently configurable. There is no enforced ratio, no automatic
+`support=tau*5`, and no speed-, noise-, network-, FPS- or load-based adaptation.
+The legal range produces a finite positive normalization, including the minimum
+Support/Tau ratio 40/60; no additional mathematical constraint is needed.
+
+Ordinary GUI production Start reads one committed `RuntimeSettings` snapshot and
+freezes Tau/Support in an immutable run configuration used to construct the
+kernel. Save updates disk and the committed settings snapshot, but the active run
+continues with its original values. Stop disposes that engine; the next Start
+constructs a new engine from the latest committed values. There is no per-tick
+settings read, kernel rebuild, allocation or history resize. The existing fixed
+4096-segment history covers the 300 ms product maximum and fails visibly rather
+than silently shortening Support under pathological overload.
+
+Explicit `--dev-motion-mode` modes remain fixed experiments and take precedence
+over product settings. Their original Tau/Support are preserved even when the
+selected enum is the production-named 1000 Hz K24-r5 mode. MotionTrace records
+the actual frozen run Tau/Support so metadata cannot follow a later Save.
+
+Tau24/Support120 paired deterministic replay is the regression gate: integer
+dx/dy, endpoint, reversal, stop, reset, lifecycle cancellation, skipped-tick
+policy, 1 ms cadence and Q0-C must remain identical to the fixed K24-r5 baseline.
+Representative legal combinations through Tau60/Support300 must conserve the
+canonical endpoint, settle in finite time, reject stale output after reset and
+create no artificial distance. Parameterization changes neither convolution
+mathematics nor quantization semantics; it adds no velocity glide or prediction.
+
+# 20. Current Philosophy
 
 The best Motion Engine is not the most complicated one.
 

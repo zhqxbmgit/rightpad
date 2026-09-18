@@ -53,6 +53,33 @@ internal static class MotionModes
         double r = tau == 0 ? 0 : support / (double)tau;
         return (tau, support, tau == 0 ? 0 : 1 - Math.Exp(-r) * (1 + r));
     }
+
+    public static MotionConfiguration FixedConfiguration(MotionMode mode)
+    {
+        var kernel = FiniteCriticalParameters(mode);
+        return new(mode, kernel.TauMs, kernel.SupportMs);
+    }
+}
+
+// Immutable configuration captured once at Receiver run construction. Development modes use
+// their fixed mode parameters; only the ordinary production path substitutes saved Tau/Support.
+internal readonly record struct MotionConfiguration(MotionMode Mode, int FiniteCriticalTauMs, int FiniteCriticalSupportMs)
+{
+    public int PeriodMs => MotionModes.PeriodMs(Mode);
+    public bool IsFiniteCritical => MotionModes.IsFiniteCritical(Mode);
+    public bool IsEarnedSettle => MotionModes.IsEarnedSettle(Mode);
+    public double KernelNormalization
+    {
+        get
+        {
+            if (!IsFiniteCritical) return 0;
+            double r = FiniteCriticalSupportMs / (double)FiniteCriticalTauMs;
+            return 1 - Math.Exp(-r) * (1 + r);
+        }
+    }
+
+    public static MotionConfiguration Product(RuntimeSettings settings) =>
+        new(MotionModes.ProductionMode, settings.SmoothingTauMs, settings.SmoothingSupportMs);
 }
 
 // Shared accepted-input boundary; RAW's calculations and lifecycle remain in its original class.

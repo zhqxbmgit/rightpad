@@ -59,9 +59,12 @@ internal static class DoubleTapSettingsTests
                 Check(vm.DoubleTapInterval.Error.Length > 0, "inline validation");
             }
             vm.DoubleTapInterval.Text = "130"; vm.DoubleTapInterval.Step(1);
-            Equal(140, store.Current.DoubleTapIntervalMs, "ten ms step and immediate publish");
-            vm.DoubleTapInterval.Text = "151"; Equal(151, store.Current.DoubleTapIntervalMs, "integer not quantized to step");
-            await file.FlushAsync(); Equal(151, SettingsFileStore.Load(path).Settings.DoubleTapIntervalMs, "UI auto save");
+            Equal(140, vm.DraftSettings.DoubleTapIntervalMs, "ten ms draft step");
+            Equal(130, store.Current.DoubleTapIntervalMs, "draft step does not publish");
+            vm.DoubleTapInterval.Text = "151"; Equal(151, vm.DraftSettings.DoubleTapIntervalMs, "integer not quantized to step");
+            Check(await vm.SaveAsync(), "explicit Save succeeds");
+            Equal(151, store.Current.DoubleTapIntervalMs, "explicit Save publishes");
+            Equal(151, SettingsFileStore.Load(path).Settings.DoubleTapIntervalMs, "explicit Save writes immediately");
         }
         finally { File.Delete(path); }
     }

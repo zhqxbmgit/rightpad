@@ -11,6 +11,8 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     private readonly Func<long> now;
     private readonly long frequency, period, delay;
     private readonly double sensitivityX, sensitivityY;
+    private readonly LiveSensitivity? liveSensitivity;
+    private SensitivitySnapshot? lastSensitivity;
     private readonly MotionTrace? trace;
     private readonly CausalBoxcar? boxcar;
     private readonly CausalFiniteCritical? finiteCritical;
@@ -61,24 +63,29 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
 
     public ResampledMotion(Action<int, int> output, double sensitivityX = 1, double sensitivityY = 1,
         Func<long>? monotonicNow = null, long? clockFrequency = null, MotionTrace? trace = null, int boxcarWindowMs = 0,
-        MotionMode finiteCriticalMode = MotionMode.RESAMPLED_250HZ)
+        MotionMode finiteCriticalMode = MotionMode.RESAMPLED_250HZ, MotionConfiguration? configuration = null,
+        LiveSensitivity? liveSensitivity = null)
     {
         this.output = output; now = monotonicNow ?? Stopwatch.GetTimestamp;
         frequency = clockFrequency ?? Stopwatch.Frequency;
-        PeriodMs = MotionModes.PeriodMs(finiteCriticalMode);
+        MotionConfiguration activeConfiguration = configuration ?? MotionModes.FixedConfiguration(finiteCriticalMode);
+        if (activeConfiguration.Mode != finiteCriticalMode) throw new ArgumentException("Motion configuration mode does not match.", nameof(configuration));
+        PeriodMs = activeConfiguration.PeriodMs;
         if (PeriodMs == 0 || frequency < 1000 || frequency % (1000 / PeriodMs) != 0)
             throw new ArgumentOutOfRangeException(nameof(clockFrequency));
         _ = new RawMotionProcessor(sensitivityX, sensitivityY);
         this.sensitivityX = sensitivityX; this.sensitivityY = sensitivityY; this.trace = trace;
-        earnedSettle = MotionModes.IsEarnedSettle(finiteCriticalMode);
+        this.liveSensitivity = liveSensitivity;
+        earnedSettle = activeConfiguration.IsEarnedSettle;
         period = frequency / (1000 / PeriodMs);
         // Playout is a fixed duration, independent of the selected output cadence.
         delay = checked(frequency * PlayoutDelayMs) / 1000;
         boxcar = boxcarWindowMs == 0 ? null : new CausalBoxcar(boxcarWindowMs, frequency);
-        if (finiteCriticalMode != MotionMode.RESAMPLED_250HZ)
+        if (activeConfiguration.IsFiniteCritical)
         {
             if (boxcar is not null) throw new ArgumentException("Position filters cannot be combined.");
-            finiteCritical = new CausalFiniteCritical(finiteCriticalMode, frequency);
+            finiteCritical = new CausalFiniteCritical(activeConfiguration.FiniteCriticalTauMs,
+                activeConfiguration.FiniteCriticalSupportMs, frequency);
             canonicalQuantizer = new();
         }
     }
@@ -90,7 +97,8 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
 
     private void Enqueue(TouchPacket packet, long receivedAt, double sx, double sy)
     {
-        // Each finite-kernel experiment keeps its startup sensitivity for the whole run.
+        // Standalone fixed experiments retain their startup gain. Runtime input
+        // overrides it from the live pair below, before accumulating each sample.
         if (finiteCritical is not null) { sx = sensitivityX; sy = sensitivityY; }
         lock (gate)
         {
@@ -139,6 +147,19 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                 if (HasPositionFilter) AdvanceHistory(receivedAt);
                 foreach (var s in packet.Samples)
                 {
+                    if (liveSensitivity is not null)
+                    {
+                        var sensitivity = liveSensitivity.Current;
+                        sx = sensitivity.X; sy = sensitivity.Y;
+                        if (lastSensitivity != sensitivity)
+                        {
+                            trace?.Write(MotionEventKind.SensitivityChanged, now(), run: run,
+                                session: h.SessionId, sequence: h.Sequence, android: s.TimestampNs,
+                                x: sx, y: sy, a: lastSensitivity?.X ?? sensitivityX,
+                                b: lastSensitivity?.Y ?? sensitivityY);
+                            lastSensitivity = sensitivity;
+                        }
+                    }
                     targetX += ((double)s.X - rawX) * sx; targetY += ((double)s.Y - rawY) * sy;
                     rawX = s.X; rawY = s.Y; processed++;
                     if (!double.IsFinite(targetX) || !double.IsFinite(targetY)) throw new OverflowException("Motion target is not finite.");
