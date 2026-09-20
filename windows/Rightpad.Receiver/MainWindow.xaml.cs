@@ -26,7 +26,7 @@ public partial class MainWindow : Window
         this.settingsFile = settingsFile;
         model = new(runtime, settings, startup);
         InitializeComponent();
-        pages = [new OverviewView(), new MotionView(), new TapView(), new DiagnosticsView()];
+        pages = [new OverviewView(), new MotionView(), new TapView(), new DiagnosticsView(), new ControlsView()];
         DataContext = model;
         PageContent.Content = pages[(int)ReceiverPage.Motion];
         Width = Math.Min(Width, SystemParameters.WorkArea.Width);

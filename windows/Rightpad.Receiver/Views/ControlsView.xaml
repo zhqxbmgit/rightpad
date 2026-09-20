@@ -1,0 +1,13 @@
+<UserControl x:Class="Rightpad.Receiver.ControlsView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:Rightpad.Receiver">
+  <StackPanel><TextBlock Text="Controls" Style="{StaticResource PageTitle}"/>
+    <ItemsControl ItemsSource="{Binding Settings.Controls}"><ItemsControl.ItemTemplate><DataTemplate>
+      <Border Style="{StaticResource Card}"><StackPanel MaxWidth="720" HorizontalAlignment="Left">
+        <TextBlock Text="{Binding Name}" Style="{StaticResource SectionTitle}"/>
+        <ItemsControl ItemsSource="{Binding Fields}"><ItemsControl.ItemTemplate><DataTemplate>
+          <local:NumericEditor/>
+        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+        <TextBlock Text="Saved changes apply to the next control gesture. No Receiver restart required." Style="{StaticResource Muted}" FontSize="13" Margin="0,16,0,0"/>
+      </StackPanel></Border>
+    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+  </StackPanel>
+</UserControl>

@@ -7,6 +7,29 @@ internal static class PacketDecoder
     public const int HeaderSize = 20;
     public const int HeartbeatSize = 10;
     public const int SampleSize = 16;
+    public const int GamepadSize = 30;
+
+    public static bool TryDecodeGamepad(ReadOnlySpan<byte> data, out GamepadStatePacket packet, out string error)
+    {
+        packet = default;
+        error = "";
+        if (data.Length != GamepadSize) { error = "gamepad_length"; return false; }
+        if (data[0] != 2 || data[1] != 5) { error = "gamepad_version_type"; return false; }
+        ushort buttons = BinaryPrimitives.ReadUInt16LittleEndian(data[14..]);
+        // ABI-2 defines bits 0..14. Reserved bit 15 requires a future explicit protocol change.
+        if ((buttons & 0x8000) != 0) { error = "gamepad_unknown_buttons"; return false; }
+        packet = new(BinaryPrimitives.ReadUInt64LittleEndian(data[2..]), BinaryPrimitives.ReadUInt32LittleEndian(data[10..]),
+            new((XboxGamepadButtons)buttons, data[16], data[17], BinaryPrimitives.ReadInt16LittleEndian(data[18..]),
+                BinaryPrimitives.ReadInt16LittleEndian(data[20..]), BinaryPrimitives.ReadInt16LittleEndian(data[22..]),
+                BinaryPrimitives.ReadInt16LittleEndian(data[24..])),
+            BinaryPrimitives.ReadUInt16LittleEndian(data[26..]), (data[28] & 1) != 0);
+        if ((data[28] & ~1) != 0 || data[29] != 0)
+        { error = "gamepad_flags_reserved"; packet = default; return false; }
+        if ((packet.State == XboxGamepadState.Neutral && packet.MinimumDwellMs != 0)
+            || (packet.ForceNeutral && packet.State != XboxGamepadState.Neutral))
+        { error = "gamepad_dwell_state"; packet = default; return false; }
+        return true;
+    }
 
     public static bool TryDecode(ReadOnlySpan<byte> data, out TouchPacket? packet, out string error)
     {

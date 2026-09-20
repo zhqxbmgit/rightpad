@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace 'com.rightpad.capture'
+    namespace = 'com.rightpad.capture'
     compileSdk 36
 
     defaultConfig {
@@ -12,6 +12,7 @@ android {
         targetSdk 36
         versionCode 1
         versionName '0.1'
+        testInstrumentationRunner 'com.rightpad.capture.ScreenControlsSmoke'
     }
 
     compileOptions {

@@ -26,6 +26,14 @@ internal sealed class RuntimeStatsViewModel : ObservableModel
     public string Session { get => session; private set => Set(ref session, value); }
     public string LastAccepted { get => lastAccepted; private set => Set(ref lastAccepted, value); }
     public string MouseBackend { get => mouseBackend; private set => Set(ref mouseBackend, value); }
+    private string gamepadBackend = "Not created", gamepadStatus = "Unavailable", gamepadDeviceIdentity = "—", gamepadError = "";
+    private long gamepadSuccesses, gamepadFailures;
+    public string GamepadBackend { get => gamepadBackend; private set => Set(ref gamepadBackend, value); }
+    public string GamepadStatus { get => gamepadStatus; private set => Set(ref gamepadStatus, value); }
+    public string GamepadDeviceIdentity { get => gamepadDeviceIdentity; private set => Set(ref gamepadDeviceIdentity, value); }
+    public string GamepadError { get => gamepadError; private set => Set(ref gamepadError, value); }
+    public long GamepadSuccesses { get => gamepadSuccesses; private set => Set(ref gamepadSuccesses, value); }
+    public long GamepadFailures { get => gamepadFailures; private set => Set(ref gamepadFailures, value); }
     public string Error { get => error; private set => Set(ref error, value); }
     public long Gap { get => gap; private set => Set(ref gap, value); }
     public long Old { get => old; private set => Set(ref old, value); }
@@ -59,6 +67,12 @@ internal sealed class RuntimeStatsViewModel : ObservableModel
         LastAccepted = s.LastAcceptedAtTicks == 0 ? "Never" :
             FormatAge(Math.Max(0, Stopwatch.GetElapsedTime(s.LastAcceptedAtTicks, now).TotalSeconds));
         MouseBackend = s.MouseBackend;
+        GamepadBackend = s.GamepadBackend;
+        GamepadStatus = s.GamepadAvailable ? "Available" : "Unavailable";
+        GamepadDeviceIdentity = s.GamepadDeviceIdentity ?? "—";
+        GamepadError = s.LastGamepadError ?? "";
+        GamepadSuccesses = s.GamepadSuccesses;
+        GamepadFailures = s.GamepadFailures;
         Error = s.LastError ?? "";
         Gap = s.GapCount; Old = s.OldCount; Duplicate = s.DuplicateCount;
         Invalid = s.InvalidCount; Timeouts = s.InputTimeoutCount;

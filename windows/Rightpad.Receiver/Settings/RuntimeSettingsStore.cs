@@ -4,6 +4,7 @@ internal sealed class RuntimeSettingsStore
 {
     private RuntimeSettings current;
     public LiveSensitivity Sensitivity { get; }
+    public event Action? Published;
     public RuntimeSettingsStore(RuntimeSettings? initial = null)
     {
         current = initial ?? RuntimeSettings.Default;
@@ -16,5 +17,6 @@ internal sealed class RuntimeSettingsStore
         settings.ValidateCore();
         Interlocked.Exchange(ref current, settings);
         Sensitivity.Publish(settings.SensitivityX, settings.SensitivityY);
+        Published?.Invoke();
     }
 }

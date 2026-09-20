@@ -19,6 +19,9 @@ public final class MainActivity extends Activity {
     private static final String RECORD_TAG = "RightpadRecord";
 
     private TouchCaptureView captureView;
+    private android.widget.FrameLayout root;
+    private ScreenControlEditorPanel editorPanel;
+    private final android.window.OnBackInvokedCallback editorBack = this::closeEditor;
     private TouchRecordWriter recordWriter;
     private UdpTouchSender udpSender;
     private ReceiverDiscoveryClient discovery;
@@ -48,9 +51,23 @@ public final class MainActivity extends Activity {
         }
         udpSender = new UdpTouchSender();
         captureView = new TouchCaptureView(this, recordWriter, udpSender,
-                this::exit);
-        setContentView(captureView);
-        haptics = new HapticFeedbackListener(captureView::performClickHaptic);
+                this::exit, this::showSettings);
+        root = new android.widget.FrameLayout(this);
+        root.addView(captureView);
+        setContentView(root);
+        captureView.controls.boundsChanged = this::closeEditor;
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+        udpSender.enableControlRequests();
+        haptics = new HapticFeedbackListener(captureView::performClickHaptic, snapshot -> {
+            if (captureView.controls.config.accept(snapshot)) {
+                // v1 can update B during deployment, but does not acknowledge a complete B+X config.
+                udpSender.knownControlConfig(snapshot.version() == 2 ? snapshot.epoch() : 0,
+                        snapshot.version() == 2 ? snapshot.revision() : 0);
+                android.util.Log.i("RightpadControl", "config_accepted epoch=" + Long.toUnsignedString(snapshot.epoch(), 16)
+                        + " revision=" + Long.toUnsignedString(snapshot.revision()) + " version=" + snapshot.version()
+                        + " records=" + snapshot.records() + " lrRecords=" + snapshot.lrRecords());
+            }
+        });
         udpSender.setUpObserver(haptics::expectUp);
         discovery = new ReceiverDiscoveryClient(this, this::receiverChanged);
         updateBattery(registerReceiver(null, batteryFilter));
@@ -134,6 +151,7 @@ public final class MainActivity extends Activity {
             haptics.setActive(null, 0);
             captureView.stopCapture("receiver_changed");
             udpSender.setTarget(target);
+            captureView.controls.config.reset();
             receiverTarget = target;
             receiverId = id;
         }
@@ -152,6 +170,43 @@ public final class MainActivity extends Activity {
         discovery.close();
         udpSender.close();
         finishAndRemoveTask();
+    }
+
+    private void showSettings() {
+        captureView.setInputModal(true);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("Settings")
+                .setItems(new String[] {"Edit Controls Layout"}, (d, which) -> openEditor())
+                .create();
+        dialog.setOnDismissListener(d -> {
+            if (editorPanel == null) captureView.setInputModal(false);
+        });
+        dialog.show();
+    }
+
+    private void openEditor() {
+        captureView.setInputModal(true);
+        captureView.controls.layout.begin();
+        editorPanel = new ScreenControlEditorPanel(this, captureView.controls, captureView, this::closeEditor);
+        android.widget.FrameLayout.LayoutParams p = new android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.BOTTOM);
+        root.addView(editorPanel, p);
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, editorBack);
+        captureView.invalidate();
+    }
+
+    private void closeEditor() {
+        if (editorPanel == null) return;
+        if (captureView.controls.editing()) captureView.controls.layout.cancel();
+        ((android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE))
+                .hideSoftInputFromWindow(editorPanel.getWindowToken(), 0);
+        root.removeView(editorPanel);
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(editorBack);
+        editorPanel = null;
+        captureView.controls.draftChanged = () -> { };
+        captureView.setInputModal(false);
     }
 
     private void updateBattery(Intent intent) {

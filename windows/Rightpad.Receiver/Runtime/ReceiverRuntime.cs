@@ -11,7 +11,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     FlightRecorder? flightRecorder = null,
     IPEndPoint? discoveryEndpoint = null, Func<byte[]>? identityFactory = null,
     MotionMode motionMode = MotionMode.RAW, MotionTrace? motionTrace = null,
-    bool useProductMotionSettings = false)
+    bool useProductMotionSettings = false, Func<IVirtualGamepad>? gamepadFactory = null)
 {
     private readonly SemaphoreSlim lifecycle = new(1, 1);
     private Run? current;
@@ -51,10 +51,72 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         public UdpReceiver? Receiver;
         public DiscoveryResponder? Discovery;
         public IMouseOutput? Mouse;
+        public readonly object GamepadGate = new();
+        public IVirtualGamepad? Gamepad;
+        public GamepadSessionProcessor? GamepadSession;
+        public bool GamepadClosed;
+        public string? GamepadError;
+        public long GamepadFailures;
         public ITouchMotion? Motion;
         public int State = (int)ReceiverState.Starting;
         public string? Error;
         public SensitivitySnapshot? ReportedSensitivity;
+    }
+
+    // The session processor submits each accepted full state through the independent gamepad backend.
+    public bool SetGamepadState(XboxGamepadState state)
+    {
+        var run = Volatile.Read(ref current);
+        if (run is null) return false;
+        lock (run.GamepadGate)
+        {
+            var runtimeState = (ReceiverState)Volatile.Read(ref run.State);
+            if ((runtimeState != ReceiverState.Running && !(runtimeState == ReceiverState.Stopping && state == XboxGamepadState.Neutral))
+                || run.Gamepad is null || run.GamepadClosed || run.GamepadError is not null) return false;
+            try { return run.Gamepad.SetState(state); }
+            catch (Exception e)
+            {
+                GamepadFailed(run, "set_state", e);
+                CloseGamepad(run);
+                return false;
+            }
+        }
+    }
+
+    private void InitializeGamepad(Run run)
+    {
+        lock (run.GamepadGate)
+        {
+            try
+            {
+                run.Gamepad = gamepadFactory is not null ? gamepadFactory() : new LibVirtualHidXboxGamepad(flightRecorder);
+                if (run.Gamepad is null) throw new InvalidOperationException("Gamepad factory returned no backend.");
+                if (run.Gamepad.Available) run.Gamepad.SetState(XboxGamepadState.Neutral);
+                output.WriteLine($"gamepad_backend: name={run.Gamepad.BackendName} device={run.Gamepad.DeviceIdentity} available={run.Gamepad.Available} error={run.Gamepad.LastError}");
+                flightRecorder?.Event("gamepad_backend", ("runtimeRunId", run.Id), ("gamepadBackend", run.Gamepad.BackendName),
+                    ("gamepadDeviceIdentity", run.Gamepad.DeviceIdentity), ("gamepadAvailable", run.Gamepad.Available), ("error", run.Gamepad.LastError));
+            }
+            catch (Exception e) { GamepadFailed(run, "create", e); CloseGamepad(run); }
+        }
+    }
+    private void GamepadFailed(Run run, string operation, Exception e)
+    {
+        run.GamepadFailures++;
+        run.GamepadError = run.GamepadError is null ? e.Message : run.GamepadError + " | " + e.Message;
+        output.WriteLine($"gamepad_unavailable: operation={operation} error={e.Message}");
+        flightRecorder?.Event("gamepad_unavailable", ("runtimeRunId", run.Id), ("operation", operation), ("error", e.Message));
+    }
+    private void CloseGamepad(Run run)
+    {
+        lock (run.GamepadGate)
+        {
+            if (run.Gamepad is null || run.GamepadClosed) return;
+            run.GamepadClosed = true;
+            try { run.Gamepad.SetState(XboxGamepadState.Neutral); }
+            catch (Exception e) { GamepadFailed(run, "neutralize", e); }
+            try { run.Gamepad.Dispose(); }
+            catch (Exception e) { GamepadFailed(run, "dispose", e); }
+        }
     }
 
     public async Task StartAsync()
@@ -169,6 +231,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             if (rawMouse && mouse is null) throw new InvalidOperationException("Mouse output factory returned no backend.");
             output.WriteLine($"mouse_backend: name={mouse?.BackendName ?? "None (diagnostics)"} device={mouse?.DeviceIdentity ?? "none"}");
             flightRecorder?.Event("mouse_backend", ("runtimeRunId", run.Id), ("mouseBackend", mouse?.BackendName), ("deviceIdentity", mouse?.DeviceIdentity));
+            // Injected mouse tests never create real hardware unless they explicitly supply a gamepad factory.
+            if (rawMouse && (mouseFactory is null || gamepadFactory is not null)) InitializeGamepad(run);
             if (mouse is not null)
             {
                 Action<int, int> nativeMove = mouse.Move;
@@ -206,7 +270,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             buttons = mouse is null ? null : new(mouse.LeftDown, mouse.LeftUp, output.WriteLine,
                 run.Cancellation.Cancel, initial.ClickHoldMs);
             // Hold belongs to the request, which can occur after the packet's motion output.
-            haptics = buttons is null ? null : new(output);
+            haptics = new(output);
             gesture = buttons is null ? null : new((_, packet) =>
                 {
                     // Capture the accepted packet's route now, not the presence at timer execution.
@@ -222,7 +286,14 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 output.WriteLine(FormattableString.Invariant($"gesture: singleTap=enabled doubleTapDrag=enabled tapMaxDurationMs={initial.TapMaxDurationMs} tapMovementThresholdPx={initial.TapMovementThresholdPx} clickHoldMs={initial.ClickHoldMs} doubleTapIntervalMs={initial.DoubleTapIntervalMs}"));
             receiver = new UdpReceiver(endpoint ?? new(IPAddress.Any, UdpReceiver.Port), output,
                 motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings,
-                cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder, motionTrace: motionTrace);
+                controlSend: haptics.TryEnqueueConfig,
+                cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder, motionTrace: motionTrace,
+                gamepad: run.GamepadSession = rawMouse ? new GamepadSessionProcessor(SetGamepadState, message =>
+                {
+                    output.WriteLine(message);
+                    flightRecorder?.Event(message.StartsWith("gamepad_lease_expired", StringComparison.Ordinal)
+                        ? "gamepad_lease_expired" : "gamepad_transport", ("runtimeRunId", run.Id), ("detail", message));
+                }) : null);
             Volatile.Write(ref run.Receiver, receiver);
             // Explicit touch endpoints are test-only; opt into discovery there with its own endpoint.
             if (endpoint is null || discoveryEndpoint is not null)
@@ -270,6 +341,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             motion?.Reset();
             run.Receiver?.Dispose();
             if (haptics is not null) await haptics.DisposeAsync().ConfigureAwait(false);
+            CloseGamepad(run); // Independent cleanup must finish before disposing the mouse, including failed starts.
             try { mouse?.Dispose(); }
             catch (Exception e)
             {
@@ -305,8 +377,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             flightRecorder?.Event("live_sensitivity", ("runtimeRunId", run.Id), ("x", live.X), ("y", live.Y));
         }
         var r = Volatile.Read(ref run.Receiver);
-        if (r is null) return new(run.Id, state, MouseBackend: Volatile.Read(ref run.Mouse)?.BackendName ?? selectedName,
-            LastError: Volatile.Read(ref run.Error), MotionModeName: run.MotionMode.ToString());
+        if (r is null) return WithGamepad(run, new(run.Id, state, MouseBackend: Volatile.Read(ref run.Mouse)?.BackendName ?? selectedName,
+            LastError: Volatile.Read(ref run.Error), MotionModeName: run.MotionMode.ToString()));
         var s = r.Statistics;
         var motion = Volatile.Read(ref run.Motion);
         var resampled = motion as ResampledMotion;
@@ -314,7 +386,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         var stats = mouse?.Stats ?? default;
         // Historical SendInput fields remain specific to that implementation.
         var sendInput = mouse is WindowsMouseOutput ? stats : default;
-        return new(run.Id, state, r.LastAcceptedAtTicks, s.ReceivedPackets, s.AcceptedPackets,
+        return WithGamepad(run, new(run.Id, state, r.LastAcceptedAtTicks, s.ReceivedPackets, s.AcceptedPackets,
             s.AcceptedSamples, s.SequenceGapEstimate, s.OldPackets, s.DuplicatePackets,
             s.InvalidPackets, r.InputTimeouts, state == ReceiverState.Running ? r.ActiveTouchSessionId : -1,
             r.LastRemoteIp, mouse?.BackendName ?? selectedName, Volatile.Read(ref run.Error),
@@ -324,6 +396,23 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             sendInput.Successes, sendInput.Failures, sendInput.LastSuccessAtTicks, sendInput.LastFailureAtTicks,
             stats.RelativeDx, stats.RelativeDy, stats.AbsDx, stats.AbsDy,
             stats.Successes, stats.Failures, stats.LastSuccessAtTicks, stats.LastFailureAtTicks,
-            run.MotionMode.ToString(), resampled?.TickCount ?? 0, resampled?.MissedTicks ?? 0);
+            run.MotionMode.ToString(), resampled?.TickCount ?? 0, resampled?.MissedTicks ?? 0));
+    }
+
+    private static RuntimeStatsSnapshot WithGamepad(Run run, RuntimeStatsSnapshot snapshot)
+    {
+        lock (run.GamepadGate)
+        {
+            var gamepad = run.Gamepad;
+            var stats = gamepad?.Stats ?? default;
+            return snapshot with
+            {
+                GamepadBackend = gamepad?.BackendName ?? (run.GamepadError is null ? "Not created" : LibVirtualHidXboxGamepad.Backend),
+                GamepadDeviceIdentity = gamepad?.DeviceIdentity,
+                GamepadAvailable = snapshot.RuntimeState == ReceiverState.Running && !run.GamepadClosed && run.GamepadError is null && gamepad?.Available == true,
+                GamepadSuccesses = stats.Successes, GamepadFailures = stats.Failures + run.GamepadFailures,
+                LastGamepadError = run.GamepadError ?? gamepad?.LastError
+            };
+        }
     }
 }

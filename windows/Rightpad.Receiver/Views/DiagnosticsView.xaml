@@ -9,5 +9,14 @@
         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="28"/><RowDefinition Height="28"/><RowDefinition Height="28"/><RowDefinition Height="28"/><RowDefinition Height="28"/></Grid.RowDefinitions><TextBlock Grid.Row="0" Text="Runtime State" Style="{StaticResource Muted}" Margin="0,0,12,0"/><TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Stats.RuntimeState}" Style="{StaticResource DataValue}" AutomationProperties.AutomationId="RuntimeState"/><TextBlock Grid.Row="1" Text="Mouse Backend" Style="{StaticResource Muted}" Margin="0,0,12,0"/><TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Stats.MouseBackend}" Style="{StaticResource DataValue}" AutomationProperties.AutomationId="MouseBackend"/><TextBlock Grid.Row="2" Text="Touch Session" Style="{StaticResource Muted}" Margin="0,0,12,0"/><TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Stats.Session}" Style="{StaticResource DataValue}" AutomationProperties.AutomationId="Session"/><TextBlock Grid.Row="3" Text="Last Accepted" Style="{StaticResource Muted}" Margin="0,0,12,0"/><TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Stats.LastAccepted}" Style="{StaticResource DataValue}" AutomationProperties.AutomationId="LastAccepted"/><TextBlock Grid.Row="4" Text="Last Remote IP" Style="{StaticResource Muted}" Margin="0,0,12,0"/><TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Stats.RemoteIp}" Style="{StaticResource DataValue}" AutomationProperties.AutomationId="RemoteIp"/></Grid>
       </StackPanel></Border>
     </Grid>
+    <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
+      <TextBlock Text="Gamepad" Style="{StaticResource SectionTitle}"/>
+      <WrapPanel><TextBlock Text="{Binding Stats.GamepadBackend}" Style="{StaticResource DataValue}" Margin="0,0,16,0" AutomationProperties.AutomationId="GamepadBackend"/>
+        <TextBlock Text="{Binding Stats.GamepadStatus}" Style="{StaticResource DataValue}" AutomationProperties.AutomationId="GamepadStatus"/></WrapPanel>
+      <TextBlock Text="{Binding Stats.GamepadDeviceIdentity}" Style="{StaticResource Muted}" TextWrapping="Wrap" AutomationProperties.AutomationId="GamepadDeviceIdentity"/>
+      <WrapPanel Margin="0,8,0,0"><TextBlock Text="{Binding Stats.GamepadSuccesses, StringFormat='Successes: {0}'}" Style="{StaticResource Muted}" Margin="0,0,16,0"/>
+        <TextBlock Text="{Binding Stats.GamepadFailures, StringFormat='Failures: {0}'}" Style="{StaticResource Muted}"/></WrapPanel>
+      <TextBlock Text="{Binding Stats.GamepadError}" Style="{StaticResource Muted}" TextWrapping="Wrap" AutomationProperties.AutomationId="LastGamepadError"/>
+    </StackPanel></Border>
   </StackPanel>
 </UserControl>

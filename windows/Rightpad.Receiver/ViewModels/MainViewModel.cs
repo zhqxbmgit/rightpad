@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace Rightpad.Receiver;
 
-internal enum ReceiverPage { Overview, Motion, Tap, Diagnostics }
+internal enum ReceiverPage { Overview, Motion, Tap, Diagnostics, Controls }
 
 internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel settings, StartupViewModel startup) : ObservableModel
 {

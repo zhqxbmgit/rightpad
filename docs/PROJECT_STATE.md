@@ -1,10 +1,327 @@
 # rightpad Project State
 
-Updated: 2026-09-18
+Updated: 2026-09-20
 
 ## 1. Current Phase
 
-当前阶段：
+**Screen Controls / Xbox / SlideControlLR — final human acceptance passed (2026-09-20).**
+The user explicitly confirmed final real-person testing of Phases 1–6C: "通过",
+and authorized one combined commit on main followed by a normal fast-forward push.
+The accepted B/X mappings, thresholds, timing, haptic identities, protocol sizes,
+layout behavior and safety rules are frozen. The historical phase reports below
+record the status at each phase, including then-pending manual acceptance and
+then-uncommitted work; those statements do not supersede this final confirmation.
+
+Final pre-stage regression: Windows Debug/Release 524/524 each; native fake
+mouse/Xbox360 ABI2 suites 291 checks each; all Android JVM suites, APK/test APK
+builds and lint passed (0 errors, 14 existing warnings). Device instrumentation
+passed 140 checks. Its original X test incorrectly assumed the saved rectangle
+was the default square; the test now separately checks valid saved geometry and
+the square definition default. No production behavior was changed. Network-ADB
+overwrite deployment and recovery preserved the exact current B/X layout and
+local settings. Mouse movement/click/double-tap drag smoke passed with clean release.
+Formal scope consists only of production source, tests, project/build definitions
+and documentation. APKs, bin/obj, Gradle output, local settings, logs, screenshots,
+timing data and all test-results evidence remain local and ignored. Protocol and
+feature documentation is self-contained and does not require those evidence files.
+
+**RIGHTPAD SLIDECONTROLLR PHASE 6C COMPLETE (2026-09-20).**
+Receiver now owns X/LR behavior through separate immutable SlideControlLRSettings
+under controls.x. Defaults are Left 12 / Right 3 / Up 2 dp, Tap Hold 25 / Long
+Press 400 ms. Threshold range is 0.1..50.0 dp with one decimal place; Tap is
+integer 1..200 ms, Long Press integer 50..2000 ms. The registry assigns the audited
+unused protocol ID 2 to xbox.x.slide_lr, JSON key x, display X / Slide LR and
+behavior kind 2. Existing B remains ID 1 / kind 1. Generic registered field editors
+reuse the global explicit Save transaction; failed disk Save cannot publish,
+increment effective revision or push, and draft is retained. Legacy settings and
+per-field fallback remain supported. Numeric 3.14/25.0 are invalid in threshold/
+integer fields respectively; direct Long Press 437 is valid.
+
+RPCT v2 keeps the 36-byte header and adds length-prefixed records: B 12 bytes,
+X/LR 14 bytes, current full snapshot 62 bytes. Receiver sends only v2. Android
+validates framing, exact lengths, reserved fields, kinds, ranges, known-ID
+uniqueness, complete B+X and epoch/revision before atomic cache replacement.
+Unknown ID/kind records are safely skipped by length. Legal v1 B-only reading
+remains for transition but does not acknowledge complete B+X sync; v2 can complete
+the same epoch/revision and cannot be downgraded to v1 without target/run reset.
+No GAMEPAD_STATE, 30-byte type5, button bits, XInput mapping, type6 request,
+minimum dwell, layout format, gesture classification or haptic policy changed.
+
+Actual GUI Save acceptance passed on Receiver PID 8008 / Runtime RunId 1, epoch
+0CEDB408282EF3B5: X Right 3 -> 10 -> 3 advanced revisions 1 -> 2 -> 3; B Up
+0.7 -> 1.5 -> 0.7 advanced revisions 3 -> 4 -> 5. Each step verified draft
+isolation, disk JSON, full 62-byte push, Android v2 cache and real XInput behavior.
+An active X contact retained its old 9px threshold after Save; the next DOWN
+required 30px. B retained 2.1px then used 4.5px on the next DOWN. Save did not
+restart Receiver or runtime. A fresh Android process/empty cache then recovered
+the complete revision 5 by unchanged type6 request, without another Save. Final
+B=0.7/3/25/400 and X=12/3/2/25/400 are committed on disk and active on Android.
+
+All Android JVM suites passed (config 238, LR gesture 384, LR transport 147,
+B feedback 30, Touchpad 7 checks). Device instrumentation passed 139 checks,
+including production config snapshots and prior routing/editor/haptic behavior.
+assembleDebug, assembleDebugAndroidTest and lintDebug passed, with 0 lint errors
+and 14 existing warnings. Windows Debug and Release each built with 0 warnings/
+errors and passed all 524/524 tests (517 baseline plus seven LR config groups).
+Coverage includes per-field fallback, bounds, roundtrip, Save failure, golden
+bytes, malformed packets, atomic rejection, downgrade/ordering and lost-push
+recovery. Thirty frozen production files match pre-phase hashes exactly.
+
+Real libvirtualhid Xbox360/XInput regression passed B Tap/Y/A/Design A and
+X Tap/LongPress/Left/Right/Up/Design A, background and lease safety release.
+Twelve X taps held 25.741..38.142 ms; every conservative transition-bracket lower
+bound exceeded 25 ms (minimum 25.590 ms). Final Xbox state is Neutral with one
+controller. Mouse movement, single tap and double-tap drag passed: three DOWN/UP
+pairs, 1666 ms held, 60 held-movement callbacks and release. Touchpad remains
+CONFIRM, B remains 10 ms / 255, LR remains SYSTEM_CLICK with unchanged API
+fallbacks. No subjective new real-finger/game feel acceptance is claimed.
+
+APK overwrite and instrumentation preserved the user's exact layout file, including
+all B/X geometry present at phase start; no app data was cleared. All eight legacy
+settings and B settings are unchanged; only the default controls.x object is added.
+Old Receiver PID 29348 was verified exited and UDP 50000 released before installing
+the tested Release output. New PID 8008 was started by the independent interactive
+task launcher: current user, Session 3 matching explorer, Medium integrity, Default
+desktop and 0.0.0.0:50000 confirmed. Existing Android heartbeat restored Connected
+without an Android restart for that Receiver upgrade. Subsequent Android cache
+recovery retained the same Receiver; final Sender 05021A8D9A38F9DE and Touch sequence
+0 were admitted, MainActivity is RESUMED/foreground, and output failures are zero.
+
+Evidence: ignored windows/test-results/phase6c/, especially config-e2e.txt,
+xinput-e2e.txt, config-smoke-android.txt, preservation-audit.txt and build/test logs.
+No APK, bin/obj, test-results artifacts or local machine settings enter the formal
+diff. All earlier phase functionality and uncommitted work are retained.
+git diff --check passed. Git add / Commit / Push: NO.
+
+**RIGHTPAD SLIDECONTROLLR PHASE 6B COMPLETE (2026-09-20), historical transport phase.**
+Production `xbox.x.slide_lr`, label X, now uses the existing Screen Controls
+registry, single-finger owner routing, shared deadline callback, layout editor
+and stable-ID GamepadAggregator. Definition mapping is BASE=X (bit 2 / 0x0004),
+LEFT=DpadLeft (bit 13 / 0x2000), RIGHT=DpadRight (bit 14 / 0x4000),
+UP=DpadUp (bit 11 / 0x0800). These existing logical bits already pass through the
+C# state and native Xbox360 adapter. GAMEPAD_STATE remains v2/type5, 30 bytes,
+buttons at offset 14; no protocol, Receiver or native production changes were
+needed. Contributors merge independently and Design A publishes one full state.
+X Tap reuses minimumDwellMs=25; held directions add no dwell. Safety Neutral
+still bypasses dwell. LR gestures never know Xbox bits.
+
+Real libvirtualhid/XInput acceptance passed on the single existing Xbox360 slot 0:
+X Tap/LongPress, D-pad Left/Right/Up hold/release, and X-to-each-direction Design A
+with no intermediate Neutral or combined X+direction. Actual XInput flags were
+X=0x4000, Left=0x0004, Right=0x0008, Up=0x0001; sticks remained zero.
+Twelve X taps measured 25.443..38.427 ms. Transition bracketing conservatively
+bounded every hold above 25 ms, with minimum lower bound 25.179 ms. Background
+and lease release passed; final state was Neutral. The first coarse 0.5 ms
+polling run recorded a 24.9931 ms boundary sample, below its measurement resolution;
+the final harness uses finer polling and previous-query transition bounds rather
+than rounding or relaxing the 25 ms assertion. A separate witness race was fixed
+to allow the old X observation before the first direction, while still rejecting
+Neutral or combined states during replacement. Both earlier attempts and raw
+traces are preserved. No product timing or haptic parameters were changed.
+
+All Android JVM suites passed, including LR 384, new transport 147, B feedback 30
+and Touchpad CONFIRM 7 checks. Final device instrumentation passed 133 checks,
+including production routing, colors, independent X editor persistence, second
+pointer/CANCEL safety, feedback failure, and no LR direction commit on UP history.
+assembleDebug, assembleDebugAndroidTest and lintDebug passed (0 errors / 14
+existing warnings). Isolated Windows Debug and Release builds each passed with
+0 warnings/errors, and both full suites passed 517/517 (baseline 511 plus six LR
+cases). Native fake suites passed 291 checks in both configurations. Ninety
+frozen production/protocol/gesture/haptic files matched the pre-phase hashes.
+Disconnect, sender replacement, FORCE_NEUTRAL, duplicate/stale, lease,
+Stop/Restart/Dispose and backend failure are covered by deterministic tests.
+
+Real B/Y/A, B Design A and lease regressions passed; eight B taps measured
+25.383..38.036 ms. Mouse movement, single tap and double-tap drag passed with
+three DOWN/UP pairs, 1650 ms held, 57 held-movement callbacks and clean release.
+Existing B config epoch 295b1655b885517c / revision 1 reached Android with
+0.7/3.0 dp and 25/400 ms. Touchpad CONFIRM, B 10 ms / 255 and LR SYSTEM_CLICK
+(API 29+ EFFECT_CLICK, API 26–28 20 ms / 120, legacy 20 ms) remain unchanged,
+as do RPHF and VIBRATE. This is automated functional/XInput acceptance;
+new LR subjective real-finger/game feel is not claimed as human-tested.
+
+X defaults to a 64 dp square at 15%/55% of the View, bounded with minimum 20 px.
+On this 1200x2670 View/density 3, rect=(180,1469,192,192), normalized
+(0.15,1469/2670,0.16,192/2670). User B rect=(1059,600,141,2070) is preserved;
+the complete layout file and Receiver settings match their pre-test bytes.
+Instrumentation restores the exact layout in finally. X defaults are not
+persisted until user Save, which uses the independent xbox.x.slide_lr ID.
+
+Final APK was overwritten without clearing data. MainActivity is RESUMED and
+foreground; the existing Receiver PID 29348 / Runtime RunId 2 survived Android
+Disconnected/Connected and new Sender 68FB3005D862C3DA admission / Touch sequence 0.
+Actual UDP 50000 ownership, current user, Session 3 matching explorer, Medium
+integrity and Default desktop were verified independently because the launcher
+still has an old task PID record. Sender has no current-run error/overflow;
+Receiver is Connected with zero mouse/gamepad output failures and preserved
+cumulative counters. Production Windows binaries were not replaced.
+
+**Phase 6C remains deferred:** LR Receiver Controls config/UI and RPCT parameter
+sync. LR stays at Left 12 / Right 3 / Up 2 dp, Tap Hold 25 / Long Press 400 ms.
+Evidence: ignored `windows/test-results/phase6b/`. `git diff --check` passed.
+All prior uncommitted work is retained. Git add / Commit / Push: NO.
+
+**RIGHTPAD SLIDECONTROLLR PHASE 6A COMPLETE (2026-09-20), historical isolated gesture/policy phase.**
+An independent `SlideControlLRGesture` expresses BASE/LEFT/RIGHT/UP/NEUTRAL without
+Xbox mapping or transport. `SlideControlLRDefinition` selects feedback style;
+`SlideControlLRInstance` owns one removable deadline callback and applies config
+replacement only on the next DOWN. The existing B gesture engine is byte-identical.
+LR defaults are Left 12 dp / Right 3 dp / Up 2 dp / Tap Hold 25 ms / Long Press
+400 ms. Horizontal priority, first commit wins, Design A BASE release before
+direction press, downward no-op, cancellation and immutable snapshots are tested.
+
+Per-control feedback policy preserves B STRONG_ONE_SHOT 10 ms / 255. LR
+SYSTEM_CLICK uses predefined EFFECT_CLICK on API 29+, oneShot(20,120) on API
+26–28 and legacy 20 ms. Only DOWN and first direction commitment request feedback;
+exceptions remain best-effort and never change gesture state. Touchpad CONFIRM,
+RPHF bytes/gate/dedupe, GAMEPAD_STATE, RPCT, Sender and Windows source are unchanged.
+The LR definition is not in the production visible registry; user B layout is
+preserved. **Xbox X/D-pad transport, Receiver config/UI and real LR XInput acceptance
+are not complete and remain out of Phase 6A scope.**
+
+Validation: all Android JVM suites passed, including 384 new LR checks, unchanged
+30 B feedback checks and 7 Touchpad CONFIRM policy checks. Device instrumentation
+passed 99 checks, including real Handler scheduling, API-policy selection,
+Design A with haptic failure, existing B feedback, Touchpad and layout regression.
+Real backend logs show B ONE_SHOT_10_255 and isolated LR EFFECT_CLICK. APK build
+and lint passed: 0 errors / 14 existing warnings. Windows isolated Release build:
+0 warnings/errors; full regression 511/511. No Windows production file changed.
+
+USB overwrite deployment did not clear data. MainActivity is RESUMED/foreground.
+Receiver PID 29348 / Runtime RunId 2 remained unchanged across Disconnected /
+Connected and new Sender admission. Final run D1265C7E46AA302A sent Touch sequence
+0 and valid click feedback; current Sender logged no error/overflow. The launcher
+still carries an old task record, so its identity helper verified the actual UDP
+owner separately: current user, Session 3 matching explorer, Medium integrity,
+Default desktop, 0.0.0.0:50000. Receiver counters survived with zero mouse/gamepad
+output failures. User layout and settings matched their pre-test bytes exactly.
+
+The existing mouse smoke passed movement, single tap and double-tap drag:
+three DOWN/UP pairs, 1668 ms held, 60 held-movement callbacks and clean release.
+An earlier smoke stopped before clicking when the pointer left the inert target;
+after repositioning, the complete rerun passed. This verifies existing input,
+not future LR gamepad mapping. Evidence: ignored `windows/test-results/phase6a/`.
+`git diff --check` passed. Git add / Commit / Push: NO.
+
+**Phase 5A.4 — RIGHTPAD DISTINCT HAPTIC IDENTITIES COMPLETE (2026-09-20).**
+Touchpad accepted RPHF CLICK now calls system
+`performHapticFeedback(HapticFeedbackConstants.CONFIRM)` exactly once. The small
+independent policy/backend boundary remains for failure isolation and testing;
+Touchpad one-shot/legacy Vibrator branches are removed. Screen Control remains
+10 ms / amplitude 255 for PRESS and first DIRECTION_COMMIT, with no extra feedback
+on LongPress/UP/CANCEL. RPHF, identity validation, dedupe and VIBRATE permission
+are unchanged. Fifteen frozen source/manifest files matched pre-change hashes.
+
+All Android JVM suites passed: Touchpad policy 7 checks, codec/gate/Sender 85,
+real UDP listener acceptance/rejection/dedupe/failure isolation, Screen Control
+feedback 30, and all prior protocol/config/layout/gamepad suites. Device
+instrumentation passed 80 checks including production adapter CONFIRM selection.
+APK build/lint passed (0 errors, 14 existing warnings). Isolated Windows Release
+build passed (0 warnings/errors), full regression 511/511. Production Receiver
+binaries were not replaced or restarted during this Android-only change.
+
+USB device c2e6a5e3 received overwrite installs without clearing app data.
+MainActivity is RESUMED/foreground; Receiver PID 29348 and Runtime RunId 2 survived
+Connected -> Disconnected -> Connected, new Sender admission and Touch sequence 0.
+The current process was launched by explorer, not the Codex shell. Launcher Status
+has an old task PID record; its identity helper independently verified the actual
+UDP owner: current user, Session 3 matching explorer, Medium integrity, Default
+desktop, 0.0.0.0:50000. Final Sender run is 2CD686C2281DADB1, with no current-run
+Sender error/overflow and no mouse/gamepad output failures. Counters survived.
+
+Real mouse movement/single click/double-tap drag passed: three DOWN/UP pairs,
+1666 ms held, 61 movement callbacks while held, release observed. Accepted CLICK
+logged effect=CONFIRM performed=true. Real Xbox360/XInput B/Y/A, Design A, refresh
+and lease passed; eight B pulses measured 28.031..38.851 ms (all >=25 ms).
+Config regression passed and the actual Android received epoch 295b1655b885517c,
+revision 1, defaults 0.7/3.0/25/400. The additional GUI Save smoke could not locate
+the tray-hidden WPF window reliably and is not claimed as passed in this phase;
+no settings were changed. Device layout editor regression passed, and final
+layout/settings files are byte-identical to the user's pre-test files.
+
+The user tested this installed build and answered **"A–D 全部满意，盲操作能明显区分"**:
+Touchpad regained system CONFIRM crispness, Screen Control DOWN was noticeably
+stronger, blind operation distinguished haptic type as well as strength, and the
+second Slide-commit 10 ms / 255 feedback remained clear. This is explicit human
+acceptance, separate from the automated functional evidence. No further waveform
+changes were made. Evidence: ignored
+`windows/test-results/gamepad-phase5a4/`. No add/commit/push.
+
+**Phase 5A.3 BLOCKED on Touchpad human crispness acceptance (historical).** Only accepted
+Receiver CLICK execution changed to 6 ms / 120 (legacy 6 ms), in separate
+TouchpadClickFeedback / TouchpadClickHapticFeedback classes. RPHF, validation,
+dedupe and Screen Control 10 ms / 255 remain unchanged. The user reported
+"Touchpad 不够清脆，或仍不满意"; no further parameters were selected automatically.
+All Android JVM tests passed (34 Touchpad policy checks, enhanced real UDP
+listener, unchanged Screen Control checks), device instrumentation 72 passed,
+lint zero errors/14 existing warnings, Windows 511/511. Mouse single click and
+double-tap drag (1678 ms held), B/Y/A, Design A, dwell, lease, config and layout
+passed. Eight XInput holds were 25.096..35.148 ms, all >=25 ms. Current layout and
+settings were preserved. Evidence: ignored `windows/test-results/gamepad-phase5a3/`.
+
+**Phase 5A.2 COMPLETE (historical acceptance): fixed 10 ms / 255 Screen Control haptic passed regression
+and human acceptance (2026-09-19).** The user confirmed all four checks:
+unchanged Touchpad feel, stronger control DOWN, blind distinction, and clearly
+felt second feedback at Slide commit. Generic PRESS/DIRECTION_COMMIT routing is unchanged.
+API 26+ uses createOneShot(10, 255), older APIs vibrate(10), without HEAVY_CLICK
+preference or automatic duration escalation. Touchpad CONFIRM/RPHF is unchanged.
+Android feedback policy 30 checks, all existing JVM suites and 72 device checks
+passed; lint retained 14 existing warnings and zero errors. Windows final full
+run passed 511/511; the first run's Discovery post-send counter race is preserved
+in evidence, without a production change. Eight XInput holds were 25.585..38.830 ms,
+all >=25 ms. B/Y/A, Design A, LongPress, lease, config and mouse regressions passed.
+Evidence: ignored `windows/test-results/gamepad-phase5a2/`. No add/commit/push.
+
+**Historical Phase 5A.1 BLOCKED on human strength acceptance.** Implementation and automated/
+device regression passed, but the user reported "振动太轻了" on the actual
+HEAVY_CLICK path. Distinct strong feedback was not accepted. Generic local Screen Control PRESS
+and first DIRECTION_COMMIT then used HEAVY_CLICK with the specified 20 ms fallbacks;
+LongPress/UP/CANCEL/Tap pulse/editor do not vibrate. Existing Touchpad CONFIRM and
+RPHF are unchanged. New feedback policy tests: 19; device instrumentation: 72;
+all previous Android suites and 511 Windows regressions passed. Eight new XInput
+holds were 25.442..35.054 ms, all >=25 ms. Current user layout (1059/700/141/1970)
+was preserved instead of overwriting it with the older Phase 5A test rectangle.
+See [SCREEN_CONTROLS.md](SCREEN_CONTROLS.md) for policy and evidence boundaries.
+
+**Screen Controls Phases 1/2/3/3.5/3.6/4 implemented; Phase 5A integration audit
+and automated/device regression complete, all uncommitted.**
+
+Current contract: reusable SlideControl `xbox.b.slide`; Tap B, LongPress held B,
+Up Y, Down A, immediate Design A B→Y/A; solid green idle/red active/white B;
+Visual Rect equals Hit Rect. Generic move/edge/corner/numeric layout editor and
+Android-only normalized layout persistence are implemented. Preserve this phone's
+X=100/Y=600/W=240/H=160 px saved rectangle.
+
+Receiver Controls is the behavior source, defaults/current values 0.7 dp / 3.0 dp /
+25 ms / 400 ms. Disk-first successful Save publishes config epoch/revision using
+existing UDP 50002, with type6 request recovery on UDP 50000. Android has a runtime
+cache and immutable DOWN snapshot, not behavior preferences. Failed Save does not
+publish. The settings model has eight legacy fields plus nested `controls`.
+
+ABI2 libvirtualhid Xbox360 is independent of mouse. Type5 GAMEPAD_STATE is 30 bytes,
+with full state, generic minimumDwellMs, FORCE_NEUTRAL and zero reserved; Touch
+types 1–4 remain unchanged. Sender refresh is 100 ms, Receiver lease 300 ms.
+Ordinary Neutral respects local minimum dwell; safety and new non-Neutral
+replacement are immediate. No Motion changes or jitter-adaptive padding were added.
+
+Phase 5A: Windows Debug/isolated Release each 511/511, zero warnings/errors;
+all Android JVM suites and 49 instrumentation checks passed. APK/lint builds
+succeeded, retaining 14 existing lint warnings and zero errors. Native Debug and
+Release tests passed with matching ABI2 production DLL. Eight production XInput
+B holds: 29.560, 34.369, 28.295, 26.035, 32.784, 26.126, 39.819, 26.637 ms.
+LongPress, Y/A, Design A, lease, config snapshot, layout and mouse regression passed.
+Leftpad was not running and no DS4 was present; simultaneous coexistence remains
+unverified. No Leftpad process or configuration was started/modified.
+
+See [SCREEN_CONTROLS.md](SCREEN_CONTROLS.md) for the complete safety audit and
+A–H human checklist; [GAMEPAD_PROTOCOL.md](GAMEPAD_PROTOCOL.md) and
+[CONTROL_CONFIG_PROTOCOL.md](CONTROL_CONFIG_PROTOCOL.md) specify current wires.
+**MANUAL HUMAN ACCEPTANCE REQUIRED**: automated ADB/XInput results do not establish
+real-finger/game feel. Evidence is ignored under `windows/test-results/gamepad-phase5a/`.
+No add/commit/push was performed. Historical counts, PIDs and machine settings below
+belong to their dated milestones and do not override this current audit.
+
+### Earlier Motion and platform milestones (historical evidence)
 
 **Live Sensitivity and safe Runtime Restart implemented and verified (2026-09-18,
 uncommitted).** Successful Save publishes an atomic X/Y pair used per real input
@@ -45,7 +362,7 @@ frozen Tau/Support. Explicit `--dev-motion-mode` remains authoritative and keeps
 each development mode's original fixed parameters, including explicit production-
 named K24-r5 mode selection.
 
-`RuntimeSettings` now has eight product fields, adding `smoothingTauMs` and
+At that milestone `RuntimeSettings` had eight product fields, adding `smoothingTauMs` and
 `smoothingSupportMs`. Older six-field JSON loads 24/120 without a migration file;
 invalid Tau or Support falls back independently. `motionCadenceHz` remains absent.
 An older settings file containing either 250 or 1000 is accepted without warning;

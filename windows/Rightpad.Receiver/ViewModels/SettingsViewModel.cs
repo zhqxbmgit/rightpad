@@ -125,6 +125,7 @@ internal sealed class SettingsViewModel : ObservableModel
     public NumericField MovementThreshold { get; }
     public NumericField ClickHold { get; }
     public NumericField DoubleTapInterval { get; }
+    public IReadOnlyList<ControlSettingsViewModel> Controls { get; }
 
     public SettingsViewModel(RuntimeSettingsStore store, SettingsFileStore file, string? warning = null)
     {
@@ -146,8 +147,11 @@ internal sealed class SettingsViewModel : ObservableModel
             x => UpdateDraft(draftSettings with { ClickHoldMs = (int)x }), Recalculate);
         DoubleTapInterval = new("Double Tap Interval", "ms", draftSettings.DoubleTapIntervalMs, 50, 1000, 10, "0", true,
             x => UpdateDraft(draftSettings with { DoubleTapIntervalMs = (int)x }), Recalculate);
+        Controls = ControlDefinitions.All.Select(d => new ControlSettingsViewModel(d,
+            () => d.Get(draftSettings.Controls),
+            value => UpdateDraft(draftSettings with { Controls = d.Set(draftSettings.Controls, value) }), Recalculate)).ToArray();
         fields = [SensitivityX, SensitivityY, SmoothingTau, SmoothingSupport,
-            TapMaxDuration, MovementThreshold, ClickHold, DoubleTapInterval];
+            TapMaxDuration, MovementThreshold, ClickHold, DoubleTapInterval, .. Controls.SelectMany(c => c.Fields)];
         Recalculate();
         RefreshNotice();
     }
@@ -198,6 +202,7 @@ internal sealed class SettingsViewModel : ObservableModel
             MovementThreshold.SetCommitted(snapshot.TapMovementThresholdPx);
             ClickHold.SetCommitted(snapshot.ClickHoldMs);
             DoubleTapInterval.SetCommitted(snapshot.DoubleTapIntervalMs);
+            foreach (var control in Controls) control.SetCommitted(control.Definition.Get(snapshot.Controls));
             loadWarning = null;
             Notice = "";
             return true;

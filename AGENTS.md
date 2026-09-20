@@ -326,9 +326,90 @@ authorized for this best-effort side effect. No Android gesture recognition,
 input dependency on feedback, background service or haptic setting is added.
 See docs/HAPTIC_FEEDBACK_PROTOCOL.md.
 
+Phase 5A.4 restores only the final accepted Touchpad CLICK execution to
+performHapticFeedback(HapticFeedbackConstants.CONFIRM), using system tuning.
+Receiver confirmation, RPHF bytes, identity validation and dedupe remain unchanged;
+never vibrate locally on Touchpad DOWN/MOVE. TouchpadClickFeedback is independent
+of ScreenControlFeedback's 10 ms / 255 policy. Failure remains best-effort, with
+no one-shot fallback or retry. The user rejected the Phase 5A.3 one-shot feel and
+selected system CONFIRM and confirmed blind distinction on the actual device.
+Do not adjust waveforms automatically. VIBRATE remains for Screen Controls.
+
 ## Android Responsibility
 
-Android is only an input sensor.
+### Approved LR gesture, transport and config (2026-09-20, Phases 6A–6C)
+
+An independent reusable SlideControlLRGesture may express BASE/LEFT/RIGHT/UP,
+with horizontal threshold priority, first commit wins, Design A takeover and
+downward movement doing nothing to pending Tap/LongPress. Defaults are Left 12 dp,
+Right 3 dp, Up 2 dp, Tap Hold 25 ms, Long Press 400 ms, snapshotted at DOWN.
+Its per-definition SYSTEM_CLICK feedback uses EFFECT_CLICK on API 29+, 20 ms / 120
+on API 26–28, legacy 20 ms otherwise, only on DOWN/first direction commitment.
+Phase 6B registers xbox.x.slide_lr (label X) through the same layout/editor/router
+as B. Definition mapping is BASE=X, LEFT=DpadLeft, RIGHT=DpadRight, UP=DpadUp;
+stable-ID contributions merge in GamepadAggregator. Existing logical bits 2/13/14/11
+and the 30-byte v2 type5 packet, dwell, FORCE_NEUTRAL and single Xbox360 device are
+reused unchanged. Design A publishes one full replacement. Phase 6C adds separate
+SlideControlLRSettings under controls.x, registry wire ID 2 / kind 2 and five
+Receiver Controls fields. Disk-first explicit Save publishes one global revision
+with B+X. RPCT v2 uses length-prefixed records (B 12 bytes, X 14 bytes; total 62).
+Android validates complete B+X before atomic cache replacement and snapshots at
+DOWN. v1 B-only transition reading is retained without acknowledging complete
+B+X sync. No GAMEPAD_STATE, type6 request, layout, dwell or haptic change is allowed.
+Existing B STRONG_ONE_SHOT stays 10 ms / 255 and Touchpad stays system CONFIRM.
+See docs/SCREEN_CONTROLS.md for the current contract and validation scope.
+
+### Approved Screen Controls exception (2026-09-19, Phases 1–4)
+
+Phase 5A.2 specifies local generic Screen Control PRESS and first
+DIRECTION_COMMIT haptics: fixed 10 ms amplitude 255 one-shot on API 26+, or
+legacy 10 ms on older APIs. Do not prefer HEAVY_CLICK or increase the duration
+without a new user instruction. VIBRATE is a manifest permission, with
+no runtime prompt. LongPress, UP, CANCEL, Tap pulse, editor, Settings and Power
+produce no Screen Control haptic. Feedback failure never controls input. Existing
+Windows-confirmed Touchpad RPHF semantics remain unchanged; its separate final
+effect follows the explicit Phase 5A.4 rule above. Distinct haptic identities must
+be confirmed by the human on the actual device before claiming acceptance.
+
+Registered on-screen controls may recognize their own single-finger SlideControl
+gestures on Android. The current `xbox.b.slide` instance maps Tap/LongPress to B,
+Slide Up to Y and Slide Down to A. Design A replaces held B with Y/A immediately.
+This exception does not move mouse gesture recognition or Motion to Android.
+
+Receiver Controls settings are the sole behavior source: defaults are Up 0.7 dp,
+Down 3.0 dp, Tap Hold 25 ms and Long Press 400 ms. Explicit successful disk Save
+publishes a full config epoch/revision snapshot over the existing UDP 50002
+worker/listener. Type6 requests use the existing Android Sender/UDP 50000 and
+recover lost updates. Failed Save never publishes. Android caches behavior only
+in memory and snapshots it at DOWN; the active gesture remains unchanged.
+
+The generic layout editor supports move, edge/corner resize, integer X/Y/W/H,
+Save/Cancel/Reset and bounds validation. Visual Rect equals Hit Rect. Defaults
+are square; saved rectangles are allowed. Android persists layout independently
+by stable ID. Preserve the current user layout during builds and tests; never
+assume a historical test rectangle is still current. Instrumentation snapshots
+the user's file, temporarily exercises a fixture and restores the exact file in
+finally. Do not reset user layout without instruction.
+
+Generic GAMEPAD_STATE is v2 type5, exactly 30 bytes, carrying full Xbox state,
+minimumDwellMs, flags including FORCE_NEUTRAL and zero reserved. Touch types 1–4
+remain byte-for-byte unchanged. Held state refreshes every 100 ms; Receiver uses
+an independent 300 ms lease and a low-overhead monotonic dwell deadline task.
+Ordinary Tap Neutral respects dwell; safety Neutral and new non-Neutral states
+bypass the old dwell. Do not increase Android Tap Hold to hide network jitter.
+
+The independent libvirtualhid xbox_360 backend uses ABI2; its failure must not
+stop mouse input. Lifecycle release includes cancel/pause/editor/target/run change,
+disconnect/lease/Stop/Safe Restart/Dispose/error. No B-specific transport logic,
+extra gesture, socket/thread, service, authentication or Motion change is approved
+by this exception. Existing shared UDP 50002 and its worker/listener are reused.
+See docs/SCREEN_CONTROLS.md, docs/GAMEPAD_PROTOCOL.md and
+docs/CONTROL_CONFIG_PROTOCOL.md. Automated ADB/XInput tests are functional evidence.
+The user explicitly confirmed final real-person acceptance of Phases 1–6C on
+2026-09-20 before authorizing the combined source/docs/tests commit and normal push.
+Preserve the accepted parameters; future behavior changes require fresh acceptance.
+
+For the mouse path, Android is only an input sensor.
 
 Android is responsible for:
 
@@ -342,7 +423,7 @@ Android should NOT decide:
 - Mouse movement behavior
 - Sensitivity
 - Smoothing
-- Gesture meaning
+- Mouse gesture meaning
 - Windows input generation
 
 ---
@@ -779,10 +860,13 @@ the explicitly approved v2 run/presence behavior. The independent interactive
 launcher / Codex Job lifetime rule remains mandatory. Practicality First: add
 only functionality solving a current demonstrated problem. This change does not
 authorize handshake frameworks, reconnect managers, TCP/ACK/reliable UDP,
-retransmission/FEC, pairing/security, config sync, extra transport
+retransmission/FEC, pairing/security, unapproved config sync, extra transport
 threads/sockets or network optimization beyond the separately approved independent
 LAN discovery socket/thread described in docs/DISCOVERY_PROTOCOL.md and the
 independent click-feedback side channel in docs/HAPTIC_FEEDBACK_PROTOCOL.md.
+The separately approved Screen Controls exception above also reuses that channel
+for behavior config sync and the existing Sender for type6 requests, as specified
+in docs/CONTROL_CONFIG_PROTOCOL.md; it adds no socket or worker thread.
 
 Do not ask the user to run commands that Codex can run. If no configured test
 device is reachable through ADB, explicitly report that deployment and runtime

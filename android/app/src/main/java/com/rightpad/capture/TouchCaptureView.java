@@ -18,14 +18,20 @@ import android.view.WindowInsets;
 
 final class TouchCaptureView extends View {
     void performClickHaptic() {
-        boolean performed = performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM);
-        android.util.Log.i("RightpadHaptic", "confirm_requested performed=" + performed);
+        boolean performed = clickFeedback.acceptedClick();
+        android.util.Log.i("RightpadHaptic", "click_requested effect=CONFIRM performed=" + performed);
     }
+    private final TouchpadClickFeedback clickFeedback;
     private final TouchSampleLogger logger = new TouchSampleLogger();
     private final TouchRecordWriter recordWriter;
     private final UdpTouchSender udpSender;
     private String receiverAddress;
     private final Runnable requestExit;
+    private final Runnable requestSettings;
+    final ScreenControls controls;
+    private final ScreenControlRouter router = new ScreenControlRouter();
+    private final PowerGestureTracker settingsGesture = new PowerGestureTracker();
+    private boolean inputModal;
     private final float density;
     private final float scaledDensity;
 
@@ -92,11 +98,14 @@ final class TouchCaptureView extends View {
     private String batteryText = BatteryDisplay.text(BatteryDisplay.UNKNOWN_PERCENT);
 
     TouchCaptureView(Context context, TouchRecordWriter recordWriter, UdpTouchSender udpSender,
-            Runnable requestExit) {
+            Runnable requestExit, Runnable requestSettings) {
         super(context);
+        clickFeedback = new TouchpadClickFeedback(new TouchpadClickHapticFeedback(this));
         this.recordWriter = recordWriter;
         this.udpSender = udpSender;
         this.requestExit = requestExit;
+        this.requestSettings = requestSettings;
+        controls = new ScreenControls(this, udpSender::submitGamepad);
         density = getResources().getDisplayMetrics().density;
         scaledDensity = getResources().getDisplayMetrics().scaledDensity;
         configurePaints();
@@ -175,6 +184,7 @@ final class TouchCaptureView extends View {
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
         prepareGeometry(width, height);
+        controls.resize(width, height);
     }
 
     private void prepareGeometry(int width, int height) {
@@ -371,8 +381,7 @@ final class TouchCaptureView extends View {
         canvas.drawArc(powerIconArc, -44f, 268f, false, powerIconPaint);
         canvas.drawLine(powerCenterX, powerLineTop, powerCenterX, powerCenterY - dp(1f),
                 powerIconPaint);
-        // TODO: A settings UI needs an explicit input-mode switch and touch arbitration;
-        // this affordance intentionally remains part of the full-screen capture surface.
+        controls.draw(canvas);
     }
 
     private float dp(float value) {
@@ -383,45 +392,33 @@ final class TouchCaptureView extends View {
         return value * scaledDensity;
     }
 
-    // This surface records touch facts; it deliberately has no click/gesture action.
+    void setInputModal(boolean modal) {
+        stopCapture("input_mode_changed");
+        inputModal = modal;
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
-
-        if (action == MotionEvent.ACTION_DOWN
-                && powerGesture.onDown(event.getX(), event.getY(), event.getEventTime(),
-                        powerCenterX, powerCenterY, powerRadius)) {
-            stopCapture("power_gesture");
+        if (controls.editing()) {
+            controls.editTouch(event);
             return true;
         }
-        if (powerGesture.isClaimed()) {
-            if (event.getPointerCount() != 1 || action == MotionEvent.ACTION_POINTER_DOWN) {
-                powerGesture.onCancel();
-            } else if (action == MotionEvent.ACTION_MOVE) {
-                float maximumMovement = dp(8f);
-                int historySize = event.getHistorySize();
-                for (int i = 0; i < historySize; i++) {
-                    powerGesture.onMove(event.getHistoricalX(i), event.getHistoricalY(i),
-                            maximumMovement);
-                }
-                powerGesture.onMove(event.getX(), event.getY(), maximumMovement);
-            } else if (action == MotionEvent.ACTION_UP) {
-                powerGesture.onMove(event.getX(), event.getY(), dp(8f));
-                if (powerGesture.onUp(event.getX(), event.getY(), event.getEventTime(),
-                        powerCenterX, powerCenterY, powerRadius, 300L)) {
-                    requestExit.run();
-                }
-            } else if (action == MotionEvent.ACTION_CANCEL) {
-                powerGesture.onCancel();
-            }
-            return true;
-        }
-
+        if (inputModal) return true;
         if (action == MotionEvent.ACTION_DOWN) {
             stopCapture("new_down");
-            if (udpSender.canCapture() && event.getPointerCount() == 1
-                    && event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
+            if (event.getPointerCount() != 1) return true;
+            boolean settings = settingsGesture.onDown(event.getX(), event.getY(), event.getEventTime(),
+                    settingsCenterX, settingsCenterY, settingsRadius);
+            boolean power = powerGesture.onDown(event.getX(), event.getY(), event.getEventTime(),
+                    powerCenterX, powerCenterY, powerRadius);
+            ScreenControlRouter.Owner owner = router.down(event.getX(), event.getY(), event.getPointerId(0),
+                    settings, power, udpSender.canCapture() && event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER,
+                    controls.rects());
+            if (owner == ScreenControlRouter.Owner.SCREEN_CONTROL) {
+                controls.down(router.controlId(), event);
+            } else if (owner == ScreenControlRouter.Owner.MOUSE) {
                 sessionId++;
                 activePointerId = event.getPointerId(0);
                 captureEvent(event, 0, TouchSample.Action.DOWN);
@@ -429,21 +426,43 @@ final class TouchCaptureView extends View {
             return true;
         }
 
-        // After rejection, ignore the rest of the stream until a fresh ACTION_DOWN.
-        if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
+        if (action == MotionEvent.ACTION_CANCEL) {
+            if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                int index = event.findPointerIndex(activePointerId);
+                if (index >= 0) captureEvent(event, index, TouchSample.Action.CANCEL);
+            }
+            stopCapture("cancelled");
             return true;
         }
-        if (action == MotionEvent.ACTION_POINTER_DOWN || event.getPointerCount() != 1) {
-            stopCapture("multiple_pointers");
+        if (!router.accepts(event.getPointerCount(), event.getPointerId(0),
+                action == MotionEvent.ACTION_POINTER_DOWN)) {
+            stopCapture("multiple_or_missing_pointer");
             return true;
         }
-
+        ScreenControlRouter.Owner owner = router.owner();
+        if (owner == ScreenControlRouter.Owner.SETTINGS || owner == ScreenControlRouter.Owner.POWER) {
+            boolean settings = owner == ScreenControlRouter.Owner.SETTINGS;
+            PowerGestureTracker tracker = settings ? settingsGesture : powerGesture;
+            for (int i = 0; i < event.getHistorySize(); i++) {
+                tracker.onMove(event.getHistoricalX(i), event.getHistoricalY(i), dp(8));
+            }
+            tracker.onMove(event.getX(), event.getY(), dp(8));
+            if (action == MotionEvent.ACTION_UP) {
+                boolean activate = tracker.onUp(event.getX(), event.getY(), event.getEventTime(),
+                        settings ? settingsCenterX : powerCenterX, settings ? settingsCenterY : powerCenterY,
+                        settings ? settingsRadius : powerRadius, 300);
+                router.cancel();
+                if (activate) { if (settings) requestSettings.run(); else requestExit.run(); }
+            }
+            return true;
+        }
+        if (owner == ScreenControlRouter.Owner.SCREEN_CONTROL) {
+            controls.touch(router.controlId(), event);
+            if (action == MotionEvent.ACTION_UP) router.cancel();
+            return true;
+        }
+        if (owner != ScreenControlRouter.Owner.MOUSE || activePointerId == MotionEvent.INVALID_POINTER_ID) return true;
         int pointerIndex = event.findPointerIndex(activePointerId);
-        if (pointerIndex < 0) {
-            stopCapture("missing_pointer");
-            return true;
-        }
-
         switch (action) {
             case MotionEvent.ACTION_MOVE:
                 captureEvent(event, pointerIndex, TouchSample.Action.MOVE);
@@ -451,11 +470,7 @@ final class TouchCaptureView extends View {
             case MotionEvent.ACTION_UP:
                 captureEvent(event, pointerIndex, TouchSample.Action.UP);
                 activePointerId = MotionEvent.INVALID_POINTER_ID;
-                flushRecording();
-                break;
-            case MotionEvent.ACTION_CANCEL:
-                captureEvent(event, pointerIndex, TouchSample.Action.CANCEL);
-                activePointerId = MotionEvent.INVALID_POINTER_ID;
+                router.cancel();
                 flushRecording();
                 break;
             default:
@@ -465,11 +480,21 @@ final class TouchCaptureView extends View {
     }
 
     void stopCapture(String reason) {
+        controls.cancel();
+        router.cancel();
+        powerGesture.onCancel();
+        settingsGesture.onCancel();
         if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
             logger.logInterruption(sessionId, activePointerId, reason);
             activePointerId = MotionEvent.INVALID_POINTER_ID;
         }
         flushRecording();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        stopCapture("view_detached");
+        super.onDetachedFromWindow();
     }
 
     private void captureEvent(MotionEvent event, int pointerIndex, TouchSample.Action action) {

@@ -52,7 +52,7 @@ internal static class SettingsTests
         await store.FlushAsync();
         Equal(value, SettingsFileStore.Load(files.PathName).Settings, "round trip");
         using var doc = JsonDocument.Parse(File.ReadAllText(files.PathName));
-        Equal(8, doc.RootElement.EnumerateObject().Count(), "only eight product fields");
+        Equal(9, doc.RootElement.EnumerateObject().Count(), "eight existing fields plus controls");
         Equal(24, doc.RootElement.GetProperty("smoothingTauMs").GetInt32(), "default Tau serialized");
         Equal(120, doc.RootElement.GetProperty("smoothingSupportMs").GetInt32(), "default Support serialized");
     }
@@ -382,7 +382,7 @@ internal static class SettingsTests
             using var saved = JsonDocument.Parse(File.ReadAllText(files.PathName));
             Check(!saved.RootElement.TryGetProperty("motionCadenceHz", out _),
                 $"legacy cadence {legacyCadence} removed on normal save");
-            Equal(8, saved.RootElement.EnumerateObject().Count(), "saved schema has eight product fields");
+            Equal(9, saved.RootElement.EnumerateObject().Count(), "saved schema includes controls");
         }
     }
 }

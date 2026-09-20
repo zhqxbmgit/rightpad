@@ -24,6 +24,8 @@ internal sealed class UdpReceiver : IDisposable
     private readonly Action? cancelButtons;
     private readonly TextWriter output;
     private readonly FlightRecorder? flightRecorder;
+    private readonly GamepadSessionProcessor? gamepad;
+    private readonly ControlConfigChannel? controls;
     private readonly HashSet<ulong> retiredRunIds = new();
     private SenderPresence presence = new();
     private long presenceTimeouts;
@@ -49,7 +51,8 @@ internal sealed class UdpReceiver : IDisposable
     public UdpReceiver(IPEndPoint endpoint, TextWriter output, TimeSpan? timeout = null,
         ITouchMotion? motion = null, bool detailedLogging = true, GestureProcessor? gesture = null,
         RuntimeSettingsStore? settings = null, Action? cancelButtons = null, FlightRecorder? flightRecorder = null,
-        MotionTrace? motionTrace = null)
+        MotionTrace? motionTrace = null, GamepadSessionProcessor? gamepad = null,
+        Action<IPAddress, byte[]>? controlSend = null)
     {
         inputTimeout = timeout ?? InputTimeout;
         if (inputTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
@@ -63,6 +66,8 @@ internal sealed class UdpReceiver : IDisposable
         this.cancelButtons = cancelButtons;
         this.output = output;
         this.flightRecorder = flightRecorder;
+        this.gamepad = gamepad;
+        if (settings is not null && controlSend is not null) controls = new(settings, () => Presence, controlSend, output);
         logger = new RawSampleLogger(output, detailedLogging);
         flightRecorder?.Event("udp_bound", ("endpoint", LocalEndpoint.ToString()));
     }
@@ -71,6 +76,8 @@ internal sealed class UdpReceiver : IDisposable
     {
         var clock = Stopwatch.StartNew();
         clockOrigin = Stopwatch.GetTimestamp();
+        using var maintenanceCancellation = new CancellationTokenSource();
+        var maintenance = gamepad?.MaintainAsync(maintenanceCancellation.Token) ?? Task.CompletedTask;
         try
         {
             logger.Listening(LocalEndpoint);
@@ -110,6 +117,13 @@ internal sealed class UdpReceiver : IDisposable
         }
         finally
         {
+            maintenanceCancellation.Cancel();
+            await maintenance.ConfigureAwait(false);
+            // Timer cancellation may complete synchronously on the Motion failure thread.
+            // Return cleanup to the pool before ReceiverRuntime joins that dedicated writer.
+            await Task.Yield();
+            gamepad?.Stop();
+            controls?.Dispose();
             ClearInput("receiver_stop");
             Interlocked.Exchange(ref activeSession, -1);
             socket.Dispose();
@@ -139,6 +153,7 @@ internal sealed class UdpReceiver : IDisposable
         if (p.Connected && Stopwatch.GetElapsedTime(p.LastSeenAtTicks, now) >= PresenceTimeout)
         {
             Volatile.Write(ref presence, p with { Connected = false });
+            gamepad?.UpdatePresence(Presence);
             Interlocked.Increment(ref presenceTimeouts);
             flightRecorder?.Event("presence_timeout", ("senderRunId", $"{p.RunId:X16}"));
             ClearInput("presence_timeout");
@@ -150,6 +165,23 @@ internal sealed class UdpReceiver : IDisposable
     {
         CheckTimeouts(now); // Invalid/old traffic must not postpone expiry, even at the recovery boundary.
         Statistics.RecordReceived();
+        if (bytes.Length >= 2 && bytes[1] == 6)
+        {
+            if (ControlConfigProtocol.TryDecodeRequest(bytes, out var request)) controls?.Request(request, remote.Address, now);
+            else Statistics.RecordInvalid();
+            return; // No presence renewal/admission and no Touch or gamepad sequencing.
+        }
+        if (bytes.Length >= 2 && bytes[1] == 5)
+        {
+            if (PacketDecoder.TryDecodeGamepad(bytes, out var gamepadPacket, out var gamepadError))
+                gamepad?.Process(gamepadPacket, remote.Address, now);
+            else
+            {
+                Statistics.RecordInvalid();
+                logger.Invalid(elapsedMs, remote, bytes.Length, gamepadError);
+            }
+            return; // Never touches Touch ordering, samples, motion, gestures or presence renewal.
+        }
         if (!PacketDecoder.TryDecode(bytes, out var packet, out string error))
         {
             Statistics.RecordInvalid();
@@ -177,6 +209,7 @@ internal sealed class UdpReceiver : IDisposable
             touchDeadline = null;
             Interlocked.Exchange(ref lastAcceptedAtTicks, 0);
             Volatile.Write(ref presence, new(h.SenderRunId));
+            gamepad?.UpdatePresence(Presence);
             output.WriteLine($"sender_run: senderRunId={h.SenderRunId:X16} trigger={h.EventType}");
         }
         if (h.EventType == TouchEventType.Heartbeat)
@@ -223,6 +256,7 @@ internal sealed class UdpReceiver : IDisposable
         if (!remote.Address.Equals(lastRemoteIp)) Volatile.Write(ref lastRemoteIp, remote.Address);
         string ip = LastRemoteIp!;
         Volatile.Write(ref presence, new(p.RunId, now, true, ip));
+        if (!p.Connected || p.RemoteIp != ip) gamepad?.UpdatePresence(Presence);
         if (!p.Connected)
         {
             output.WriteLine($"presence: status=connected senderRunId={p.RunId:X16} remote={ip}");
@@ -244,7 +278,9 @@ internal sealed class UdpReceiver : IDisposable
 
     public void Dispose()
     {
+        controls?.Dispose();
         socket.Dispose();
+        gamepad?.Stop();
         ClearInput("dispose");
     }
 }

@@ -94,6 +94,9 @@ internal sealed class FlightRecorder : IDisposable
         v["sendInputFailures"] = s.SendInputFailures; v["lastError"] = s.LastError;
         v["mouseBackend"] = s.MouseBackend;
         v["mouseOutputSuccesses"] = s.MouseOutputSuccesses; v["mouseOutputFailures"] = s.MouseOutputFailures;
+        v["gamepadBackend"] = s.GamepadBackend; v["gamepadDeviceIdentity"] = s.GamepadDeviceIdentity;
+        v["gamepadAvailable"] = s.GamepadAvailable; v["gamepadSuccesses"] = s.GamepadSuccesses;
+        v["gamepadFailures"] = s.GamepadFailures; v["lastGamepadError"] = s.LastGamepadError;
         v["lastSuccessfulMouseOutputAgeMs"] = Age(now, s.LastSuccessfulMouseOutputAtTicks);
         v["lastFailedMouseOutputAgeMs"] = Age(now, s.LastFailedMouseOutputAtTicks);
         v["intendedRelativeDxTotal"] = s.IntendedRelativeDxTotal; v["intendedRelativeDyTotal"] = s.IntendedRelativeDyTotal;

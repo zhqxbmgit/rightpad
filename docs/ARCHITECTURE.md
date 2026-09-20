@@ -4,7 +4,8 @@
 
 rightpad is a dedicated Android-to-Windows gaming input system.
 
-The system converts an Android phone touchscreen into a high-quality relative mouse input device.
+The system converts an Android phone touchscreen into a high-quality relative
+mouse input device with approved single-finger Xbox360 screen controls.
 
 Main goals:
 
@@ -52,6 +53,51 @@ Windows Receiver
 
 ## Android Client
 
+Approved Screen Controls exception (Phases 1–4): registered on-screen controls
+produce logical gamepad actions using their local state machines. A generic
+aggregator publishes full gamepad snapshots through the existing Sender socket
+and worker. This does not move mouse Motion/Gesture decisions to Android.
+Windows owns gamepad authority, serial ordering, lease and the independent
+Xbox360 backend. See [GAMEPAD_PROTOCOL.md](GAMEPAD_PROTOCOL.md).
+Receiver Controls settings participate in the explicit disk-first Save transaction.
+Committed immutable snapshots synchronize over the existing UDP 50002 channel;
+Android type6 requests on UDP 50000 recover lost snapshots. Behavior changes apply
+on the next control ACTION_DOWN, with layout storage remaining independent.
+See [CONTROL_CONFIG_PROTOCOL.md](CONTROL_CONFIG_PROTOCOL.md).
+
+Phase 5A.2 retains independent local Screen Control feedback: the UI adapter emits
+PRESS on control DOWN and DIRECTION_COMMIT on first MOVE direction commitment.
+ScreenControlFeedback contains best-effort API selection; ScreenControlHapticFeedback
+uses fixed Android 10 ms / amplitude 255 one-shot on API 26+, or legacy 10 ms.
+The prior HEAVY_CLICK selection has been removed following failed human strength
+acceptance. No automatic duration increase or alternate effect is used.
+No feedback is emitted for LongPress/UP/CANCEL/Tap pulse or editing. Logical
+SlideControlGesture, full-state transport and Windows click confirmation semantics
+remain unchanged. Phase 5A.4 restores only the accepted mouse CLICK's final effect
+through TouchpadClickFeedback / TouchpadClickHapticFeedback to
+View.performHapticFeedback(HapticFeedbackConstants.CONFIRM). There is no Touchpad
+one-shot, legacy vibration or fallback. RPHF bytes, validation and dedupe are
+unchanged; local Touchpad DOWN/MOVE never trigger vibration. Failures cannot stop
+input. VIBRATE remains for Screen Controls without a runtime prompt. Actual blind
+distinguishability is a human acceptance criterion, not an API-success assertion.
+
+Phase 6A adds an isolated SlideControlLRGesture with BASE/LEFT/RIGHT/UP logical
+states and a small deadline adapter. It does not generalize or modify the existing
+B gesture engine. Definitions select STRONG_ONE_SHOT (existing B 10 ms / 255) or
+SYSTEM_CLICK (LR EFFECT_CLICK on API 29+, 20 ms / 120 on API 26–28, legacy 20 ms).
+Phase 6B registers LR in the existing UI, layout and single-finger router. Its
+ScreenControlDefinition maps BASE=X and LEFT/RIGHT/UP to real D-pad button bits.
+ScreenControlInstance bridges the two independent logical engines to the existing
+UI deadline scheduler. GamepadAggregator unions contributions by stable ID and
+batches Design A into one full replacement. The 30-byte type5 packet and existing
+C#/native Xbox360 path already support these bits and remain unchanged.
+Phase 6C adds separate LR Receiver settings and field editors to the existing
+disk-first Save transaction. RPCT v2 carries complete B+X snapshots in 62 bytes,
+with length-prefixed 12-byte Slide and 14-byte SlideLR records. Android validates
+the whole packet before committing and captures LR configuration at DOWN.
+Receiver owns behavior; Android-local layout and all input/haptic contracts stay unchanged.
+See [SCREEN_CONTROLS.md](SCREEN_CONTROLS.md) for horizontal priority and timing.
+
 Responsibilities:
 
 - Capture touchscreen input
@@ -60,14 +106,14 @@ Responsibilities:
 - Create input packets
 - Send packets through local network
 
-Android is only an input sensor.
+For the mouse path, Android is only an input sensor.
 
 Android does NOT:
 
 - Calculate mouse movement
 - Apply sensitivity
 - Apply smoothing
-- Detect gestures
+- Detect mouse gestures (registered SlideControl gestures are the approved exception)
 - Generate mouse events
 
 ---
@@ -83,8 +129,32 @@ Responsibilities:
 - Process gestures
 - Apply configuration
 - Generate Windows mouse input
+- Submit generic full Xbox360 state through the independent libvirtualhid ABI2 backend
+- Own committed Controls behavior, config epoch/revision, gamepad lease and minimum dwell
 
 The receiver is the main control center.
+
+### Screen Controls integration contract
+
+`xbox.b.slide` is a registered SlideControl: Tap B, LongPress held B, Slide Up Y,
+Slide Down A. Design A changes held B directly to Y/A as one complete state.
+Only one finger/owner is active; crossing a control boundary never reassigns it.
+The Android layout editor shares one rectangle for drawing and hit testing,
+supports move/edge/corner/numeric X/Y/W/H, and persists only validated layout.
+Default square and edited rectangles are both valid; Save commits, Cancel discards,
+and Reset changes only the draft. See [SCREEN_CONTROLS.md](SCREEN_CONTROLS.md).
+
+Receiver disk-first Save publishes Controls defaults 0.7 dp / 3.0 dp / 25 ms /
+400 ms and subsequent committed changes. Android's behavior cache is volatile;
+each DOWN snapshots it. A failed Save cannot publish or change Android. Config
+epoch/revision rejects stale updates, and type6 requests recover dropped pushes
+on existing ports/workers. Layout persistence never stores behavior.
+
+Type5 is 30-byte v2 full GAMEPAD_STATE with generic minimumDwellMs/flags/reserved;
+Touch types 1–4 are unchanged. Non-Neutral refresh is 100 ms and Receiver lease is
+300 ms. Ordinary Neutral waits until the local minimum dwell; safety release and
+new non-Neutral replacement are immediate. The independent deadline task does not
+use MotionClock or adapt to jitter. Xbox360 errors remain isolated from mouse.
 
 ---
 

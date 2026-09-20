@@ -2,6 +2,15 @@
 
 ## Protocol v2 — CURRENT (2026-09-09)
 
+Phase 4 adds type6 CONTROL_CONFIG_REQUEST (26 bytes), with no changes to types1..5.
+It cannot admit or renew presence and has no input sequence. Exact request/response
+layouts and recovery semantics: [CONTROL_CONFIG_PROTOCOL.md](CONTROL_CONFIG_PROTOCOL.md).
+
+Approved Phase 3 adds generic type5 GAMEPAD_STATE on the same socket. Its separate
+30-byte layout, minimum dwell, FORCE_NEUTRAL, sequence, refresh, source correlation and 300ms lease are defined
+in [GAMEPAD_PROTOCOL.md](GAMEPAD_PROTOCOL.md). All Touch/heartbeat bytes and rules
+below remain unchanged; gamepad packets never establish or renew Touch presence.
+
 Independent [Haptic Feedback v1](HAPTIC_FEEDBACK_PROTOCOL.md) adds Windows →
 Android CLICK confirmation on UDP 50002. It echoes the accepted normal-click
 UP's senderRunId/sessionId/sequence; it changes no Touch v2 fields, packet types,

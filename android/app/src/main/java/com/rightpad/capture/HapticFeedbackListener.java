@@ -21,6 +21,7 @@ final class HapticFeedbackListener implements Closeable {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final HapticFeedbackGate validation = new HapticFeedbackGate();
     private final Runnable feedback;
+    private final java.util.function.Consumer<ControlConfigProtocol.Snapshot> configs;
     private final Object lifecycle = new Object();
     private final Thread worker;
     private volatile Identity identity;
@@ -29,7 +30,11 @@ final class HapticFeedbackListener implements Closeable {
     private long accepted, rejected;
 
     HapticFeedbackListener(Runnable feedback) {
+        this(feedback, ignored -> { });
+    }
+    HapticFeedbackListener(Runnable feedback, java.util.function.Consumer<ControlConfigProtocol.Snapshot> configs) {
         this.feedback = feedback;
+        this.configs = configs;
         worker = new Thread(this::run, "RightpadHaptic");
         worker.start();
     }
@@ -49,7 +54,7 @@ final class HapticFeedbackListener implements Closeable {
         validation.expectUp(runId, sessionId, sequence, System.nanoTime());
     }
     private void run() {
-        byte[] bytes = new byte[HapticFeedbackProtocol.SIZE + 1];
+        byte[] bytes = new byte[ControlConfigProtocol.MAX_SIZE + 1];
         try {
             while (!closed) {
                 Identity current;
@@ -69,6 +74,15 @@ final class HapticFeedbackListener implements Closeable {
                     while (!closed && current == identity) {
                         DatagramPacket packet = new DatagramPacket(bytes, bytes.length);
                         opened.receive(packet);
+                        if (ControlConfigProtocol.isConfig(bytes, packet.getLength())) {
+                            var snapshot = ControlConfigProtocol.decode(bytes, packet.getLength());
+                            InetAddress source = packet.getAddress();
+                            ui.post(() -> {
+                                if (!closed && current == identity && current.address.equals(source)
+                                        && snapshot != null && snapshot.runId() == current.runId) configs.accept(snapshot);
+                            });
+                            continue;
+                        }
                         HapticFeedbackProtocol.Click click = HapticFeedbackProtocol.decode(bytes, packet.getLength());
                         InetAddress source = packet.getAddress();
                         ui.post(() -> {

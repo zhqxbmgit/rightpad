@@ -43,6 +43,40 @@ internal sealed class SettingsFileStore(string path)
                 (int)ReadOptional("doubleTapIntervalMs", RuntimeSettings.Default.DoubleTapIntervalMs, 50, 1000, true),
                 (int)ReadOptional("smoothingTauMs", RuntimeSettings.DefaultSmoothingTauMs, 8, 60, true),
                 (int)ReadOptional("smoothingSupportMs", RuntimeSettings.DefaultSmoothingSupportMs, 40, 300, true));
+            var controls = VirtualControlsSettings.Default;
+            if (root.TryGetProperty("controls", out var controlsJson))
+            {
+                foreach (var definition in ControlDefinitions.All)
+                {
+                    var defaults = definition.Get(VirtualControlsSettings.Default);
+                    JsonElement record = default;
+                    if (controlsJson.ValueKind != JsonValueKind.Object || !controlsJson.TryGetProperty(definition.JsonKey, out record)
+                        || record.ValueKind != JsonValueKind.Object) { fallback = true; continue; }
+                    double Field(string key, double defaultValue, double min, double max, bool threshold = false)
+                    {
+                        if (record.TryGetProperty(key, out var element) && element.ValueKind == JsonValueKind.Number
+                            && element.TryGetDouble(out var number) && RuntimeSettings.InRange(number, min, max)
+                            && (threshold ? SlideControlSettings.ValidThreshold(number) : number == Math.Truncate(number))) return number;
+                        fallback = true; return defaultValue;
+                    }
+                    IControlSettings loaded = defaults switch {
+                        SlideControlSettings s => new SlideControlSettings(
+                            Field("slideUpThresholdDp", s.SlideUpThresholdDp, .1, 50, true),
+                            Field("slideDownThresholdDp", s.SlideDownThresholdDp, .1, 50, true),
+                            (int)Field("tapHoldMs", s.TapHoldMs, 1, 200),
+                            (int)Field("longPressMs", s.LongPressMs, 50, 2000)),
+                        SlideControlLRSettings s => new SlideControlLRSettings(
+                            Field("slideLeftThresholdDp", s.SlideLeftThresholdDp, .1, 50, true),
+                            Field("slideRightThresholdDp", s.SlideRightThresholdDp, .1, 50, true),
+                            Field("slideUpThresholdDp", s.SlideUpThresholdDp, .1, 50, true),
+                            (int)Field("tapHoldMs", s.TapHoldMs, 1, 200),
+                            (int)Field("longPressMs", s.LongPressMs, 50, 2000)),
+                        _ => throw new InvalidOperationException("Unknown control settings")
+                    };
+                    controls = definition.Set(controls, loaded);
+                }
+            }
+            settings = settings with { Controls = controls };
             return (settings, fallback ? "Some settings were invalid or missing. Defaults were used for those fields." : null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)

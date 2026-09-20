@@ -68,8 +68,10 @@ feedback worker and closes its socket. No reliable-UDP machinery is present.
 
 ## Android validation and dedupe
 
-The Activity owns `HapticFeedbackListener`. Its worker receives into a 25-byte
-buffer so oversized datagrams cannot masquerade as valid 24-byte packets. The
+The Activity owns `HapticFeedbackListener`. Since Phase 4 its worker shares a
+229-byte buffer with config snapshots (228-byte maximum plus one overflow byte).
+RPHF decoding still requires exactly 24 bytes, so oversized packets cannot
+masquerade as valid CLICK events. The
 pure Java decoder validates exact length, magic, version, event type and both
 reserved bytes. The main-thread callback then checks:
 
@@ -105,17 +107,25 @@ old run packets and old posted callbacks remain invalid. Destroy and Power exit
 close the socket and wake the worker to exit. No service, WakeLock or persistent
 background listener is used.
 
-`TouchCaptureView.performClickHaptic()` calls
-`performHapticFeedback(HapticFeedbackConstants.CONFIRM)` on the main thread.
-minSdk remains 34. No VIBRATE permission, waveform or vibration tuning is added;
-system/user haptic settings and device fallback remain authoritative. API
-semantics: [Android haptic feedback documentation](https://developer.android.com/develop/ui/views/haptics/haptic-feedback).
+Phase 5A.4 restores only the main-thread execution after acceptance:
+`TouchCaptureView.performClickHaptic()` invokes `TouchpadClickFeedback.acceptedClick()`.
+Its separate Android backend calls
+`View.performHapticFeedback(HapticFeedbackConstants.CONFIRM)` exactly once.
+There is no Touchpad Vibrator/one-shot path, retry, fallback or automatic parameter
+change. minSdk remains 34. The existing VIBRATE manifest permission remains for
+Screen Controls, without a runtime dialog. A system false result or RuntimeException
+returns failure without affecting mouse, future feedback, Touch sessions,
+connection or gamepad. Consumed identities stay consumed on failure.
+
+Screen Control local PRESS/DIRECTION_COMMIT remains a separate 10 ms / 255 policy,
+with no shared global intensity and no change in this phase. RPHF wire bytes,
+Windows emission and all correlation/dedupe rules above are unchanged.
 
 ## Diagnostics and validation
 
 Windows worker logs `haptic_sent` with the complete identity and destination,
 throttled `haptic_send_error`, optional `haptic_worker_error`, and shutdown totals.
-Android logs `listener_active`, `click_accepted`, `confirm_requested performed=...`,
+Android logs `listener_active`, `click_accepted`, `click_requested effect=CONFIRM performed=...`,
 throttled `feedback_rejected`, socket errors and worker exit. These are existing
 development log/Logcat diagnostics, without additional product settings or UI.
 
@@ -126,3 +136,46 @@ fake Virtual HID. Android tests cover codec, source/run/session/UP correlation,
 duplicates, reordering, stale deadline/capacity, raw Sender identity, and actual
 UDP listener main-thread dispatch/pause/resume/transition/port release/thread exit.
 Real deployment and native Raw Input evidence are recorded in PROJECT_STATE.md.
+
+## Phase 5A.4 verification and acceptance
+
+All existing Android JVM suites passed, including 7 CONFIRM policy checks and the
+real UDP listener's accepted/duplicate/stale/session/rejected/failure cases.
+Device instrumentation passed 80 checks, including the actual production Android
+backend calling the View with CONFIRM exactly once, false-result handling and
+exception recovery. Screen Control feedback checks remain 30 and its source is
+byte-identical; RPHF protocol/gate/listener and Sender are also unchanged.
+Build/lint passed (0 errors, 14 existing warnings); Windows regression 511/511.
+
+Overwrite deployment preserved app data, layout, settings, Receiver PID 29348 and
+Runtime RunId 2. Actual mouse single tap and double-tap drag passed, with accepted
+CLICK logging effect=CONFIRM performed=true. XInput B/Y/A, Design A, minimum dwell
+and lease passed. Details and the additional GUI Save smoke limitation are in
+PROJECT_STATE.md; evidence is ignored under `windows/test-results/gamepad-phase5a4/`.
+
+**RIGHTPAD DISTINCT HAPTIC IDENTITIES COMPLETE (2026-09-20).** The user tested the
+installed build and confirmed **"A–D 全部满意，盲操作能明显区分"**: system Touchpad
+crispness restored, Screen Control DOWN noticeably stronger, blind distinction by
+haptic type, and clear second Slide-commit feedback. This is human acceptance;
+API success alone was not used to establish it. No further waveforms were changed.
+
+## Phase 5A.3 verification and acceptance (historical)
+
+All Android JVM suites passed, including 34 new Touchpad policy checks, the real
+UDP listener with exact one-shot counting, duplicate/stale/session rejection and
+backend-failure recovery, unchanged RPHF golden vectors, and 30 Screen Control
+feedback checks. Device instrumentation passed 72. Build/lint passed with zero
+errors and 14 existing warnings. Windows regression passed 511/511.
+
+Mouse movement/single click passed. Real double-tap drag held LEFT for 1678 ms,
+observed movement while held, and released; the test window saw three DOWN/UP
+pairs across the standalone click, first tap and drag. Receiver confirmation and
+Android accepted CLICK execution were observed. B/Y/A, Design A, minimum dwell,
+lease, config sync and layout regression passed. Thirteen protocol/gate/listener/
+ScreenControl source files were byte-identical to phase start.
+
+**Human acceptance: BLOCKED.** The user answered **"Touchpad 不够清脆，或仍不满意"**
+after comparing the installed 6 ms / 120 effect with Screen Control 10 ms / 255.
+Do not infer a satisfied blind comparison or a specific amplitude diagnosis from
+that answer. No further parameter changes were made; wait for the user's next
+candidate. Evidence: ignored `windows/test-results/gamepad-phase5a3/`.

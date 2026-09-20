@@ -1,7 +1,7 @@
 # rightpad Receiver for Windows 11
 
-C#, .NET 8, WPF; one GUI process owns UDP reception, RAW motion, Single Tap
-and libvirtualhid Virtual HID Mouse. No managed third-party packages, Core project
+C#, .NET 8, WPF; one GUI process owns UDP reception, the fixed Motion engine, Single Tap
+and libvirtualhid Virtual HID Mouse plus an independent Xbox360 gamepad. No managed third-party packages, Core project
 or new service/IPC layer. The existing native bridge requires the installed
 libvirtualhid Driver/Broker and active machine license; see
 [VIRTUAL_HID_MOUSE_POC.md](../docs/VIRTUAL_HID_MOUSE_POC.md).
@@ -20,6 +20,58 @@ the backend argument. Explicit `-DevMouseBackend sendinput` or `virtualhid` pass
 the corresponding `--dev-mouse-backend` override. SendInput remains a development/
 diagnostic compatibility backend; there is no automatic fallback or user selector.
 Virtual HID initialization failure becomes Runtime Error with LastError/diagnostics.
+
+### Xbox 360 backend and Screen Controls (Phases 1–4 implemented)
+
+Phase 3 now connects this backend to generic Android full-state packets through
+an independent GamepadSessionProcessor. The shared UDP socket admits gamepad
+input only from the established current sender/source; separate serial ordering
+and a 300ms lease with 40ms maintenance protect held buttons. Touch/mouse wire
+and sequence semantics remain unchanged. See [GAMEPAD_PROTOCOL.md](../docs/GAMEPAD_PROTOCOL.md).
+
+After mouse creation, each normal Receiver run independently attempts to create a
+libvirtualhid Xbox 360 gamepad. A gamepad failure leaves the mouse runtime running;
+Diagnostics and the flight recorder expose its backend, device identity,
+availability, successful/failed submissions and last error separately from mouse
+counters. Android full-state packets and the Receiver Controls settings page are
+integrated; [SCREEN_CONTROLS.md](../docs/SCREEN_CONTROLS.md) is the current behavior,
+layout, safety and human acceptance contract.
+
+Type5 is exactly 30 bytes (v2 full state, minimumDwellMs, flags and zero reserved).
+Tap B uses generic 25 ms minimum dwell; ordinary Neutral may wait, safety Neutral
+and new non-Neutral replacement do not. Held state refreshes every 100 ms with a
+300 ms Receiver lease. The deadline task is independent of the mouse MotionClock.
+Touch types 1–4 bytes and sequence rules remain unchanged.
+
+Controls defaults are Up 0.7 dp / Down 3.0 dp / Tap Hold 25 ms / Long Press 400 ms.
+Successful disk Save publishes an epoch/revision snapshot through existing UDP
+50002; failed Save publishes nothing. Android type6 requests on UDP 50000 recover
+loss. Receiver is the only behavior source; Android caches behavior until the next
+DOWN snapshot and persists layout separately. See
+[CONTROL_CONFIG_PROTOCOL.md](../docs/CONTROL_CONFIG_PROTOCOL.md).
+
+The native bridge ABI is **2**. Both managed mouse and gamepad wrappers check this
+version before creation; deploy the matching Receiver and DLL together. The pinned
+libvirtualhid revision remains `53e1a949fc0784af716b782ddfa6c647cafd1f05`.
+The gamepad uses `lvh::profiles::xbox_360()` and
+`lvh::GamepadStateAdapter::create/set_state`, with metadata stable ID
+`rightpad.gamepad.xbox360`, Xbox client type and indices 0/0. Diagnostics report the
+actual driver device node separately from this stable metadata ID.
+
+`IVirtualGamepad` accepts an immutable `XboxGamepadState`: logical 16-bit button
+flags, two 8-bit triggers and four signed 16-bit thumb axes. Its 12-byte native
+layout uses 2-byte alignment. The bridge maps logical flags explicitly to
+`lvh::GamepadButton`; these flags are not XInput wire masks. Every call replaces
+the full state, so B to Y clears B in the same report that sets Y.
+
+Creation starts Neutral. Stop and Safe Restart neutralize and dispose the old
+gamepad before disposing the mouse; a new run creates a fresh Neutral device.
+A failed report marks only the gamepad unavailable and attempts Neutral followed
+by device removal. Neutral/destroy failures are recorded without skipping mouse
+cleanup. The native destroy consumes its handle even when cleanup reports an error.
+The separately compiled native test executable uses only the fake gamepad backend;
+the production DLL contains no fake-backend switch. Managed tests inject fake
+devices and do not create Windows input devices.
 
 Adoption follows human A/B without obvious feel degradation, Raw Input visibility,
 Medium Receiver → High foreground success, the measured SendInput limitation there,
@@ -46,6 +98,7 @@ selection, liveness, clean sender transitions and Android 16 permission caveat.
   Windows toggle and one Start/Stop.
 - Motion: RAW text and independently editable X/Y sensitivity.
 - Tap: duration, axis-aligned movement threshold, click hold and Double Tap Interval (130 ms; 50–1000 ms; step 10).
+- Controls: registered SlideControl behavior fields with the common explicit Save button.
 - Diagnostics: actual Receiver counters/state only.
 - Minimize keeps receiving and remains a normal taskbar minimize. The title-bar X
   hides MainWindow to the system tray without stopping ReceiverRuntime or releasing
@@ -344,17 +397,28 @@ Use the independent launcher if Windows itself needs to be started or updated.
 
 ## Implementation files
 
+Phase 6C Controls adds separate `controls.x` / `SlideControlLRSettings` with
+Left/Right/Up thresholds and Tap Hold/Long Press, defaulting to 12/3/2 dp and
+25/400 ms. Registry ID 2 / kind 2 joins B ID 1 / kind 1. The common explicit Save
+commits disk before publication and pushes one complete RPCT v2 snapshot:
+36-byte header + 12-byte B + 14-byte X = 62 bytes. Failed Save never publishes.
+Android uses an atomic runtime cache and per-DOWN snapshots; local B/X geometry,
+30-byte GAMEPAD_STATE, dwell and haptics remain unchanged. See
+[CONTROL_CONFIG_PROTOCOL.md](../docs/CONTROL_CONFIG_PROTOCOL.md) for framing,
+v1 transition, validation and actual GUI Save/XInput evidence.
+
 - Existing decoder, packet models, statistics, UDP, motion, gesture, buttons and
   SendInput classes remain in Rightpad.Receiver.
 - Runtime/ReceiverRuntime.cs owns runs; RuntimeStatsSnapshot is the UI read model.
-- Settings contains immutable settings/store and JSON/debounce persistence.
+- Settings contains immutable settings/store and explicit disk-first JSON Save.
 - Startup contains the small HKCU Run access boundary and source-of-truth logic.
-- App/MainWindow, the framework-provided WinForms NotifyIcon, four Views,
+- App/MainWindow, the framework-provided WinForms NotifyIcon, five Views,
   NumericEditor and DarkTheme form the WPF surface.
 - MainViewModel, SettingsViewModel, StartupViewModel and RuntimeStatsViewModel share page state.
 - Existing tests remain, plus settings/runtime/settings-boundary regression files.
 
-No filter, FIR/Second Order, right click, scroll, new HID/driver,
-profiles/multi-device management, generic reconnect frameworks, cloud/accounts/plugins,
-tray notifications/telemetry/runtime controls, updates, graphs/log viewer, theme
-selector or custom title bar.
+No right click, scroll, profiles/multi-device management, generic reconnect
+frameworks, cloud/accounts/plugins, tray notifications, automatic updates,
+graphs/log viewer, theme selector or custom title bar. The approved fixed Motion
+engine, Virtual HID mouse, Xbox360 backend and explicit runtime controls are
+implemented; this list does not describe them as future work.

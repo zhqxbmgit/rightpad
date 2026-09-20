@@ -18,7 +18,7 @@ internal sealed class NativeVirtualHidMouse : IVirtualHidMouse
         this.motionTrace = motionTrace;
         try
         {
-            if (AbiVersion() != 1) throw new IOException("libvirtualhid native bridge ABI/version mismatch (expected 1).");
+            NativeVirtualHidAbi.Validate(NativeVirtualHidAbi.ReadVersion());
             var error = new StringBuilder(BufferSize);
             var identity = new StringBuilder(BufferSize);
             Check(Create(out handle, identity, BufferSize, error, BufferSize), error);
@@ -70,8 +70,6 @@ internal sealed class NativeVirtualHidMouse : IVirtualHidMouse
         public MouseHandle() : base(true) { }
         protected override bool ReleaseHandle() => Destroy(handle, null, 0) == 0;
     }
-    [DllImport(Library, EntryPoint = "rightpad_vhid_abi_version", CallingConvention = CallingConvention.Cdecl)]
-    private static extern int AbiVersion();
     [DllImport(Library, EntryPoint = "rightpad_vhid_create", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     private static extern int Create(out MouseHandle handle, StringBuilder identity, int identitySize, StringBuilder error, int errorSize);
     [DllImport(Library, EntryPoint = "rightpad_vhid_move", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]

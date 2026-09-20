@@ -32,6 +32,13 @@ internal static class Program
         if (args.Length != 0) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            .. GamepadPacketTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. GamepadSessionTests.Cases,
+            .. GamepadDwellTests.Cases,
+            .. SlideControlLRTests.Cases,
+            .. ControlConfigTests.Cases,
+            .. LRConfigTests.Cases,
+            .. VirtualGamepadTests.Cases,
             .. ResampledMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. BoxcarMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. FiniteCriticalMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
