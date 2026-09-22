@@ -32,6 +32,10 @@ internal static class Program
         if (args.Length != 0) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            ("RPST strict codec and shared unsigned golden", Sync(StatusTests.Codec)),
+            ("RPST true backend health without output activity", Sync(StatusTests.Health)),
+            ("RPST current presence route and no lease renewal", Sync(StatusTests.Presence)),
+            ("RPST existing worker periodic multiplex and lifecycle", StatusTests.Worker),
             .. GamepadPacketTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. GamepadSessionTests.Cases,
             .. GamepadDwellTests.Cases,

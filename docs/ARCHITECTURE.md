@@ -160,6 +160,13 @@ use MotionClock or adapt to jitter. Xbox360 errors remain isolated from mouse.
 
 # 3. Data Flow
 
+Phase 8A adds a passive Android INPUT/XBOX/CONFIG health row. RPST v1 snapshots
+reuse the existing reverse UDP 50002 worker/socket and listener every 500 ms.
+Runtime backend state and committed config identities are the source of truth;
+Android rejects stale target/run data and expires status after 1500 ms. No input
+route, lease, Motion parameter or extra transport worker is introduced. See
+[STATUS_PROTOCOL.md](STATUS_PROTOCOL.md).
+
 Normal-click confirmation adds an independent Windows → Android Haptic Feedback
 v1 side channel on UDP 50002. Windows alone recognizes a normal click; after its
 successful LEFT DOWN and release scheduling, a bounded nonblocking enqueue feeds

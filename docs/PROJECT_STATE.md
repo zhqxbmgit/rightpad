@@ -1,8 +1,71 @@
 # rightpad Project State
 
-Updated: 2026-09-20
+Updated: 2026-09-22
 
 ## 1. Current Phase
+
+**RIGHTPAD CONNECTION INPUT INDICATOR COMPLETE — Phase 8A (2026-09-22).**
+The user accepted the actual phone's size, position and visual interference level.
+The IP address now has a passive 9 sp `INPUT ●   XBOX ●   CONFIG ●` row beneath it,
+with 2 dp solid dots, no hit target, animation or control routing change. Existing
+ConnectionDisplay remains the Discovery presence display. The immutable health
+model and pure tracker interpret real Receiver backend state and full v2 config
+agreement. See [STATUS_PROTOCOL.md](STATUS_PROTOCOL.md) for all state mappings.
+
+RPST v1 is exactly 36 little-endian bytes, with independent magic/version/message,
+reserved validation, current senderRunId, committed config epoch/revision, runtime
+state and five health flags. It reuses the existing UDP 50002 worker/socket and
+Android listener; no new transport thread/socket/port. Refresh is 500 ms only for
+fresh Connected presence. Android checks current source/run/listener generation,
+expires status after >1500 ms and resets on disconnect/pause/new run. Mouse health
+uses successful backend creation plus existing runtime/error observations; neither
+mouse nor Xbox requires output activity to become green. Touch, Discovery, RPHF,
+RPCT, type5/type6, gamepad dwell/lease, thresholds and haptics are unchanged.
+
+Windows Debug and Release each built with zero warnings/errors and passed
+**528/528** (524 baseline + four RPST groups). Native fake suites passed in both
+configurations. All Android JVM suites passed, including the new 96-check health
+run and existing config/gesture/transport/haptic tests. assembleDebug,
+assembleDebugAndroidTest and lintDebug passed (zero errors, 14 existing warnings).
+Actual-device instrumentation passed **146** checks, including all four dot colors
+and original Mouse routing at an indicator coordinate, and restored user layout.
+
+Old Receiver PID 23884 was verified and stopped; UDP 50000 was released. The new
+Release build launched via the approved independent task as PID 10108 / Runtime
+RunId 1, the current user in Session 6 matching explorer, Medium integrity,
+Default desktop, production libvirtualhid, 0.0.0.0:50000. APK overwrite installation,
+Android stop/relaunch and instrumentation recovery kept that Receiver/runtime
+alive. Logs show Disconnected/Connected, new Sender admission, accepted Touch
+sequence 0 and retained cumulative statistics/config. Android was foreground with
+active Sender and no observed sender errors or queue overflow.
+
+The user explicitly allowed one temporary X Tap Hold 25→26→25 ms GUI Save test.
+It advanced config revision 1→2→3 at epoch 7EB212E1231A947A without restarting
+Receiver; CONFIG briefly became PENDING and returned GOOD after each Save.
+Mismatch, missing/v1 config, stale packets and lost-push recovery are also covered
+by pure/transport tests. Original settings were restored byte-for-byte (SHA-256
+597581245BFF24082081FBF21D2572B2939A6F87172729617CAA101ABA0F2C45). In particular,
+the user's current X Left **10 dp** and current narrow/tall B/X rectangles were
+preserved, not replaced by historical default values/layout.
+
+Actual Android→Receiver→XInput regression passed B Tap, held B, Y/A, X Tap/hold,
+D-pad Left/Right/Up, Design A, pause/lease safety and final Neutral with one Xbox360.
+Twelve X Tap observations were 25.2942–40.7237 ms (certified lower bound minimum
+25.1565 ms, maximum polling gap 1.565 ms). A temporary Windows test surface verified
+mouse movement, single tap and double-tap drag: three DOWN/UP pairs, held movement
+and clean release. These are automated real-device functional observations, not
+a new subjective gaming-feel claim.
+
+Receiver Stop produced all-PENDING at 11:43:06.680, then all-OFFLINE at 11:43:07.744;
+the offline screenshot confirms all gray. Restart via the launcher produced PID
+15996, while Android PID **1533 stayed unchanged**. Discovery/heartbeat naturally
+reconnected, new config epoch 45F8214307E4D6D5/revision 1 arrived and all indicators
+returned GOOD at 11:43:14.189. Thus shutdown cannot preserve old green indefinitely.
+Final Receiver and Android are restored and running. Evidence remains under ignored
+`windows/test-results/phase8a/`; no APK/log/settings/layout evidence enters source diff.
+
+Portable config export/import **Phase 7A remains paused and unimplemented**.
+The Phase 8A implementation follows baseline 5e28efb7709de01dc467790ef9efb6e07a936678.
 
 **Screen Controls / Xbox / SlideControlLR — final human acceptance passed (2026-09-20).**
 The user explicitly confirmed final real-person testing of Phases 1–6C: "通过",

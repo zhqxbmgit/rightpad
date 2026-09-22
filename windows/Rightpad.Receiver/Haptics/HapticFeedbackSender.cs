@@ -17,6 +17,9 @@ internal sealed class HapticFeedbackSender : IAsyncDisposable
     private readonly Func<byte[], IPEndPoint, CancellationToken, ValueTask>? sendForTest;
     private readonly int port;
     private long dropped;
+    private Func<StatusDelivery?>? statusSource;
+
+    public void SetStatusSource(Func<StatusDelivery?> source) => Volatile.Write(ref statusSource, source);
 
     public HapticFeedbackSender(TextWriter output, int port = HapticFeedbackCodec.Port,
         Func<byte[], IPEndPoint, CancellationToken, ValueTask>? sendForTest = null)
@@ -42,9 +45,42 @@ internal sealed class HapticFeedbackSender : IAsyncDisposable
         try
         {
             using var socket = sendForTest is null ? new UdpClient(AddressFamily.InterNetwork) : null;
-            await foreach (var pending in queue.Reader.ReadAllAsync(stop.Token).ConfigureAwait(false))
+            Task<bool>? ready = null;
+            Task refresh = Task.Delay(StatusProtocol.RefreshInterval, stop.Token);
+            while (!stop.IsCancellationRequested)
             {
                 stop.Token.ThrowIfCancellationRequested();
+                if (refresh.IsCompleted)
+                {
+                    // Capture at send time, never queue a route to a historical sender.
+                    var status = Volatile.Read(ref statusSource)?.Invoke();
+                    if (status is not null)
+                    {
+                        try
+                        {
+                            byte[] bytes = StatusProtocol.Encode(status.Snapshot);
+                            var target = new IPEndPoint(status.Address, port);
+                            if (sendForTest is not null) await sendForTest(bytes, target, stop.Token).ConfigureAwait(false);
+                            else await socket!.SendAsync(bytes, target, stop.Token).ConfigureAwait(false);
+                        }
+                        catch (Exception e) when (e is SocketException or IOException)
+                        {
+                            if (++errors == 1 || errors % 1024 == 0) output.WriteLine($"status_send_error: count={errors} error={e.Message}");
+                        }
+                    }
+                    refresh = Task.Delay(StatusProtocol.RefreshInterval, stop.Token);
+                }
+                if (!queue.Reader.TryRead(out var pending))
+                {
+                    ready ??= queue.Reader.WaitToReadAsync(stop.Token).AsTask();
+                    await Task.WhenAny(ready, refresh).ConfigureAwait(false);
+                    if (ready.IsCompleted)
+                    {
+                        if (!await ready.ConfigureAwait(false)) break;
+                        ready = null;
+                    }
+                    continue;
+                }
                 if (Stopwatch.GetElapsedTime(pending.At) >= TimeSpan.FromSeconds(1))
                 { Interlocked.Increment(ref dropped); continue; }
                 try

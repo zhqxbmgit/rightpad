@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.Net;
 
 namespace Rightpad.Receiver;
@@ -295,6 +296,12 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                         ? "gamepad_lease_expired" : "gamepad_transport", ("runtimeRunId", run.Id), ("detail", message));
                 }) : null);
             Volatile.Write(ref run.Receiver, receiver);
+            haptics.SetStatusSource(() =>
+            {
+                if (Volatile.Read(ref current) != run) return null;
+                var version = receiver.ControlConfigVersion;
+                return StatusProtocol.Capture(CaptureSnapshot(), version.Epoch, version.Revision, Stopwatch.GetTimestamp());
+            });
             // Explicit touch endpoints are test-only; opt into discovery there with its own endpoint.
             if (endpoint is null || discoveryEndpoint is not null)
             {
@@ -407,6 +414,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             var stats = gamepad?.Stats ?? default;
             return snapshot with
             {
+                MouseAvailable = snapshot.RuntimeState == ReceiverState.Running && Volatile.Read(ref run.Mouse) is not null,
                 GamepadBackend = gamepad?.BackendName ?? (run.GamepadError is null ? "Not created" : LibVirtualHidXboxGamepad.Backend),
                 GamepadDeviceIdentity = gamepad?.DeviceIdentity,
                 GamepadAvailable = snapshot.RuntimeState == ReceiverState.Running && !run.GamepadClosed && run.GamepadError is null && gamepad?.Available == true,

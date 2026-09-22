@@ -14,6 +14,7 @@ internal sealed class ControlConfigChannel : IDisposable
     private long? lastReply;
     public ulong Epoch { get; } = (ulong)Random.Shared.NextInt64(1, long.MaxValue);
     public ulong Revision { get; private set; } = 1;
+    public (ulong Epoch, ulong Revision) CaptureVersion() { lock (gate) return (Epoch, Revision); }
     public ControlConfigChannel(RuntimeSettingsStore store, Func<SenderPresence> presence,
         Action<IPAddress, byte[]> send, TextWriter log)
     {

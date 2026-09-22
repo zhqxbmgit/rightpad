@@ -163,6 +163,7 @@ public final class ScreenControlsSmoke extends Instrumentation {
             lrPolicyAndScheduling();
             lrProduction();
             lrRuntimeConfig();
+            healthIndicator();
             result.putString("stream", "PASS ScreenControlsSmoke checks=" + checks + "\n");
         } catch (Throwable error) {
             result.putString("stream", "FAIL checks=" + checks + " " + android.util.Log.getStackTraceString(error));
@@ -178,6 +179,38 @@ public final class ScreenControlsSmoke extends Instrumentation {
         }
         finish(result.getString("stream", "").startsWith("PASS") ? Activity.RESULT_OK : Activity.RESULT_CANCELED, result);
     }
+    private void healthIndicator() throws Exception {
+        float[] point = new float[2];
+        main(() -> { try {
+            Field x = TouchCaptureView.class.getDeclaredField("statusTextX"); x.setAccessible(true);
+            Field y = TouchCaptureView.class.getDeclaredField("addressBaseline"); y.setAccessible(true);
+            Field text = TouchCaptureView.class.getDeclaredField("healthTextPaint"); text.setAccessible(true);
+            Field state = TouchCaptureView.class.getDeclaredField("inputHealth"); state.setAccessible(true);
+            var original = (InputHealthStatus)state.get(surface);
+            var paint = (android.graphics.Paint)text.get(surface);
+            float density = surface.getResources().getDisplayMetrics().density;
+            point[0] = x.getFloat(surface) + paint.measureText("INPUT") + 5*density;
+            point[1] = y.getFloat(surface) + 17*density + (paint.ascent()+paint.descent())/2;
+            var before = new java.util.LinkedHashMap<>(surface.controls.rects());
+            int[] colors = {0xFF00F0B5, 0xFFC6A85D, 0xFFD36A68, 0xFF646F84};
+            try {
+                for (var health : InputHealthStatus.Health.values()) {
+                    surface.setInputHealth(new InputHealthStatus(true,health,health,health));
+                    Bitmap bitmap = Bitmap.createBitmap(surface.getWidth(),surface.getHeight(),Bitmap.Config.ARGB_8888);
+                    surface.draw(new Canvas(bitmap));
+                    check(bitmap.getPixel(Math.round(point[0]),Math.round(point[1])) == colors[health.ordinal()], "health dot solid " + health);
+                    bitmap.recycle();
+                }
+                check(surface.controls.rects().equals(before), "health drawing preserves control rectangles");
+            } finally { surface.setInputHealth(original); }
+        } catch (Exception error) { throw new AssertionError(error); } });
+        long baseline = sequence();
+        event(MotionEvent.ACTION_DOWN,point[0],point[1],false);
+        event(MotionEvent.ACTION_UP,point[0],point[1],false);
+        check(sequence() == baseline + 2, "health indicator remains original Mouse route, no hit target");
+        screenshot("health");
+    }
+
     private void lrRuntimeConfig() {
         main(() -> {
             var output = new java.util.ArrayList<GamepadStateSubmission>();

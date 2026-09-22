@@ -22,6 +22,7 @@ final class HapticFeedbackListener implements Closeable {
     private final HapticFeedbackGate validation = new HapticFeedbackGate();
     private final Runnable feedback;
     private final java.util.function.Consumer<ControlConfigProtocol.Snapshot> configs;
+    private final java.util.function.BiConsumer<StatusProtocol.Snapshot, Long> statuses;
     private final Object lifecycle = new Object();
     private final Thread worker;
     private volatile Identity identity;
@@ -33,8 +34,13 @@ final class HapticFeedbackListener implements Closeable {
         this(feedback, ignored -> { });
     }
     HapticFeedbackListener(Runnable feedback, java.util.function.Consumer<ControlConfigProtocol.Snapshot> configs) {
+        this(feedback, configs, (ignored, at) -> { });
+    }
+    HapticFeedbackListener(Runnable feedback, java.util.function.Consumer<ControlConfigProtocol.Snapshot> configs,
+            java.util.function.BiConsumer<StatusProtocol.Snapshot, Long> statuses) {
         this.feedback = feedback;
         this.configs = configs;
+        this.statuses = statuses;
         worker = new Thread(this::run, "RightpadHaptic");
         worker.start();
     }
@@ -74,6 +80,17 @@ final class HapticFeedbackListener implements Closeable {
                     while (!closed && current == identity) {
                         DatagramPacket packet = new DatagramPacket(bytes, bytes.length);
                         opened.receive(packet);
+                        if (StatusProtocol.isStatus(bytes, packet.getLength())) {
+                            var snapshot = StatusProtocol.decode(bytes, packet.getLength());
+                            InetAddress source = packet.getAddress();
+                            long receivedAt = System.nanoTime();
+                            ui.post(() -> {
+                                if (!closed && current == identity && current.address.equals(source)
+                                        && snapshot != null && snapshot.runId() == current.runId)
+                                    statuses.accept(snapshot, receivedAt);
+                            });
+                            continue;
+                        }
                         if (ControlConfigProtocol.isConfig(bytes, packet.getLength())) {
                             var snapshot = ControlConfigProtocol.decode(bytes, packet.getLength());
                             InetAddress source = packet.getAddress();

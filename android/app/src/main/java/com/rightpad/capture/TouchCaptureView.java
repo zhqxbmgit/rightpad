@@ -48,6 +48,9 @@ final class TouchCaptureView extends View {
     private final Paint wifiPaint = strokePaint();
     private final Paint statusTextPaint = fillPaint();
     private final Paint addressTextPaint = fillPaint();
+    private final Paint healthTextPaint = fillPaint();
+    private final Paint healthDotPaint = fillPaint();
+    private InputHealthStatus inputHealth = InputHealthStatus.OFFLINE;
     private final Paint settingsFillPaint = fillPaint();
     private final Paint settingsStrokePaint = strokePaint();
     private final Paint gearPaint = strokePaint();
@@ -154,6 +157,9 @@ final class TouchCaptureView extends View {
         addressTextPaint.setColor(Color.rgb(139, 151, 177));
         addressTextPaint.setTextSize(sp(12f));
         addressTextPaint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        healthTextPaint.setColor(Color.rgb(139, 151, 177));
+        healthTextPaint.setTextSize(sp(9f));
+        healthTextPaint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
 
         settingsFillPaint.setColor(Color.argb(128, 31, 41, 58));
         settingsStrokePaint.setColor(Color.argb(112, 76, 89, 112));
@@ -315,6 +321,27 @@ final class TouchCaptureView extends View {
         invalidate();
     }
 
+    void setInputHealth(InputHealthStatus value) {
+        if (inputHealth.equals(value)) return;
+        inputHealth = value;
+        android.util.Log.i("RightpadHealth", "input=" + value.input() + " xbox=" + value.xbox() + " config=" + value.config());
+        invalidate();
+    }
+
+    private float drawHealthItem(Canvas canvas, String label, InputHealthStatus.Health health, float x, float baseline) {
+        healthDotPaint.setColor(switch (health) {
+            case GOOD -> Color.rgb(0, 240, 181);
+            case PENDING -> Color.rgb(198, 168, 93);
+            case ERROR -> Color.rgb(211, 106, 104);
+            case OFFLINE -> Color.rgb(100, 111, 132);
+        });
+        canvas.drawText(label, x, baseline, healthTextPaint);
+        float dotX = x + healthTextPaint.measureText(label) + dp(5f);
+        canvas.drawCircle(dotX, baseline + (healthTextPaint.ascent() + healthTextPaint.descent()) / 2f,
+                dp(2f), healthDotPaint);
+        return dotX + dp(12f);
+    }
+
     void setBatteryLevel(int level, int scale) {
         int nextPercent = BatteryDisplay.percent(level, scale);
         if (batteryPercent == nextPercent) return;
@@ -365,6 +392,10 @@ final class TouchCaptureView extends View {
         canvas.drawText(ConnectionDisplay.title(receiverAddress),
                 statusTextX, statusTitleBaseline, statusTextPaint);
         canvas.drawText(ConnectionDisplay.address(receiverAddress), statusTextX, addressBaseline, addressTextPaint);
+        float healthBaseline = addressBaseline + dp(17f);
+        float healthX = drawHealthItem(canvas, "INPUT", inputHealth.input(), statusTextX, healthBaseline);
+        healthX = drawHealthItem(canvas, "XBOX", inputHealth.xbox(), healthX, healthBaseline);
+        drawHealthItem(canvas, "CONFIG", inputHealth.config(), healthX, healthBaseline);
 
         canvas.drawRoundRect(batteryBody, dp(2f), dp(2f), batteryOutlinePaint);
         canvas.drawRoundRect(batteryTerminal, dp(1f), dp(1f), batteryTerminalPaint);

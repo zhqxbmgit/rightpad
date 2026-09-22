@@ -10,6 +10,7 @@ final class ControlConfigCache {
     void reset() { current = null; retiredEpochs.clear(); }
     long epoch() { return current == null ? 0 : current.epoch(); }
     long revision() { return current == null ? 0 : current.revision(); }
+    boolean complete() { return current != null && current.version() == 2; }
     boolean accept(ControlConfigProtocol.Snapshot next) {
         if (next == null || retiredEpochs.contains(next.epoch())) return false;
         if (current != null) {

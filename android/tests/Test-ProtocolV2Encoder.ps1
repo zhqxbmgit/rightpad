@@ -25,7 +25,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Discovery tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Haptic test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.HapticFeedbackTest
 if ($LASTEXITCODE -ne 0) { throw 'Haptic tests failed.' }
-& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'stubs/android/os/Looper.java') (Join-Path $PSScriptRoot 'stubs/android/os/Handler.java') (Join-Path $sourceDirectory 'TouchpadClickFeedback.java') (Join-Path $sourceDirectory 'HapticFeedbackListener.java') (Join-Path $PSScriptRoot 'HapticListenerTest.java') (Join-Path $PSScriptRoot 'TouchpadClickFeedbackTests.java')
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'stubs/android/os/Looper.java') (Join-Path $PSScriptRoot 'stubs/android/os/Handler.java') (Join-Path $sourceDirectory 'TouchpadClickFeedback.java') (Join-Path $sourceDirectory 'StatusProtocol.java') (Join-Path $sourceDirectory 'HapticFeedbackListener.java') (Join-Path $PSScriptRoot 'HapticListenerTest.java') (Join-Path $PSScriptRoot 'TouchpadClickFeedbackTests.java')
 if ($LASTEXITCODE -ne 0) { throw 'Haptic listener test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.HapticListenerTest
 if ($LASTEXITCODE -ne 0) { throw 'Haptic listener tests failed.' }
@@ -65,3 +65,8 @@ if ($LASTEXITCODE -ne 0) { throw 'LR tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'LR transport test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.SlideControlLRTransportTests
 if ($LASTEXITCODE -ne 0) { throw 'LR transport tests failed.' }
+
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $sourceDirectory 'InputHealthStatus.java') (Join-Path $sourceDirectory 'InputHealthTracker.java') (Join-Path $PSScriptRoot 'InputHealthTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Input health test compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.InputHealthTests
+if ($LASTEXITCODE -ne 0) { throw 'Input health tests failed.' }

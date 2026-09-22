@@ -19,4 +19,5 @@ internal sealed record RuntimeStatsSnapshot(long RunId, ReceiverState RuntimeSta
     long LastSuccessfulMouseOutputAtTicks = 0, long LastFailedMouseOutputAtTicks = 0,
     string MotionModeName = "RAW", long MotionClockTicks = 0, long MissedMotionClockTicks = 0,
     string GamepadBackend = "Not created", string? GamepadDeviceIdentity = null, bool GamepadAvailable = false,
-    long GamepadSuccesses = 0, long GamepadFailures = 0, string? LastGamepadError = null);
+    long GamepadSuccesses = 0, long GamepadFailures = 0, string? LastGamepadError = null,
+    bool MouseAvailable = false);

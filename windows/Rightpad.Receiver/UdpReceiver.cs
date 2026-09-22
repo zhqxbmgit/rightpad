@@ -32,6 +32,7 @@ internal sealed class UdpReceiver : IDisposable
     private long? touchDeadline;
     private long clockOrigin;
     public SenderPresence Presence => Volatile.Read(ref presence);
+    public (ulong Epoch, ulong Revision) ControlConfigVersion => controls?.CaptureVersion() ?? default;
     public long PresenceTimeouts => Interlocked.Read(ref presenceTimeouts);
     private long inputTimeouts, lastAcceptedAtTicks, lastAcceptedSampleAtTicks, lastHeartbeatAtTicks;
     private long lastTouchDatagramAtTicks, activeSession = -1;

@@ -26,6 +26,9 @@ public final class MainActivity extends Activity {
     private UdpTouchSender udpSender;
     private ReceiverDiscoveryClient discovery;
     private HapticFeedbackListener haptics;
+    private final InputHealthTracker health = new InputHealthTracker();
+    private final android.os.Handler healthUi = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable expireHealth = this::refreshHealth;
     private java.net.InetSocketAddress receiverTarget;
     private String receiverId;
     private boolean foreground;
@@ -66,6 +69,14 @@ public final class MainActivity extends Activity {
                 android.util.Log.i("RightpadControl", "config_accepted epoch=" + Long.toUnsignedString(snapshot.epoch(), 16)
                         + " revision=" + Long.toUnsignedString(snapshot.revision()) + " version=" + snapshot.version()
                         + " records=" + snapshot.records() + " lrRecords=" + snapshot.lrRecords());
+                refreshHealth();
+            }
+        }, (snapshot, receivedAt) -> {
+            if (health.accept(snapshot, receivedAt)) {
+                refreshHealth();
+                healthUi.removeCallbacks(expireHealth);
+                long remaining = InputHealthTracker.STALE_NS - (System.nanoTime() - receivedAt);
+                healthUi.postDelayed(expireHealth, Math.max(1, remaining / 1_000_000 + 1));
             }
         });
         udpSender.setUpObserver(haptics::expectUp);
@@ -125,6 +136,9 @@ public final class MainActivity extends Activity {
             batteryReceiverRegistered = false;
         }
         foreground = false;
+        healthUi.removeCallbacks(expireHealth);
+        health.configure(false, 0);
+        refreshHealth();
         haptics.setActive(null, 0);
         senderEnabled = false;
         captureView.setConnection(null);
@@ -148,6 +162,8 @@ public final class MainActivity extends Activity {
     private void receiverChanged(java.net.InetSocketAddress target, String id) {
         if (!foreground) return;
         if (!java.util.Objects.equals(receiverTarget, target) || !java.util.Objects.equals(receiverId, id)) {
+            health.configure(false, 0);
+            healthUi.removeCallbacks(expireHealth);
             haptics.setActive(null, 0);
             captureView.stopCapture("receiver_changed");
             udpSender.setTarget(target);
@@ -162,6 +178,12 @@ public final class MainActivity extends Activity {
         }
         captureView.setConnection(target == null ? null : target.getAddress().getHostAddress());
         haptics.setActive(target == null ? null : target.getAddress(), udpSender.getSenderRunId());
+        health.configure(target != null, udpSender.getSenderRunId());
+        refreshHealth();
+    }
+
+    private void refreshHealth() {
+        captureView.setInputHealth(health.display(captureView.controls.config, System.nanoTime()));
     }
 
     private void exit() {
