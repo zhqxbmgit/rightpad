@@ -7,6 +7,11 @@ import java.util.*;
 public final class UdpTouchSenderTest {
     static void check(boolean value, String message) { if (!value) throw new AssertionError(message); }
     static byte[] receive(DatagramSocket socket) throws Exception {
+        byte[] packet;
+        do { packet = receiveRaw(socket); } while (packet[1] == 7);
+        return packet; // Existing Touch/gamepad suites ignore the independent C2A state channel.
+    }
+    static byte[] receiveRaw(DatagramSocket socket) throws Exception {
         DatagramPacket packet = new DatagramPacket(new byte[65507], 65507);
         socket.receive(packet); return Arrays.copyOf(packet.getData(), packet.getLength());
     }

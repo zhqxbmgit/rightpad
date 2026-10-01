@@ -4,7 +4,8 @@ A dedicated Android-to-Windows gaming touchpad input system.
 
 ## Status
 
-Design phase.
+Implemented and deployed: Android touch capture and the Windows Receiver with
+production Finite-Critical Motion, mouse gestures and B/X Screen Controls.
 
 ## Documentation
 

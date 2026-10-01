@@ -14,9 +14,40 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     private readonly LiveSensitivity? liveSensitivity;
     private SensitivitySnapshot? lastSensitivity;
     private readonly MotionTrace? trace;
+    private readonly HitchTraceRecorder? hitchTrace;
+    private readonly long runtimeRun;
     private readonly CausalBoxcar? boxcar;
     private readonly CausalFiniteCritical? finiteCritical;
+    private readonly bool profileEnabled;
     private readonly bool earnedSettle;
+    private MotionProfile requestedProfile, activeProfile;
+    public MotionProfile ActiveMotionProfile { get { lock (gate) return activeProfile; } }
+    public (MotionProfile Profile, int TauMs, int SupportMs) ActiveKernel
+    {
+        get { lock (gate) return (activeProfile, KernelTauMs, KernelSupportMs); }
+    }
+    public string NativeOutputCadence => $"{1000 / PeriodMs} Hz";
+    public (MotionProfile Profile, int TauMs, int SupportMs, string Algorithm) ActiveAlgorithm
+    {
+        get { lock (gate) return (activeProfile, KernelTauMs, KernelSupportMs,
+            finiteCritical is not null ? "Finite-Critical" : "—"); }
+    }
+
+    public void RequestProfile(MotionProfile profile)
+    {
+        lock (gate)
+        {
+            requestedProfile = profile;
+            if (session is null) ApplyRequestedProfile();
+        }
+    }
+
+    private void ApplyRequestedProfile()
+    {
+        // M/C are labels over one product path. Preserve the deferred chain
+        // boundary for the future slot without rebuilding the frozen kernel.
+        activeProfile = profileEnabled ? requestedProfile : MotionProfile.Normal;
+    }
     private bool HasPositionFilter => boxcar is not null || finiteCritical is not null;
     private long SupportTicks => boxcar?.WindowTicks ?? finiteCritical!.SupportTicks;
     private long integratedAt;
@@ -53,6 +84,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     public (long Generation, long? Deadline) Schedule { get { lock (gate) return (generation, nextDeadline == 0 ? null : nextDeadline); } }
     public (double X, double Y) Pending { get { lock (gate) return (targetX - playedX, targetY - playedY); } }
     public (double X, double Y) Position { get { lock (gate) return (playedX, playedY); } }
+    internal (double X, double Y) ReconstructedPosition { get { lock (gate) return (baseX, baseY); } }
     public (double X, double Y) BasePending { get { lock (gate) return (targetX - baseX, targetY - baseY); } }
     public (double X, double Y) BoxcarPending { get { lock (gate) return (baseX - playedX, baseY - playedY); } }
     public int BoxcarWindowMs => boxcar?.WindowMs ?? 0;
@@ -64,7 +96,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     public ResampledMotion(Action<int, int> output, double sensitivityX = 1, double sensitivityY = 1,
         Func<long>? monotonicNow = null, long? clockFrequency = null, MotionTrace? trace = null, int boxcarWindowMs = 0,
         MotionMode finiteCriticalMode = MotionMode.RESAMPLED_250HZ, MotionConfiguration? configuration = null,
-        LiveSensitivity? liveSensitivity = null)
+        LiveSensitivity? liveSensitivity = null, HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0)
     {
         this.output = output; now = monotonicNow ?? Stopwatch.GetTimestamp;
         frequency = clockFrequency ?? Stopwatch.Frequency;
@@ -76,7 +108,10 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
         _ = new RawMotionProcessor(sensitivityX, sensitivityY);
         this.sensitivityX = sensitivityX; this.sensitivityY = sensitivityY; this.trace = trace;
         this.liveSensitivity = liveSensitivity;
+        this.hitchTrace = hitchTrace;
+        this.runtimeRun = runtimeRun;
         earnedSettle = activeConfiguration.IsEarnedSettle;
+        profileEnabled = activeConfiguration.IsFiniteCritical && earnedSettle && PeriodMs == 1;
         period = frequency / (1000 / PeriodMs);
         // Playout is a fixed duration, independent of the selected output cadence.
         delay = checked(frequency * PlayoutDelayMs) / 1000;
@@ -112,7 +147,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                     {
                         // Continue the same earned ledger and realized history. DOWN itself
                         // creates no displacement, emits nothing and keeps the clock phase.
-                        AdvanceHistory(receivedAt);
+                        if (HasPositionFilter) AdvanceHistory(receivedAt);
                         EndStarvation(receivedAt);
                         session = h.SessionId; settling = false; fallback = false;
                         var first = packet.Samples[0];
@@ -297,14 +332,18 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     {
         lock (gate)
         {
-            if (disposed || session is null || generation != expectedGeneration || nextDeadline == 0 || actualWake < nextDeadline) return;
+            if (disposed || session is null || generation != expectedGeneration || nextDeadline == 0) return;
             try
             {
+                if (actualWake < nextDeadline) return;
                 // A wake sampled before another gate owner ran must not rewind F's causal history.
                 if (HasPositionFilter) actualWake = Math.Max(actualWake, integratedAt);
                 long deadline = nextDeadline, missed = (actualWake - deadline) / period;
                 MissedTicks += missed; TickCount++;
                 nextDeadline = deadline + (missed + 1) * period;
+                hitchTrace?.Write(new(HitchKind.Tick, Stopwatch.GetTimestamp(), RuntimeRun: runtimeRun,
+                    SenderRun: run, Session: session.Value, QueueDepth: count, Deadline: deadline,
+                    Generation: generation, Missed: missed));
                 trace?.Write(MotionEventKind.Tick, actualWake, deadline, run, session.Value, a: count,
                     b: (lastPointTime - actualWake) * 1000.0 / frequency, count: missed);
                 long kernelStarted = finiteCritical is not null && trace is not null ? Stopwatch.GetTimestamp() : 0;
@@ -374,6 +413,9 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
             ? quantizer.Process(x - playedX, y - playedY)
             : canonicalQuantizer.Submit(x, y, output);
         playedX = x; playedY = y;
+        hitchTrace?.Write(new(HitchKind.Output, Stopwatch.GetTimestamp(), RuntimeRun: runtimeRun,
+            SenderRun: run, Session: session!.Value, Dx: delta.X, Dy: delta.Y,
+            QueueDepth: count, Deadline: nextDeadline, Generation: generation));
         trace?.Write(MotionEventKind.Logical, at, run: run, session: session!.Value,
             x: delta.X, y: delta.Y,
             a: canonicalQuantizer is null ? quantizer.ResidualX : x - canonicalQuantizer.EmittedX,
@@ -401,6 +443,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
         rawX = rawY = targetX = targetY = playedX = playedY = 0; quantizer.Reset();
         canonicalQuantizer?.Reset();
         baseX = baseY = integratedX = integratedY = 0; integratedAt = at; boxcar?.Reset(at); finiteCritical?.Reset(at);
+        ApplyRequestedProfile();
         Changed?.Invoke();
     }
     public void Reset() { lock (gate) Clear(now(), aborted: true); }

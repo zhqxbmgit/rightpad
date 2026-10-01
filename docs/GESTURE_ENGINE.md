@@ -425,7 +425,7 @@ Gesture parameters should be:
 - Adjustable without rebuilding Android
 - Saved locally
 
-WPF v1 auto-saves local settings. Duration/threshold are captured at DOWN; click hold is captured for each click request and retained while queued. Explicit dev CLI tuning remains available.
+WPF uses explicit Save: draft edits become committed only after the local settings write succeeds. Duration/threshold are captured at DOWN; click hold is captured for each click request and retained while queued. Explicit dev CLI tuning remains available.
 
 The Tap page adds Double Tap Interval, ms, range 50–1000 and step 10. Missing
 `doubleTapIntervalMs` in an older settings.json silently uses 130; a present invalid

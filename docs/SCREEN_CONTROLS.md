@@ -9,6 +9,40 @@ entries preserve their historical observations and do not override final accepta
 
 ## Control, appearance and ownership
 
+### Cinematic Profile C1 manual M/C shell (2026-09-27)
+
+The production registry retains exactly one entry with stable ID
+`rightpad.input.mode` and label `Mode`. Its normalized X/Y/W/H values load and
+save through `files/screen-controls.properties`, and the generic editor can move,
+edge/corner-resize, numerically edit, Save, Cancel and Reset it. Existing values
+are never migrated to a new ID or replaced merely because the active experiments
+were removed.
+
+Runtime drawing shows M (NORMAL) or C (CINEMATIC); the editor label remains Mode.
+ScreenControlRouter owns this UI-thread, Activity-lifetime state. A fresh Activity
+starts M, and ordinary pause/resume or cancellation does not reset the profile.
+DOWN in the existing rectangle locks MODE ownership even when MOVE leaves it.
+One matching UP toggles once and clears ownership. CANCEL, a second pointer,
+pointer mismatch, lifecycle stop or editor entry clears ownership without toggling.
+The existing global safety cancellation remains in place, including FORCE_NEUTRAL;
+Mode itself never contributes gamepad state, requests config or emits haptics/Touch.
+
+This explicit manual experiment shell is user-approved. **Cinematic Motion is not
+implemented:** both M and C enter the same existing MOUSE captureEvent →
+UdpTouchSender → ProtocolV2Encoder path, with unchanged history/timestamps and
+Windows production Motion. No profile is persisted. C2A adds independent type7
+profile transport and read-only Windows Diagnostics observation; see
+[MOTION_PROFILE_PROTOCOL.md](MOTION_PROFILE_PROTOCOL.md). No new
+thread, timer, socket, sensitivity/filter setting or automatic adaptation is added.
+The only gameplay paths remain Touchpad Mouse plus B/X through Xbox360.
+
+C1 verification extends the JVM router checks and guarded ScreenControlsSmoke.
+Real MotionEvent dispatch through a test View/Sender and loopback socket compares
+M/C encoded DOWN, historical MOVE and UP packets byte-for-byte after normalizing
+only run/session identity and sequence origin. It also checks cancellation, owner
+lock, zero Mode Touch packets, zero gamepad contributions and zero local haptics.
+LayoutTestFileGuard continues to restore the exact pre-test layout bytes.
+
 ### Phase 6A reusable LR gesture, Phase 6B production integration
 
 `SlideControlLRGesture` is independent of the existing B `SlideControlGesture`,

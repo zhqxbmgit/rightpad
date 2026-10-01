@@ -2,6 +2,10 @@
 
 ## Protocol v2 — CURRENT (2026-09-09)
 
+C2A adds independent type7 MOTION_PROFILE_STATE (16 bytes). It observes the manual
+Android M/C selection without changing Motion. It cannot admit or renew presence;
+see [MOTION_PROFILE_PROTOCOL.md](MOTION_PROFILE_PROTOCOL.md).
+
 Phase 4 adds type6 CONTROL_CONFIG_REQUEST (26 bytes), with no changes to types1..5.
 It cannot admit or renew presence and has no input sequence. Exact request/response
 layouts and recovery semantics: [CONTROL_CONFIG_PROTOCOL.md](CONTROL_CONFIG_PROTOCOL.md).

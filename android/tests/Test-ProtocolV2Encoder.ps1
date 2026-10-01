@@ -5,11 +5,15 @@ $sourceDirectory = Join-Path $androidRoot 'app/src/main/java/com/rightpad/captur
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 $javacPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/javac.exe' } else { 'javac' }
 $javaPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/java.exe' } else { 'java' }
+& $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $androidRoot 'app/src/androidTest/java/com/rightpad/capture/LayoutTestFileGuard.java') (Join-Path $PSScriptRoot 'LayoutTestFileGuardTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Layout file guard test compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.LayoutTestFileGuardTests
+if ($LASTEXITCODE -ne 0) { throw 'Layout file guard tests failed.' }
 & $javacPath --release 17 -d $outputDirectory (Join-Path $sourceDirectory 'TouchSample.java') (Join-Path $sourceDirectory 'ProtocolV2Encoder.java') (Join-Path $PSScriptRoot 'ProtocolV2EncoderTest.java')
 if ($LASTEXITCODE -ne 0) { throw 'Encoder test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.ProtocolV2EncoderTest
 if ($LASTEXITCODE -ne 0) { throw 'Encoder tests failed.' }
-& $javacPath --release 17 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'stubs/android/util/Log.java') (Join-Path $sourceDirectory 'SlideControlGesture.java') (Join-Path $sourceDirectory 'SlideControlLRGesture.java') (Join-Path $sourceDirectory 'ControlConfigProtocol.java') (Join-Path $sourceDirectory 'ControlConfigCache.java') (Join-Path $sourceDirectory 'GamepadState.java') (Join-Path $sourceDirectory 'GamepadStateSubmission.java') (Join-Path $sourceDirectory 'GamepadProtocol.java') (Join-Path $sourceDirectory 'GamepadSendState.java') (Join-Path $sourceDirectory 'HeartbeatSchedule.java') (Join-Path $sourceDirectory 'UdpTouchSender.java') (Join-Path $PSScriptRoot 'UdpTouchSenderTest.java')
+& $javacPath --release 17 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'stubs/android/util/Log.java') (Join-Path $sourceDirectory 'SlideControlGesture.java') (Join-Path $sourceDirectory 'SlideControlLRGesture.java') (Join-Path $sourceDirectory 'ControlConfigProtocol.java') (Join-Path $sourceDirectory 'ControlConfigCache.java') (Join-Path $sourceDirectory 'GamepadState.java') (Join-Path $sourceDirectory 'GamepadStateSubmission.java') (Join-Path $sourceDirectory 'GamepadProtocol.java') (Join-Path $sourceDirectory 'GamepadSendState.java') (Join-Path $sourceDirectory 'HeartbeatSchedule.java') (Join-Path $sourceDirectory 'MotionProfileProtocol.java') (Join-Path $sourceDirectory 'UdpTouchSender.java') (Join-Path $PSScriptRoot 'UdpTouchSenderTest.java')
 if ($LASTEXITCODE -ne 0) { throw 'Sender test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.UdpTouchSenderTest
 if ($LASTEXITCODE -ne 0) { throw 'Sender tests failed.' }
@@ -40,9 +44,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Screen controls tests failed.' }
 
 & $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $sourceDirectory 'GamepadAggregator.java') (Join-Path $PSScriptRoot 'GamepadProtocolTests.java') (Join-Path $PSScriptRoot 'GamepadSenderTests.java') (Join-Path $PSScriptRoot 'GamepadAggregatorTests.java')
 if ($LASTEXITCODE -ne 0) { throw 'Gamepad test compilation failed.' }
-& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'GamepadWireHoldTests.java')
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'GamepadWireHoldTests.java') (Join-Path $PSScriptRoot 'TargetlessSenderTests.java')
 if ($LASTEXITCODE -ne 0) { throw 'Gamepad wire hold test compilation failed.' }
-foreach ($test in @('GamepadProtocolTests', 'GamepadSenderTests', 'GamepadAggregatorTests', 'GamepadWireHoldTests')) {
+foreach ($test in @('GamepadProtocolTests', 'GamepadSenderTests', 'GamepadAggregatorTests', 'GamepadWireHoldTests', 'TargetlessSenderTests')) {
     & $javaPath -cp $outputDirectory ('com.rightpad.capture.' + $test)
     if ($LASTEXITCODE -ne 0) { throw "$test failed." }
 }
@@ -70,3 +74,8 @@ if ($LASTEXITCODE -ne 0) { throw 'LR transport tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Input health test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.InputHealthTests
 if ($LASTEXITCODE -ne 0) { throw 'Input health tests failed.' }
+
+& $javacPath --release 17 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'MotionProfileTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Motion profile test compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.MotionProfileTests
+if ($LASTEXITCODE -ne 0) { throw 'Motion profile tests failed.' }

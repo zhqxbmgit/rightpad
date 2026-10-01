@@ -15,6 +15,8 @@ internal static class ButtonSmokeTests
     {
         using var target = new ClickTarget();
         target.CheckPointer();
+        int x = int.TryParse(Environment.GetEnvironmentVariable("RIGHTPAD_SMOKE_X"), out int configuredX) ? configuredX : 600;
+        int y = int.TryParse(Environment.GetEnvironmentVariable("RIGHTPAD_SMOKE_Y"), out int configuredY) ? configuredY : 1000;
         async Task Adb(params string[] arguments)
         {
             var start = new ProcessStartInfo("adb") { UseShellExecute = false, CreateNoWindow = true,
@@ -28,15 +30,22 @@ internal static class ButtonSmokeTests
             Check(process.ExitCode == 0, $"adb failed: {await stderr}");
             Console.Write(await stdout);
         }
-        await Adb("shell", "input", "swipe", "600", "1000", "610", "1000", "250");
+        await Adb("shell", "input", "swipe", x.ToString(), y.ToString(), (x + 10).ToString(), y.ToString(), "250");
         await Task.Delay(200);
         target.CheckPointer();
-        await Adb("shell", "input", "tap", "600", "1000");
-        await Task.Delay(200);
+        await Adb("shell", "input", "tap", x.ToString(), y.ToString());
+        await Task.Delay(80);
         Equal(1, target.InjectedDowns, "GUI emitted exactly one native LEFT DOWN");
         Equal(1, target.InjectedUps, "GUI emitted exactly one native LEFT UP");
         Check(target.InjectedMoves > 0, "GUI emitted native movement");
-        Console.WriteLine($"GUI_ANDROID_E2E smallSwipe=10px tap=1 nativeMoves={target.InjectedMoves} nativeDowns={target.InjectedDowns} nativeUps={target.InjectedUps} target=inert");
+        int movesBeforeDrag = target.InjectedMoves;
+        await Task.Delay(350); // Expire the independent single-click candidate.
+        await Adb("shell", $"input tap {x} {y}; input swipe {x} {y} {x + 30} {y} 500");
+        await Task.Delay(300);
+        Equal(3, target.InjectedDowns, "double-tap drag chain emitted click plus held native LEFT DOWN");
+        Equal(3, target.InjectedUps, "double-tap drag chain released click and held native LEFT UP");
+        Check(target.InjectedMoves > movesBeforeDrag, "double-tap drag emitted held movement");
+        Console.WriteLine($"GUI_ANDROID_E2E coordinate={x},{y} smallSwipe=10px tap=1 doubleTapDrag=1 nativeMoves={target.InjectedMoves} nativeDowns={target.InjectedDowns} nativeUps={target.InjectedUps} target=inert");
     }
 
     // These entry points inject real buttons only when explicitly requested.
@@ -108,7 +117,9 @@ internal static class ButtonSmokeTests
         {
             hookProc = (code, message, data) =>
             {
-                if (code >= 0 && (Marshal.PtrToStructure<MouseHook>(data).Flags & 1) != 0)
+                // Production libvirtualhid reports as hardware input and therefore
+                // does not carry SendInput's LLMHF_INJECTED flag.
+                if (code >= 0)
                 {
                     if (message == 0x0201) Interlocked.Increment(ref injectedDowns);
                     if (message == 0x0202) Interlocked.Increment(ref injectedUps);
@@ -153,7 +164,6 @@ internal static class ButtonSmokeTests
             thread.Join(TimeSpan.FromSeconds(5));
         }
         [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
-        [StructLayout(LayoutKind.Sequential)] private struct MouseHook { public Point Point; public uint MouseData, Flags, Time; public nuint ExtraInfo; }
         private delegate nint HookProc(int code, nuint message, nint data);
         [DllImport("user32.dll", SetLastError = true)] private static extern nint SetWindowsHookExW(int id, HookProc callback, nint module, uint threadId);
         [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(nint hook);

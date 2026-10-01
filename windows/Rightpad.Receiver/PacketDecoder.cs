@@ -9,6 +9,15 @@ internal static class PacketDecoder
     public const int SampleSize = 16;
     public const int GamepadSize = 30;
 
+    public static bool TryDecodeMotionProfile(ReadOnlySpan<byte> data, out MotionProfilePacket packet)
+    {
+        packet = default;
+        if (data.Length != 16 || data[0] != 2 || data[1] != 7 || data[14] > 1 || data[15] != 0) return false;
+        packet = new(BinaryPrimitives.ReadUInt64LittleEndian(data[2..]),
+            BinaryPrimitives.ReadUInt32LittleEndian(data[10..]), (MotionProfile)data[14]);
+        return true;
+    }
+
     public static bool TryDecodeGamepad(ReadOnlySpan<byte> data, out GamepadStatePacket packet, out string error)
     {
         packet = default;

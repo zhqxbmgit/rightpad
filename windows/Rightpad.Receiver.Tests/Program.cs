@@ -4,11 +4,6 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
-        if (args.Length == 3 && args[0] == "--motion-replay")
-        {
-            MotionReplay.Run(args[1], args[2], 6);
-            return 0;
-        }
         if (args.SequenceEqual(new[] { "--gui-android-smoke" }))
         {
             try { await ButtonSmokeTests.GuiAndroid(); return 0; }
@@ -32,6 +27,9 @@ internal static class Program
         if (args.Length != 0) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            .. HitchTraceTests.Cases,
+            .. ProfileMotionEquivalenceTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. MotionProfileTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             ("RPST strict codec and shared unsigned golden", Sync(StatusTests.Codec)),
             ("RPST true backend health without output activity", Sync(StatusTests.Health)),
             ("RPST current presence route and no lease renewal", Sync(StatusTests.Presence)),

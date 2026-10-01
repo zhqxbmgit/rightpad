@@ -41,6 +41,28 @@ public final class ScreenControlsTest {
         e.endDrag();
     }
     public static void main(String[] args) throws Exception {
+        test("C1 fresh M, MODE ownership, matching UP toggles once, cancellation and Mouse parity", () -> {
+            var r = new ScreenControlRouter();
+            var areas = Map.of(ScreenControlRouter.MODE_ID, new ControlRect(100, 100, 100, 200));
+            check(r.profile() == ScreenControlRouter.Profile.NORMAL);
+            for (var expected : new ScreenControlRouter.Profile[] {
+                    ScreenControlRouter.Profile.CINEMATIC, ScreenControlRouter.Profile.NORMAL }) {
+                check(r.down(110, 110, 7, false, false, true, areas) == ScreenControlRouter.Owner.MODE);
+                check(r.accepts(1, 7, false)); // MOVE coordinates cannot transfer ownership.
+                check(r.modeUp(1, 7) && r.profile() == expected);
+                check(!r.modeUp(1, 7) && r.profile() == expected);
+                check(r.down(10, 10, 7, false, false, true, areas) == ScreenControlRouter.Owner.MOUSE);
+                check(!r.modeUp(1, 7) && r.profile() == expected);
+            }
+            r.down(110, 110, 7, false, false, true, areas);
+            r.cancel();
+            check(!r.modeUp(1, 7));
+            r.down(110, 110, 7, false, false, true, areas);
+            check(!r.accepts(2, 7, true) && !r.modeUp(1, 7));
+            r.down(110, 110, 7, false, false, true, areas);
+            check(!r.accepts(1, 8, false) && !r.modeUp(1, 7));
+            check(r.profile() == ScreenControlRouter.Profile.NORMAL);
+        });
         test("DOWN pending and neutral", () -> {
             SlideControlGesture g = gesture();
             check(g.state() == SlideControlGesture.State.PENDING && g.active());
@@ -245,6 +267,47 @@ public final class ScreenControlsTest {
             ScreenControlLayoutStore restarted = new ScreenControlLayoutStore(file);
             rect(restarted.load(DEFINITIONS, 1000, 1000).get(DEFINITION.id), 11, 22, 150, 90);
             rect(restarted.load(DEFINITIONS, 2000, 3000).get(DEFINITION.id), 22, 66, 300, 270);
+        });
+        test("Save preserves Mode stable-ID layout ratios", () -> {
+            File dormant = new File(directory, "mode-layout.properties");
+            String prefix = "controls.rightpad.input.mode.";
+            String[] fields = {"xRatio", "yRatio", "widthRatio", "heightRatio"};
+            String[] values = {"0.137", "0.229", "0.317", "0.419"};
+            StringBuilder original = new StringBuilder("version=1\n");
+            for (int i = 0; i < fields.length; i++) original.append(prefix).append(fields[i]).append('=').append(values[i]).append('\n');
+            Files.writeString(dormant.toPath(), original);
+            try {
+                ScreenControlLayoutStore persisted = new ScreenControlLayoutStore(dormant);
+                persisted.save(Map.of(DEFINITION.id, new ControlRect(11, 22, 150, 90)), 1000, 1000);
+                java.util.Properties properties = new java.util.Properties();
+                try (var input = Files.newInputStream(dormant.toPath())) { properties.load(input); }
+                for (int i = 0; i < fields.length; i++)
+                    check(values[i].equals(properties.getProperty(prefix + fields[i])));
+                rect(persisted.load(DEFINITIONS, 1000, 1000).get(DEFINITION.id), 11, 22, 150, 90);
+            } finally { Files.deleteIfExists(dormant.toPath()); }
+        });
+        test("Mode remains a normalized editable layout entry", () -> {
+            ScreenControlDefinition mode = new ScreenControlDefinition(
+                    "rightpad.input.mode", "Mode", CONFIG, 64, .42f, .55f);
+            List<ScreenControlDefinition> defs = List.of(DEFINITION, mode);
+            Map<String, ControlRect> initial = new LinkedHashMap<>();
+            initial.put(DEFINITION.id, new ControlRect(200, 300, 100, 100));
+            initial.put(mode.id, new ControlRect(500, 250, 300, 600));
+            ScreenControlLayoutEditor e = new ScreenControlLayoutEditor(defs, initial, 1000, 1000);
+            e.begin();
+            check(e.startDrag(650, 550, 8));
+            check(e.selectedId().equals("rightpad.input.mode"));
+            e.drag(660, 570); e.endDrag();
+            rect(e.selectedRect(), 510, 270, 300, 600);
+            File modeFile = new File(directory, "registered-mode-layout.properties");
+            try {
+                ScreenControlLayoutStore modeStore = new ScreenControlLayoutStore(modeFile);
+                e.save(modeStore);
+                rect(modeStore.load(defs, 2000, 3000).get(mode.id), 1020, 810, 600, 1800);
+                String saved = Files.readString(modeFile.toPath());
+                for (String field : new String[] {"xRatio", "yRatio", "widthRatio", "heightRatio"})
+                    check(saved.contains("controls.rightpad.input.mode." + field));
+            } finally { Files.deleteIfExists(modeFile.toPath()); }
         });
         test("Reset is draft only and Cancel keeps saved layout", () -> {
             ScreenControlLayoutEditor e = new ScreenControlLayoutEditor(DEFINITIONS, store.load(DEFINITIONS, 1000, 1000), 1000, 1000);

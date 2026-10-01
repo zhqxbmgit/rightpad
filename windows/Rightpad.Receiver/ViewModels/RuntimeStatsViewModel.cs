@@ -11,6 +11,17 @@ internal sealed class RuntimeStatsViewModel : ObservableModel
     private string remoteIp = "—", endpoint = "Not listening", session = "None", lastAccepted = "Never";
     private string mouseBackend = "Not selected", error = "";
     private long gap, old, duplicate, invalid, timeouts;
+    private string motionProfile = "M";
+    public string MotionProfile { get => motionProfile; private set => Set(ref motionProfile, value); }
+    private string activeMotionProfile = "M";
+    public string ActiveMotionProfile { get => activeMotionProfile; private set => Set(ref activeMotionProfile, value); }
+    private string activeMotionKernel = "—";
+    public string ActiveMotionKernel { get => activeMotionKernel; private set => Set(ref activeMotionKernel, value); }
+    private string motionAlgorithm = "—", activeTau = "—", activeSupport = "—", nativeCadence = "1000 Hz";
+    public string MotionAlgorithm { get => motionAlgorithm; private set => Set(ref motionAlgorithm, value); }
+    public string ActiveTau { get => activeTau; private set => Set(ref activeTau, value); }
+    public string ActiveSupport { get => activeSupport; private set => Set(ref activeSupport, value); }
+    public string NativeOutputCadence { get => nativeCadence; private set => Set(ref nativeCadence, value); }
     private string lastSeen = "Never";
     private long heartbeats, presenceTimeouts, outdatedRuns;
     public string LastSeen { get => lastSeen; private set => Set(ref lastSeen, value); }
@@ -55,6 +66,13 @@ internal sealed class RuntimeStatsViewModel : ObservableModel
     public void Refresh(RuntimeStatsSnapshot s, long now)
     {
         Status = Activity(s, now);
+        MotionProfile = s.MotionProfile == Rightpad.Receiver.MotionProfile.Cinematic ? "C" : "M";
+        ActiveMotionProfile = s.ActiveMotionProfile == Rightpad.Receiver.MotionProfile.Cinematic ? "C" : "M";
+        NativeOutputCadence = s.NativeOutputCadence;
+        MotionAlgorithm = s.ActiveMotionTauMs > 0 ? s.ActiveMotionAlgorithm : "—";
+        ActiveTau = s.ActiveMotionTauMs > 0 ? $"{s.ActiveMotionTauMs} ms" : "—";
+        ActiveSupport = s.ActiveMotionSupportMs > 0 ? $"{s.ActiveMotionSupportMs} ms" : "—";
+        ActiveMotionKernel = s.ActiveMotionTauMs == 0 ? "—" : $"Finite-Critical · Tau {s.ActiveMotionTauMs} ms · Support {s.ActiveMotionSupportMs} ms";
         RuntimeState = s.RuntimeState.ToString();
         RemoteIp = s.Presence?.RemoteIp ?? "—";
         LastSeen = s.Presence?.RunId is null ? "Never" :

@@ -39,6 +39,10 @@ final class UdpTouchSender implements Closeable {
     private volatile Route route = new Route(null);
     private final HeartbeatSchedule heartbeat = new HeartbeatSchedule();
     private GamepadSendState gamepad = new GamepadSendState();
+    // Transport mirror of ScreenControlRouter's authoritative UI state, guarded by sendGate.
+    private int latestProfile;
+    private long profileSequence;
+    private boolean profilePending = true;
     private Pending retiredGamepadNeutral; // The only old-route traffic permitted: a best-effort final Neutral.
     private long nextSequence;
     private long activeSession = -1;
@@ -80,6 +84,8 @@ final class UdpTouchSender implements Closeable {
             activeSession = -1;
             nextSequence = 0;
             route = new Route(target);
+            profileSequence = 0;
+            profilePending = true;
             configEpoch = configRevision = requestAt = 0;
             heartbeat.setEnabled(foreground && target != null, System.nanoTime());
         }
@@ -116,9 +122,10 @@ final class UdpTouchSender implements Closeable {
     void setForeground(boolean enabled) {
         synchronized (sendGate) {
             if (closed || closing) return;
-            if (!enabled) gamepad.change(GamepadStateSubmission.safety(), System.nanoTime());
+            // A targetless route cannot drain gamepad work; keep its wait deadline idle.
+            if (!enabled && route.endpoint != null) gamepad.change(GamepadStateSubmission.safety(), System.nanoTime());
             foreground = enabled;
-            if (enabled) requestAt = 0;
+            if (enabled) { requestAt = 0; profilePending = true; }
             heartbeat.setEnabled(enabled && route.endpoint != null, System.nanoTime());
             if (!enabled) { pending.clear(); activeSession = -1; }
         }
@@ -127,6 +134,16 @@ final class UdpTouchSender implements Closeable {
     }
     void submitGamepad(GamepadState state) {
         submitGamepad(GamepadStateSubmission.ordinary(state));
+    }
+    void publishProfile(int profile) {
+        if (profile < 0 || profile > 1) throw new IllegalArgumentException("profile");
+        synchronized (sendGate) {
+            if (closed || closing || profile == latestProfile) return;
+            latestProfile = profile;
+            profileSequence = (profileSequence + 1) & 0xffffffffL;
+            profilePending = true;
+        }
+        thread.interrupt();
     }
     void submitGamepad(GamepadStateSubmission submission) {
         synchronized (sendGate) {
@@ -147,6 +164,18 @@ final class UdpTouchSender implements Closeable {
                     }
                     if (closing) { closed = true; continue; }
                     boolean admitted = sendHeartbeat(senderSocket, route);
+                    if (admitted && profilePending) {
+                        // Latest-state coalescing: one immutable version, exactly three attempts,
+                        // on the existing socket after heartbeat, without blocking Touch on an ACK.
+                        byte[] bytes = MotionProfileProtocol.encode(route.runId, profileSequence, latestProfile);
+                        profilePending = false;
+                        for (int copy = 0; copy < 3; copy++) {
+                            try { senderSocket.send(new DatagramPacket(bytes, bytes.length, route.endpoint)); }
+                            catch (IOException exception) { Log.e(TAG, "profile_send_failed", exception); }
+                        }
+                        Log.i(TAG, "profile_sent senderRunId=" + Long.toUnsignedString(route.runId, 16)
+                                + " sequence=" + profileSequence + " profile=" + latestProfile + " copies=3");
+                    }
                     if (route.endpoint != null && (admitted || !foreground)) {
                         GamepadSendState.Packet state = gamepad.claim(System.nanoTime(), foreground);
                         if (state != null) sendGamepad(senderSocket, new Pending(route,

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 
@@ -18,6 +19,8 @@ internal sealed class UdpReceiver : IDisposable
     private readonly TimeSpan inputTimeout;
     private readonly ITouchMotion? motion;
     private readonly MotionTrace? motionTrace;
+    private readonly HitchTraceRecorder? hitchTrace;
+    private readonly long runtimeRun;
     private readonly GestureProcessor? gesture;
     private readonly bool detailedLogging;
     private readonly RuntimeSettingsStore? settings;
@@ -28,6 +31,9 @@ internal sealed class UdpReceiver : IDisposable
     private readonly ControlConfigChannel? controls;
     private readonly HashSet<ulong> retiredRunIds = new();
     private SenderPresence presence = new();
+    private int motionProfile;
+    private uint? lastProfileSequence; // Sequential receive-loop ownership; independent serial domain.
+    public MotionProfile CurrentMotionProfile => (MotionProfile)Volatile.Read(ref motionProfile);
     private long presenceTimeouts;
     private long? touchDeadline;
     private long clockOrigin;
@@ -53,7 +59,7 @@ internal sealed class UdpReceiver : IDisposable
         ITouchMotion? motion = null, bool detailedLogging = true, GestureProcessor? gesture = null,
         RuntimeSettingsStore? settings = null, Action? cancelButtons = null, FlightRecorder? flightRecorder = null,
         MotionTrace? motionTrace = null, GamepadSessionProcessor? gamepad = null,
-        Action<IPAddress, byte[]>? controlSend = null)
+        Action<IPAddress, byte[]>? controlSend = null, HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0)
     {
         inputTimeout = timeout ?? InputTimeout;
         if (inputTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
@@ -61,6 +67,8 @@ internal sealed class UdpReceiver : IDisposable
         LocalEndpoint = (IPEndPoint)socket.Client.LocalEndPoint!;
         this.motion = motion;
         this.motionTrace = motionTrace;
+        this.hitchTrace = hitchTrace;
+        this.runtimeRun = runtimeRun;
         this.gesture = gesture;
         this.detailedLogging = detailedLogging;
         this.settings = settings;
@@ -166,6 +174,26 @@ internal sealed class UdpReceiver : IDisposable
     {
         CheckTimeouts(now); // Invalid/old traffic must not postpone expiry, even at the recovery boundary.
         Statistics.RecordReceived();
+        if (bytes.Length >= 2 && bytes[1] == 7)
+        {
+            if (!PacketDecoder.TryDecodeMotionProfile(bytes, out var profile)) Statistics.RecordInvalid();
+            else
+            {
+                var authority = Presence;
+                if (!authority.Connected || profile.SenderRunId != authority.RunId
+                    || remote.Address.ToString() != authority.RemoteIp) return;
+                if (lastProfileSequence is uint previous)
+                {
+                    uint delta = unchecked(profile.Sequence - previous);
+                    if (delta == 0 || delta >= 0x80000000U) return;
+                }
+                lastProfileSequence = profile.Sequence;
+                Volatile.Write(ref motionProfile, (int)profile.Profile);
+                (motion as ResampledMotion)?.RequestProfile(profile.Profile);
+                output.WriteLine($"motion_profile: senderRunId={profile.SenderRunId:X16} sequence={profile.Sequence} profile={profile.Profile}");
+            }
+            return; // No admission, presence renewal, input, config, lease or other sequence changes.
+        }
         if (bytes.Length >= 2 && bytes[1] == 6)
         {
             if (ControlConfigProtocol.TryDecodeRequest(bytes, out var request)) controls?.Request(request, remote.Address, now);
@@ -185,6 +213,12 @@ internal sealed class UdpReceiver : IDisposable
         }
         if (!PacketDecoder.TryDecode(bytes, out var packet, out string error))
         {
+            hitchTrace?.Write(new(HitchKind.Receive, now, RuntimeRun: runtimeRun, Status: HitchStatus.Invalid,
+                Event: bytes.Length > 1 ? (TouchEventType)bytes[1] : 0,
+                SenderRun: bytes.Length >= 10 ? BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(2)) : 0,
+                SampleCount: bytes.Length >= 12 ? BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(10)) : 0,
+                Session: bytes.Length >= 16 ? BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12)) : 0,
+                Sequence: bytes.Length >= 20 ? BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(16)) : 0));
             Statistics.RecordInvalid();
             logger.Invalid(elapsedMs, remote, bytes.Length, error);
         }
@@ -199,14 +233,19 @@ internal sealed class UdpReceiver : IDisposable
         var p = Presence;
         if (h.SenderRunId != p.RunId)
         {
-            if (retiredRunIds.Contains(h.SenderRunId)) { Statistics.RecordOutdatedRun(); return; }
-            if (h.EventType is not (TouchEventType.Down or TouchEventType.Heartbeat)) return;
+            if (retiredRunIds.Contains(h.SenderRunId))
+            { hitchTrace?.Packet(packet, now, runtimeRun, HitchStatus.RetiredRun); Statistics.RecordOutdatedRun(); return; }
+            if (h.EventType is not (TouchEventType.Down or TouchEventType.Heartbeat))
+            { hitchTrace?.Packet(packet, now, runtimeRun, HitchStatus.UnknownRun); return; }
             if (p.RunId is ulong old) retiredRunIds.Add(old);
             string runEvent = p.RunId is null ? "sender_run_established" : "sender_run_changed";
             flightRecorder?.Event(runEvent, ("previousSenderRunId", p.RunId is ulong oldRun ? $"{oldRun:X16}" : null),
                 ("senderRunId", $"{h.SenderRunId:X16}"), ("trigger", h.EventType.ToString()));
             ClearInput("sender_run_change");
             Statistics.ResetSequence();
+            lastProfileSequence = null;
+            Volatile.Write(ref motionProfile, (int)MotionProfile.Normal);
+            (motion as ResampledMotion)?.RequestProfile(MotionProfile.Normal);
             touchDeadline = null;
             Interlocked.Exchange(ref lastAcceptedAtTicks, 0);
             Volatile.Write(ref presence, new(h.SenderRunId));
@@ -215,12 +254,15 @@ internal sealed class UdpReceiver : IDisposable
         }
         if (h.EventType == TouchEventType.Heartbeat)
         {
+            hitchTrace?.Packet(packet, now, runtimeRun, HitchStatus.Accepted);
             Statistics.RecordHeartbeat();
             Interlocked.Exchange(ref lastHeartbeatAtTicks, now);
             RecordPresence(remote, now);
             return;
         }
         var observation = Statistics.Observe(h);
+        hitchTrace?.Packet(packet, now, runtimeRun, observation.Accepted ? HitchStatus.Accepted :
+            observation.Delta == 0 ? HitchStatus.Duplicate : HitchStatus.Old);
         if (observation.Accepted)
         {
             RecordPresence(remote, now);

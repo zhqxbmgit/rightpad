@@ -96,7 +96,9 @@ selection, liveness, clean sender transitions and Android 16 permission caveat.
 
 - Overview: actual connection observations, traffic counters, a compact Start with
   Windows toggle and one Start/Stop.
-- Motion: RAW text and independently editable X/Y sensitivity.
+- Motion: production Finite-Critical at 1000 Hz with 12 ms reconstruction,
+  Q0-C and Earned-Settle; editable X/Y sensitivity and Saved Tau/Support, with
+  read-only Active values.
 - Tap: duration, axis-aligned movement threshold, click hold and Double Tap Interval (130 ms; 50–1000 ms; step 10).
 - Controls: registered SlideControl behavior fields with the common explicit Save button.
 - Diagnostics: actual Receiver counters/state only.
@@ -118,14 +120,19 @@ The independent two-second Touch silence timeout remains diagnostic only.
 Overview Last Seen shows presence age or Never. No runId is shown in the UI.
 
 Runtime defaults are 7/7 sensitivity, Single Tap 300 ms / 8 px / 25 ms, and Double Tap Interval 130 ms.
-Valid edits apply without Apply, Save or restart. Sensitivity is sampled once
-per accepted packet; duration/threshold are captured at DOWN; each click request
-owns its hold. Small tap motion remains normal RAW output. No 1:1 desktop-pixel claim.
+Edits remain drafts until explicit Save succeeds. Committed Sensitivity X/Y
+apply atomically to new real sample displacement, including mid-contact, without
+rescaling existing targets or pending motion. Saved Tau/Support apply when the
+next Receiver run starts; the current run's kernel remains frozen.
+Duration/threshold are captured at DOWN; each click request owns its hold.
+Small tap motion remains normal product Motion. No 1:1 desktop-pixel claim.
 
-Settings auto-save after 500 ms to
-`%LocalAppData%\rightpad\settings.json`. Only the five input settings are stored.
-Missing/bad fields fall back to defaults; file errors do not stop input.
-Save failure is nonmodal and keeps the in-memory settings active.
+Explicit Save writes `%LocalAppData%\rightpad\settings.json` before publishing
+the committed settings, including sensitivity, Tau/Support, tap/drag timing and
+B/X Controls behavior. B/X configuration synchronizes to Android and is captured
+at the next control DOWN. Missing/bad fields fall back to defaults; file errors
+do not stop input. Save failure is nonmodal and preserves the previous committed
+settings without applying or publishing the draft.
 
 ## Intermittent input-loss Flight Recorder
 

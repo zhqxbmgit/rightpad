@@ -9,18 +9,24 @@ internal sealed class LibVirtualHidMouseOutput : IMouseOutput
     private readonly object gate = new();
     private readonly IVirtualHidMouse native;
     private readonly FlightRecorder? recorder;
+    private readonly HitchTraceRecorder? hitchTrace;
+    private readonly long runtimeRun;
     private MouseOutputStats stats;
     private bool disposed, held;
     public string BackendName => "libvirtualhid";
     public string DeviceIdentity { get; }
     public MouseOutputStats Stats { get { lock (gate) return stats; } }
 
-    public LibVirtualHidMouseOutput(FlightRecorder? recorder = null, MotionTrace? motionTrace = null)
-        : this(new NativeVirtualHidMouse(motionTrace), recorder) { }
-    internal LibVirtualHidMouseOutput(IVirtualHidMouse native, FlightRecorder? recorder = null)
+    public LibVirtualHidMouseOutput(FlightRecorder? recorder = null, MotionTrace? motionTrace = null,
+        HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0)
+        : this(new NativeVirtualHidMouse(motionTrace), recorder, hitchTrace, runtimeRun) { }
+    internal LibVirtualHidMouseOutput(IVirtualHidMouse native, FlightRecorder? recorder = null,
+        HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0)
     {
         this.native = native;
         this.recorder = recorder;
+        this.hitchTrace = hitchTrace;
+        this.runtimeRun = runtimeRun;
         DeviceIdentity = native.DeviceIdentity;
     }
 
@@ -32,7 +38,17 @@ internal sealed class LibVirtualHidMouseOutput : IMouseOutput
             if (dx == 0 && dy == 0) return;
             stats = stats with { RelativeDx = stats.RelativeDx + dx, RelativeDy = stats.RelativeDy + dy,
                 AbsDx = stats.AbsDx + Math.Abs((long)dx), AbsDy = stats.AbsDy + Math.Abs((long)dy) };
-            try { native.Move(dx, dy); }
+            long submitAt = hitchTrace is null ? 0 : Stopwatch.GetTimestamp();
+            bool success = false;
+            try
+            {
+                try { native.Move(dx, dy); success = true; }
+                finally
+                {
+                    hitchTrace?.Write(new(HitchKind.NativeSubmit, submitAt, End: Stopwatch.GetTimestamp(),
+                        RuntimeRun: runtimeRun, Dx: dx, Dy: dy, Status: success ? HitchStatus.Success : HitchStatus.Failure));
+                }
+            }
             catch (Exception e) { stats = stats with { MoveFailures = stats.MoveFailures + 1 }; Failed("move", e); throw; }
             stats = stats with { MoveSuccesses = stats.MoveSuccesses + 1 };
             Succeeded();

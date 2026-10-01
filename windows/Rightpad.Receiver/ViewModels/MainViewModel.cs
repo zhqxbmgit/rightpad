@@ -37,6 +37,25 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
         }
     }
     private ReceiverPage currentPage = ReceiverPage.Motion;
+    private bool freezingHitchTrace;
+    private string hitchTraceStatus = "Keeps up to 60 seconds in memory. Export only on manual freeze.";
+    public bool CanFreezeHitchTrace => !freezingHitchTrace;
+    public string HitchTraceStatus => hitchTraceStatus;
+    public async Task FreezeHitchTraceAsync()
+    {
+        if (freezingHitchTrace) return;
+        freezingHitchTrace = true;
+        Changed(nameof(CanFreezeHitchTrace));
+        Set(ref hitchTraceStatus, "Exporting hitch trace...", nameof(HitchTraceStatus));
+        try
+        {
+            var result = await runtime.HitchTrace.FreezeAsync();
+            Set(ref hitchTraceStatus, result.Error is null ? $"Saved: {result.Directory}" :
+                $"Hitch export failed: {result.Error}", nameof(HitchTraceStatus));
+        }
+        catch (Exception e) { Set(ref hitchTraceStatus, $"Hitch export failed: {e.Message}", nameof(HitchTraceStatus)); }
+        finally { freezingHitchTrace = false; Changed(nameof(CanFreezeHitchTrace)); }
+    }
     private bool busy;
     private bool running;
     private bool canToggle = true;

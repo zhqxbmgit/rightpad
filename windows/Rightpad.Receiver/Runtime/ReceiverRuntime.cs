@@ -15,6 +15,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     bool useProductMotionSettings = false, Func<IVirtualGamepad>? gamepadFactory = null)
 {
     private readonly SemaphoreSlim lifecycle = new(1, 1);
+    public HitchTraceRecorder HitchTrace { get; } = new();
     private Run? current;
     private long nextRunId;
     private int restarting;
@@ -228,7 +229,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             motionTrace?.BeginRuntimeRun(run.Id, motionConfiguration);
             var initial = run.InitialSettings;
             flightRecorder?.Event("runtime_start", ("runtimeRunId", run.Id));
-            mouse = rawMouse ? (mouseFactory is not null ? mouseFactory() : MouseOutputFactory.Create(backend, flightRecorder, motionTrace)) : null;
+            mouse = rawMouse ? (mouseFactory is not null ? mouseFactory() : MouseOutputFactory.Create(backend, flightRecorder, motionTrace, HitchTrace, run.Id)) : null;
             if (rawMouse && mouse is null) throw new InvalidOperationException("Mouse output factory returned no backend.");
             output.WriteLine($"mouse_backend: name={mouse?.BackendName ?? "None (diagnostics)"} device={mouse?.DeviceIdentity ?? "none"}");
             flightRecorder?.Event("mouse_backend", ("runtimeRunId", run.Id), ("mouseBackend", mouse?.BackendName), ("deviceIdentity", mouse?.DeviceIdentity));
@@ -250,7 +251,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                             boxcarWindowMs: MotionModes.BoxcarWindowMs(motionMode),
                             finiteCriticalMode: MotionModes.IsFiniteCritical(motionMode) ? motionMode : MotionMode.RESAMPLED_250HZ,
                             configuration: MotionModes.IsFiniteCritical(motionMode) ? motionConfiguration : null,
-                            liveSensitivity: settings.Sensitivity),
+                            liveSensitivity: settings.Sensitivity, hitchTrace: HitchTrace, runtimeRun: run.Id),
                     _ => throw new ArgumentOutOfRangeException(nameof(motionMode))
                 };
                 if (motion is ResampledMotion resampled)
@@ -288,6 +289,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             receiver = new UdpReceiver(endpoint ?? new(IPAddress.Any, UdpReceiver.Port), output,
                 motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings,
                 controlSend: haptics.TryEnqueueConfig,
+                hitchTrace: HitchTrace, runtimeRun: run.Id,
                 cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder, motionTrace: motionTrace,
                 gamepad: run.GamepadSession = rawMouse ? new GamepadSessionProcessor(SetGamepadState, message =>
                 {
@@ -412,9 +414,17 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         {
             var gamepad = run.Gamepad;
             var stats = gamepad?.Stats ?? default;
+            var activeMotion = Volatile.Read(ref run.Motion) as ResampledMotion;
+            var kernel = activeMotion?.ActiveAlgorithm ?? default;
             return snapshot with
             {
                 MouseAvailable = snapshot.RuntimeState == ReceiverState.Running && Volatile.Read(ref run.Mouse) is not null,
+                MotionProfile = Volatile.Read(ref run.Receiver)?.CurrentMotionProfile ?? MotionProfile.Normal,
+                NativeOutputCadence = activeMotion?.NativeOutputCadence ?? "—",
+                ActiveMotionProfile = kernel.Profile,
+                ActiveMotionTauMs = kernel.TauMs,
+                ActiveMotionSupportMs = kernel.SupportMs,
+                ActiveMotionAlgorithm = kernel.Algorithm ?? "—",
                 GamepadBackend = gamepad?.BackendName ?? (run.GamepadError is null ? "Not created" : LibVirtualHidXboxGamepad.Backend),
                 GamepadDeviceIdentity = gamepad?.DeviceIdentity,
                 GamepadAvailable = snapshot.RuntimeState == ReceiverState.Running && !run.GamepadClosed && run.GamepadError is null && gamepad?.Available == true,

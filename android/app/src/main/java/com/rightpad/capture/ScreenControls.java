@@ -16,6 +16,7 @@ import java.util.Map;
 
 /** Canvas adapter and UI-thread deadline scheduling for registered controls. */
 final class ScreenControls {
+    static final String MODE_ID = ScreenControlRouter.MODE_ID;
     final List<ScreenControlDefinition> definitions = new ArrayList<>();
     final Map<String, ScreenControlInstance> instances = new LinkedHashMap<>();
     final ScreenControlLayoutStore store;
@@ -43,6 +44,10 @@ final class ScreenControls {
                 GamepadState.B, GamepadState.Y, GamepadState.A));
         register(ScreenControlDefinition.lr(SlideControlLRDefinition.phaseSix(), Math.round(64 * density), .15f, .55f,
                 GamepadState.X, GamepadState.DPAD_LEFT, GamepadState.DPAD_RIGHT, GamepadState.DPAD_UP));
+        // Mode keeps the same layout identity; its contact belongs to the router,
+        // never to a gamepad gesture or feedback policy.
+        register(new ScreenControlDefinition(MODE_ID, "Mode", SlideControlGesture.Config.phaseOne(density),
+                Math.round(64 * density), .42f, .55f));
         store = new ScreenControlLayoutStore(new File(host.getContext().getFilesDir(), "screen-controls.properties"));
         text.setColor(Color.WHITE);
         text.setTextAlign(Paint.Align.CENTER);
@@ -75,14 +80,16 @@ final class ScreenControls {
     Map<String, ControlRect> rects() {
         return layout == null ? java.util.Collections.emptyMap() : layout.layout();
     }
-    void draw(Canvas canvas) {
+    void draw(Canvas canvas, ScreenControlRouter.Profile profile) {
         if (layout == null) return;
         for (ScreenControlInstance instance : instances.values()) {
             ControlRect r = rects().get(instance.definition.id);
             fill.setColor(instance.active() ? 0xFFFF3B30 : 0xFF00C853);
             canvas.drawRect(r.x, r.y, r.right(), r.bottom(), fill);
             text.setTextSize(Math.min(28 * density, Math.min(r.width, r.height) * .55f));
-            canvas.drawText(instance.definition.label, r.x + r.width / 2f,
+            String label = MODE_ID.equals(instance.definition.id) && !editing()
+                    ? profile.label : instance.definition.label;
+            canvas.drawText(label, r.x + r.width / 2f,
                     r.y + r.height / 2f - (text.ascent() + text.descent()) / 2, text);
         }
         if (!editing()) return;
@@ -102,6 +109,7 @@ final class ScreenControls {
     }
     private float handleSize(ControlRect r) { return Math.min(7 * density, Math.min(r.width, r.height) / 3f); }
     void down(String id, MotionEvent event) {
+        if (MODE_ID.equals(id)) return;
         ScreenControlInstance c = instances.get(id);
         var snapshot = c.definition.lr == null ? config.gesture(c.definition.protocolId, density, c.definition.slide) : null;
         if (snapshot != null) Log.i("RightpadControl", "gesture_config id=" + id + " epoch=" + Long.toUnsignedString(config.epoch(), 16)
@@ -115,6 +123,7 @@ final class ScreenControls {
         feedback.emit(ScreenControlFeedback.Event.PRESS, c.definition.feedbackStyle);
     }
     void touch(String id, MotionEvent event) {
+        if (MODE_ID.equals(id)) return;
         ScreenControlInstance control = instances.get(id);
         boolean previousDirection = control.directionActive();
         gamepad.batch(() -> {

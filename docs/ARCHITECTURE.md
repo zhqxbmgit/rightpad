@@ -98,6 +98,33 @@ the whole packet before committing and captures LR configuration at DOWN.
 Receiver owns behavior; Android-local layout and all input/haptic contracts stay unchanged.
 See [SCREEN_CONTROLS.md](SCREEN_CONTROLS.md) for horizontal priority and timing.
 
+The production layout registry contains the stable ID `rightpad.input.mode`.
+The manual M/C profile shell uses it as a reserved future experiment slot, with
+unchanged normalized X/Y/W/H persistence and generic editor operations.
+The Activity's TouchCaptureView owns a ScreenControlRouter whose in-memory profile
+starts NORMAL (M); matching MODE UP toggles CINEMATIC (C), while cancellation or
+pointer loss never toggles. The profile selects its runtime label and transported state; both modes
+use the production Touchpad Mouse capture/Sender/Receiver path. No persisted
+profile, gamepad contribution or Mode haptic is implemented. The Sender publishes that
+same authoritative value as independent
+16-byte v2 type7 MOTION_PROFILE_STATE through the existing Sender worker/socket.
+Windows validates current-run/source and independent serial ordering and exposes
+read-only requested M/C in Diagnostics. New admitted runs start M; ordinary presence timeout
+retains the run's profile. See
+[MOTION_PROFILE_PROTOCOL.md](MOTION_PROFILE_PROTOCOL.md).
+The current product uses one identical Motion/output path for M and C:
+live committed sensitivity -> 12 ms reconstruction -> Saved Finite-Critical
+-> Q0-C -> immediate libvirtualhid output, at fixed 1000 Hz with Earned-Settle.
+C is a reserved future experiment slot; currently it changes only the label.
+Requested/Active selection still defers across contact and unfinished settlement;
+new same-run DOWN retains the current chain, history, integer ledger and phase.
+The kernel is frozen from committed Tau/Support at Runtime start and never changes
+because a profile label changes. Diagnostics shows the actual Saved kernel and
+1000 Hz for both labels. No experimental planner, filter or native batching is
+present. H1 remains independent passive instrumentation.
+Research conclusions are consolidated in
+[MOTION_RND_CONCLUSIONS.md](MOTION_RND_CONCLUSIONS.md).
+
 Responsibilities:
 
 - Capture touchscreen input
@@ -142,7 +169,8 @@ Only one finger/owner is active; crossing a control boundary never reassigns it.
 The Android layout editor shares one rectangle for drawing and hit testing,
 supports move/edge/corner/numeric X/Y/W/H, and persists only validated layout.
 Default square and edited rectangles are both valid; Save commits, Cancel discards,
-and Reset changes only the draft. See [SCREEN_CONTROLS.md](SCREEN_CONTROLS.md).
+and Reset changes only the draft. Mode uses the same editor and stable geometry;
+its manual profile switch produces no input. See [SCREEN_CONTROLS.md](SCREEN_CONTROLS.md).
 
 Receiver disk-first Save publishes Controls defaults 0.7 dp / 3.0 dp / 25 ms /
 400 ms and subsequent committed changes. Android's behavior cache is volatile;

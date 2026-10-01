@@ -412,7 +412,7 @@ final class TouchCaptureView extends View {
         canvas.drawArc(powerIconArc, -44f, 268f, false, powerIconPaint);
         canvas.drawLine(powerCenterX, powerLineTop, powerCenterX, powerCenterY - dp(1f),
                 powerIconPaint);
-        controls.draw(canvas);
+        controls.draw(canvas, router.profile());
     }
 
     private float dp(float value) {
@@ -471,6 +471,14 @@ final class TouchCaptureView extends View {
             return true;
         }
         ScreenControlRouter.Owner owner = router.owner();
+        if (owner == ScreenControlRouter.Owner.MODE) {
+            if (action == MotionEvent.ACTION_UP && router.modeUp(event.getPointerCount(), event.getPointerId(0))) {
+                udpSender.publishProfile(router.profile() == ScreenControlRouter.Profile.NORMAL ? 0 : 1);
+                android.util.Log.i("RightpadMode", "profile=" + router.profile());
+                invalidate();
+            }
+            return true;
+        }
         if (owner == ScreenControlRouter.Owner.SETTINGS || owner == ScreenControlRouter.Owner.POWER) {
             boolean settings = owner == ScreenControlRouter.Owner.SETTINGS;
             PowerGestureTracker tracker = settings ? settingsGesture : powerGesture;

@@ -46,6 +46,14 @@ final class ScreenControlLayoutStore {
     }
     void save(Map<String, ControlRect> controls, int width, int height) throws IOException {
         Properties data = new Properties();
+        // Retain stable-ID fields before overwriting the registered definitions.
+        // In particular, rightpad.input.mode geometry must survive every Save.
+        if (file.exists()) {
+            try (FileInputStream input = new FileInputStream(file)) { data.load(input); }
+            catch (IllegalArgumentException malformed) {
+                throw new IOException("Cannot preserve saved layout properties", malformed);
+            }
+        }
         data.setProperty("version", "1");
         for (Map.Entry<String, ControlRect> entry : controls.entrySet()) {
             ControlRect r = entry.getValue();

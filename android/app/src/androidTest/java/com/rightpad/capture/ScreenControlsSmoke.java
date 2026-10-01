@@ -25,20 +25,52 @@ public final class ScreenControlsSmoke extends Instrumentation {
     private int checks;
     private long downTime;
     private Throwable mainFailure;
-    private byte[] savedLayout;
-    private File savedLayoutFile;
+    private LayoutTestFileGuard layoutGuard;
+    private final java.util.Map<android.view.Window, android.view.Window.Callback> windowCallbacks =
+            new java.util.IdentityHashMap<>();
+    private int externalTouchEvents;
+
+    @Override public void callActivityOnCreate(Activity target, Bundle state) {
+        super.callActivityOnCreate(target, state);
+        if (!(target instanceof MainActivity)) return;
+        // Tests dispatch directly to the real View. Device touches must not replace
+        // their current owner between separate runOnMainSync calls, including recreation.
+        android.view.Window window = target.getWindow();
+        android.view.Window.Callback original = window.getCallback();
+        windowCallbacks.put(window, original);
+        window.setCallback((android.view.Window.Callback) java.lang.reflect.Proxy.newProxyInstance(
+                android.view.Window.Callback.class.getClassLoader(),
+                new Class<?>[] {android.view.Window.Callback.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("dispatchTouchEvent")) {
+                        MotionEvent event = (MotionEvent) args[0];
+                        externalTouchEvents++;
+                        android.util.Log.i("RightpadSmoke", "isolated_window_touch action="
+                                + event.getActionMasked() + " x=" + event.getX() + " y=" + event.getY());
+                        return true;
+                    }
+                    try { return method.invoke(original, args); }
+                    catch (java.lang.reflect.InvocationTargetException error) { throw error.getCause(); }
+                }));
+    }
 
     @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            layoutGuard = new LayoutTestFileGuard(
+                    new File(getTargetContext().getFilesDir(), "screen-controls.properties").toPath(),
+                    getTargetContext().getCacheDir().toPath());
+            layoutGuard.capture();
+            if (!layoutGuard.canMutate()) throw new IllegalStateException("Layout backup does not permit fixture mutation");
             launch();
-            savedLayoutFile = new File(getTargetContext().getFilesDir(), "screen-controls.properties");
-            savedLayout = savedLayoutFile.exists() ? java.nio.file.Files.readAllBytes(savedLayoutFile.toPath()) : null;
             // Editor assertions need room to move/resize. Restore the user's exact file in finally.
             main(() -> {
                 var rectangles = new java.util.LinkedHashMap<>(surface.controls.rects());
                 rectangles.put("xbox.b.slide", new ControlRect(100, 600, 240, 160));
+                // Keep this test's fixed blank/editor coordinates unoccupied. The
+                // guard restores the user's exact Mode rectangle bytes in finally.
+                rectangles.put(ScreenControls.MODE_ID,
+                        new ControlRect(surface.getWidth() - 120, 100, 100, 100));
                 surface.controls.layout = new ScreenControlLayoutEditor(surface.controls.definitions,
                         rectangles, surface.getWidth(), surface.getHeight());
             });
@@ -53,7 +85,10 @@ public final class ScreenControlsSmoke extends Instrumentation {
             screenshot("idle");
             ControlRect initial = currentRect();
             event(MotionEvent.ACTION_DOWN, initial.x + 30, initial.y + 30, false);
-            main(() -> check(pixel(rect()) == 0xFFFF3B30, "DOWN solid red"));
+            main(() -> {
+                verifyExternalTouchIsolation("xbox.b.slide");
+                check(pixel(rect()) == 0xFFFF3B30, "DOWN solid red");
+            });
             screenshot("active");
             event(MotionEvent.ACTION_UP, initial.x + 30, initial.y + 30, false);
             main(() -> check(pixel(rect()) == 0xFF00C853, "UP green"));
@@ -163,21 +198,185 @@ public final class ScreenControlsSmoke extends Instrumentation {
             lrPolicyAndScheduling();
             lrProduction();
             lrRuntimeConfig();
+            modePlaceholder();
+            cinematicProfile();
             healthIndicator();
             result.putString("stream", "PASS ScreenControlsSmoke checks=" + checks + "\n");
         } catch (Throwable error) {
             result.putString("stream", "FAIL checks=" + checks + " " + android.util.Log.getStackTraceString(error));
         } finally {
             try {
-                if (savedLayoutFile != null) {
-                    if (savedLayout == null) java.nio.file.Files.deleteIfExists(savedLayoutFile.toPath());
-                    else java.nio.file.Files.write(savedLayoutFile.toPath(), savedLayout);
-                    main(() -> { surface.stopCapture("smoke_restore_layout"); surface.controls.layout = null;
-                        surface.controls.resize(surface.getWidth(), surface.getHeight()); });
+                if (layoutGuard != null) {
+                    boolean protectedLayout = layoutGuard.canMutate();
+                    layoutGuard.restore();
+                    if (protectedLayout && surface != null)
+                        main(() -> { surface.stopCapture("smoke_restore_layout"); surface.controls.layout = null;
+                            surface.controls.resize(surface.getWidth(), surface.getHeight()); });
                 }
-            } catch (Throwable error) { result.putString("stream", "FAIL restoring user layout: " + error); }
+            } catch (Throwable error) { result.putString("stream", "FAIL restoring user layout: "
+                    + android.util.Log.getStackTraceString(error) + "\nPrevious test result: " + result.getString("stream", "")); }
+            finally {
+                main(() -> {
+                    for (var entry : windowCallbacks.entrySet()) entry.getKey().setCallback(entry.getValue());
+                    windowCallbacks.clear();
+                });
+            }
         }
         finish(result.getString("stream", "").startsWith("PASS") ? Activity.RESULT_OK : Activity.RESULT_CANCELED, result);
+    }
+    private void modePlaceholder() {
+        main(() -> {
+            check(surface.controls.definitions.stream().filter(d -> d.id.equals(ScreenControls.MODE_ID)).count() == 1,
+                    "Mode stable ID registered exactly once");
+            check(surface.controls.instances.containsKey(ScreenControls.MODE_ID), "Mode participates in generic layout/editor registry");
+            ControlRect saved = surface.controls.rects().get(ScreenControls.MODE_ID);
+            check(saved != null && saved.valid(surface.getWidth(), surface.getHeight()), "Mode X/Y/W/H loaded as bounded geometry");
+
+            var output = new java.util.ArrayList<GamepadStateSubmission>();
+            var controls = new ScreenControls(surface, output::add);
+            int[] feedbackEvents = {0};
+            controls.feedback = new ScreenControlFeedback(new ScreenControlFeedback.Backend() {
+                public int apiLevel() { return 29; }
+                public boolean available() { return true; }
+                public void predefinedClick(ScreenControlFeedback.Event event) { feedbackEvents[0]++; }
+                public void oneShot(ScreenControlFeedback.Event event, long ms, int amplitude) { feedbackEvents[0]++; }
+                public void legacy(ScreenControlFeedback.Event event, long ms) { feedbackEvents[0]++; }
+            });
+            long now = SystemClock.uptimeMillis();
+            MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, 10, 10, 0);
+            MotionEvent up = MotionEvent.obtain(now, now + 1, MotionEvent.ACTION_UP, 10, 10, 0);
+            controls.down(ScreenControls.MODE_ID, down);
+            controls.touch(ScreenControls.MODE_ID, up);
+            down.recycle(); up.recycle();
+            check(output.isEmpty(), "Mode adapter emits no GAMEPAD_STATE");
+            check(feedbackEvents[0] == 0, "Mode adapter emits no haptic");
+            check(controls.instances.get(ScreenControls.MODE_ID).neutral(), "Mode does not enter a gamepad gesture state");
+
+            var rectangles = new java.util.LinkedHashMap<String, ControlRect>();
+            rectangles.put("xbox.b.slide", new ControlRect(50, 50, 100, 100));
+            rectangles.put("xbox.x.slide_lr", new ControlRect(200, 50, 100, 100));
+            rectangles.put(ScreenControls.MODE_ID, new ControlRect(400, 500, 240, 360));
+            var editor = new ScreenControlLayoutEditor(controls.definitions, rectangles, 1000, 1200);
+            editor.begin();
+            check(editor.startDrag(520, 680, 8) && editor.selectedId().equals(ScreenControls.MODE_ID),
+                    "Mode selectable in generic editor");
+            check(editor.numeric("410", "510", "250", "370"), "Mode editor accepts X/Y/W/H");
+            ControlRect edited = editor.selectedRect();
+            check(edited.x == 410 && edited.y == 510 && edited.width == 250 && edited.height == 370,
+                    "Mode editor retains X/Y/W/H");
+            editor.cancel();
+        });
+    }
+    private void cinematicProfile() throws Exception {
+        // Exercise the real View/capture/encoder/sender over loopback; no production seam or socket is added.
+        try (var socket = new java.net.DatagramSocket(0, java.net.InetAddress.getByName("127.0.0.1"));
+                var sender = new UdpTouchSender("127.0.0.1", socket.getLocalPort())) {
+            socket.setSoTimeout(3000);
+            sender.setForeground(true);
+            TouchCaptureView[] view = new TouchCaptureView[1];
+            ScreenControlRouter[] route = new ScreenControlRouter[1];
+            int[] haptics = {0};
+            main(() -> { try {
+                view[0] = new TouchCaptureView(activity, null, sender, () -> { }, () -> { });
+                view[0].layout(0, 0, 1200, 2670);
+                var rectangles = new java.util.LinkedHashMap<>(view[0].controls.rects());
+                rectangles.put(ScreenControls.MODE_ID, new ControlRect(500, 700, 300, 1800));
+                view[0].controls.layout = new ScreenControlLayoutEditor(view[0].controls.definitions, rectangles, 1200, 2670);
+                Field field = TouchCaptureView.class.getDeclaredField("router"); field.setAccessible(true);
+                route[0] = (ScreenControlRouter) field.get(view[0]);
+                view[0].controls.feedback = new ScreenControlFeedback(new ScreenControlFeedback.Backend() {
+                    public int apiLevel() { return 29; }
+                    public boolean available() { return true; }
+                    public void predefinedClick(ScreenControlFeedback.Event e) { haptics[0]++; }
+                    public void oneShot(ScreenControlFeedback.Event e, long ms, int amplitude) { haptics[0]++; }
+                    public void legacy(ScreenControlFeedback.Event e, long ms) { haptics[0]++; }
+                });
+                check(route[0].profile() == ScreenControlRouter.Profile.NORMAL, "C1 fresh View is M");
+            } catch (Exception e) { throw new AssertionError(e); } });
+            long time = SystemClock.uptimeMillis();
+            byte[][] normal = profileMousePackets(view[0], socket, time);
+            main(() -> {
+                profileEvent(view[0], time, MotionEvent.ACTION_DOWN, 600, 900, 0, 1);
+                profileEvent(view[0], time + 1, MotionEvent.ACTION_MOVE, 300, 500, 0, 1);
+                check(route[0].owner() == ScreenControlRouter.Owner.MODE, "C1 MOVE outside retains MODE");
+                profileEvent(view[0], time + 2, MotionEvent.ACTION_UP, 300, 500, 0, 1);
+                profileEvent(view[0], time + 3, MotionEvent.ACTION_UP, 300, 500, 0, 1);
+                check(route[0].profile() == ScreenControlRouter.Profile.CINEMATIC, "C1 matching UP switches once to C");
+            });
+            byte[][] cinematic = profileMousePackets(view[0], socket, time);
+            for (int i = 0; i < normal.length; i++) {
+                check(java.util.Arrays.equals(normal[i], cinematic[i]), "C1 M/C encoded Touch packet equal index=" + i);
+            }
+            main(() -> {
+                for (int fault = 0; fault < 3; fault++) {
+                    profileEvent(view[0], time, MotionEvent.ACTION_DOWN, 600, 900, 0, 1);
+                    if (fault == 0) profileEvent(view[0], time + 1, MotionEvent.ACTION_CANCEL, 600, 900, 0, 1);
+                    if (fault == 1) profileEvent(view[0], time + 1, MotionEvent.ACTION_POINTER_DOWN | (1 << 8), 600, 900, 0, 2);
+                    if (fault == 2) profileEvent(view[0], time + 1, MotionEvent.ACTION_MOVE, 600, 900, 9, 1);
+                    profileEvent(view[0], time + 2, MotionEvent.ACTION_UP, 600, 900, 0, 1);
+                    check(route[0].profile() == ScreenControlRouter.Profile.CINEMATIC, "C1 cancelled Mode preserves C fault=" + fault);
+                }
+                profileEvent(view[0], time, MotionEvent.ACTION_DOWN, 600, 900, 0, 1);
+                profileEvent(view[0], time + 1, MotionEvent.ACTION_UP, 600, 900, 0, 1);
+                check(route[0].profile() == ScreenControlRouter.Profile.NORMAL, "C1 second valid gesture restores M");
+                check(haptics[0] == 0, "C1 Mode and Mouse produce zero local Screen Control haptics");
+                try {
+                    Field sequence = UdpTouchSender.class.getDeclaredField("nextSequence"); sequence.setAccessible(true);
+                    check(sequence.getLong(sender) == 6, "C1 Mode produces zero Touch packets");
+                    Field aggregate = ScreenControls.class.getDeclaredField("gamepad"); aggregate.setAccessible(true);
+                    Field contributions = GamepadAggregator.class.getDeclaredField("contributions"); contributions.setAccessible(true);
+                    check(((java.util.Map<?, ?>) contributions.get(aggregate.get(view[0].controls))).isEmpty(),
+                            "C1 Mode has zero gamepad contributions");
+                } catch (Exception e) { throw new AssertionError(e); }
+                view[0].stopCapture("c1_complete");
+            });
+        }
+    }
+    private byte[][] profileMousePackets(TouchCaptureView view, java.net.DatagramSocket socket, long time) throws Exception {
+        main(() -> {
+            profileEvent(view, time, MotionEvent.ACTION_DOWN, 300, 500, 0, 1);
+            // Batched history must survive unchanged in both profiles.
+            MotionEvent move = MotionEvent.obtain(time, time + 5, MotionEvent.ACTION_MOVE, 310, 510, 0);
+            move.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            move.addBatch(time + 10, 320, 520, 1, 1, 0);
+            view.dispatchTouchEvent(move); move.recycle();
+            profileEvent(view, time + 20, MotionEvent.ACTION_UP, 320, 520, 0, 1);
+        });
+        byte[][] packets = new byte[3][];
+        int found = 0;
+        while (found < 3) {
+            var packet = new java.net.DatagramPacket(new byte[4096], 4096);
+            socket.receive(packet);
+            byte[] bytes = java.util.Arrays.copyOf(packet.getData(), packet.getLength());
+            int type = bytes[1] & 255;
+            if (type < 1 || type > 3 || packets[type - 1] != null) continue;
+            // Ignore only independent run/session identity and normalize this gesture's sequence origin.
+            var buffer = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            check(buffer.getInt(16) % 3 == type - 1, "C1 Mouse sequence order");
+            java.util.Arrays.fill(bytes, 2, 10, (byte) 0);
+            java.util.Arrays.fill(bytes, 12, 16, (byte) 0);
+            buffer.putInt(16, type - 1);
+            packets[type - 1] = bytes; found++;
+        }
+        // Drain the UP redundancy before starting the next profile.
+        socket.setSoTimeout(100);
+        try { while (true) socket.receive(new java.net.DatagramPacket(new byte[4096], 4096)); }
+        catch (java.net.SocketTimeoutException expected) { }
+        socket.setSoTimeout(3000);
+        return packets;
+    }
+    private void profileEvent(TouchCaptureView view, long time, int action, float x, float y, int pointer, int count) {
+        var properties = new MotionEvent.PointerProperties[count];
+        var coordinates = new MotionEvent.PointerCoords[count];
+        for (int i = 0; i < count; i++) {
+            properties[i] = new MotionEvent.PointerProperties(); properties[i].id = pointer + i;
+            properties[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+            coordinates[i] = new MotionEvent.PointerCoords(); coordinates[i].x = x + i; coordinates[i].y = y;
+            coordinates[i].pressure = coordinates[i].size = 1;
+        }
+        MotionEvent event = MotionEvent.obtain(time, time, action, count, properties, coordinates,
+                0, 0, 1, 1, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+        view.dispatchTouchEvent(event); event.recycle();
     }
     private void healthIndicator() throws Exception {
         float[] point = new float[2];
@@ -261,8 +460,11 @@ public final class ScreenControlsSmoke extends Instrumentation {
             public void legacy(ScreenControlFeedback.Event event, long ms) { record(event + ":" + ms); }
         });
         main(() -> {
-            check(surface.controls.definitions.size() == 2 && surface.controls.instances.containsKey("xbox.x.slide_lr"),
-                    "B and LR production registry");
+            check(surface.controls.definitions.size() == 3
+                            && surface.controls.instances.containsKey("xbox.b.slide")
+                            && surface.controls.instances.containsKey("xbox.x.slide_lr")
+                            && surface.controls.instances.containsKey(ScreenControls.MODE_ID),
+                    "B, LR and Mode production layout registry");
             check(surface.controls.definitions.get(0).feedbackStyle == ScreenControlFeedback.Style.STRONG_ONE_SHOT,
                     "B definition retains strong feedback");
             for (int level : new int[] {25, 26, 28, 29, 36}) {
@@ -371,6 +573,7 @@ public final class ScreenControlsSmoke extends Instrumentation {
             main(() -> check(c.neutral() && pixel(bounds[0]) == 0xFF00C853 && feedbackEvents.size() == 1, "X Tap release green and one feedback"));
             event(MotionEvent.ACTION_DOWN, x, y, false);
             main(() -> {
+                verifyExternalTouchIsolation(id);
                 long now = SystemClock.uptimeMillis();
                 MotionEvent release = MotionEvent.obtain(downTime, now, MotionEvent.ACTION_MOVE, x - 60, y, 0);
                 release.setSource(InputDevice.SOURCE_TOUCHSCREEN);
@@ -604,12 +807,40 @@ public final class ScreenControlsSmoke extends Instrumentation {
     }
     private long sequence() {
         long[] value = new long[1];
-        main(() -> { try {
+        main(() -> value[0] = sequenceOnMain());
+        return value[0];
+    }
+    private long sequenceOnMain() {
+        try {
             Field sender = TouchCaptureView.class.getDeclaredField("udpSender"); sender.setAccessible(true);
             Field sequence = UdpTouchSender.class.getDeclaredField("nextSequence"); sequence.setAccessible(true);
-            value[0] = sequence.getLong(sender.get(surface));
-        } catch (Exception error) { throw new AssertionError(error); } });
-        return value[0];
+            return sequence.getLong(sender.get(surface));
+        } catch (Exception error) { throw new AssertionError(error); }
+    }
+    private void verifyExternalTouchIsolation(String id) {
+        // Reproduce the historical foreign DOWN -> test UP interference at the
+        // Window entry point while a synthetic B/X contact owns the real View.
+        long baseline = sequenceOnMain();
+        int before = externalTouchEvents;
+        long now = SystemClock.uptimeMillis();
+        MotionEvent.PointerProperties pointer = new MotionEvent.PointerProperties();
+        pointer.id = 0; pointer.toolType = MotionEvent.TOOL_TYPE_FINGER;
+        MotionEvent.PointerCoords coords = new MotionEvent.PointerCoords();
+        coords.x = 981.7998f; coords.y = 1838.7998f; coords.pressure = 1; coords.size = 1;
+        for (int action : new int[] {MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP}) {
+            MotionEvent event = MotionEvent.obtain(now, now, action, 1, new MotionEvent.PointerProperties[] {pointer},
+                    new MotionEvent.PointerCoords[] {coords}, 0, 0, 1, 1, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+            try { activity.getWindow().getCallback().dispatchTouchEvent(event); }
+            finally { event.recycle(); }
+        }
+        check(externalTouchEvents == before + 3, "window input isolation observes all external events: " + id);
+        try {
+            Field field = TouchCaptureView.class.getDeclaredField("router"); field.setAccessible(true);
+            ScreenControlRouter router = (ScreenControlRouter) field.get(surface);
+            check(router.owner() == ScreenControlRouter.Owner.SCREEN_CONTROL && id.equals(router.controlId())
+                    && surface.controls.instances.get(id).active(), "external touch preserves test contact owner: " + id);
+        } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+        check(sequenceOnMain() == baseline, "external touch cannot contaminate Mouse sequence: " + id);
     }
     private void event(int action, float x, float y, boolean mouse) {
         main(() -> {

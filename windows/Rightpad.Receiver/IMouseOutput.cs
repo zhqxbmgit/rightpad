@@ -33,10 +33,11 @@ internal static class MouseOutputFactory
         _ => throw new ArgumentOutOfRangeException(nameof(backend))
     };
 
-    public static IMouseOutput Create(MouseBackend backend, FlightRecorder? recorder = null, MotionTrace? motionTrace = null) => backend switch
+    public static IMouseOutput Create(MouseBackend backend, FlightRecorder? recorder = null, MotionTrace? motionTrace = null,
+        HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0) => backend switch
     {
-        MouseBackend.SendInput => new WindowsMouseOutput(recorder),
-        MouseBackend.VirtualHid => new LibVirtualHidMouseOutput(recorder, motionTrace),
+        MouseBackend.SendInput => new WindowsMouseOutput(recorder, hitchTrace, runtimeRun),
+        MouseBackend.VirtualHid => new LibVirtualHidMouseOutput(recorder, motionTrace, hitchTrace, runtimeRun),
         _ => throw new ArgumentOutOfRangeException(nameof(backend))
     };
 }

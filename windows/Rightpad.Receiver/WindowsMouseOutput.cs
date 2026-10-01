@@ -64,6 +64,8 @@ internal sealed class WindowsMouseOutput : IMouseOutput
     public long IntendedAbsDyTotal => Interlocked.Read(ref intendedAbsDyTotal);
     private readonly Func<long> monotonicNow;
     private readonly FlightRecorder? flightRecorder;
+    private readonly HitchTraceRecorder? hitchTrace;
+    private readonly long runtimeRun;
     private long leftDownSuccess, leftUpSuccess, leftButtonFailures;
     public long LeftDownSuccess => Interlocked.Read(ref leftDownSuccess);
     public long LeftUpSuccess => Interlocked.Read(ref leftUpSuccess);
@@ -93,15 +95,19 @@ internal sealed class WindowsMouseOutput : IMouseOutput
         else Interlocked.Increment(ref leftUpSuccess);
     }
 
-    public WindowsMouseOutput(FlightRecorder? flightRecorder = null) : this(SendInput, Marshal.GetLastPInvokeError, null, flightRecorder) { }
+    public WindowsMouseOutput(FlightRecorder? flightRecorder = null, HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0)
+        : this(SendInput, Marshal.GetLastPInvokeError, null, flightRecorder, hitchTrace, runtimeRun) { }
 
     // Small native-call seam for verifying failure handling without injecting input.
-    internal WindowsMouseOutput(SendInputCall send, Func<int> getError, Func<long>? monotonicNow = null, FlightRecorder? flightRecorder = null)
+    internal WindowsMouseOutput(SendInputCall send, Func<int> getError, Func<long>? monotonicNow = null, FlightRecorder? flightRecorder = null,
+        HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0)
     {
         this.send = send;
         this.getError = getError;
         this.monotonicNow = monotonicNow ?? Stopwatch.GetTimestamp;
         this.flightRecorder = flightRecorder;
+        this.hitchTrace = hitchTrace;
+        this.runtimeRun = runtimeRun;
     }
 
     public void Move(int dx, int dy)
@@ -117,10 +123,15 @@ internal sealed class WindowsMouseOutput : IMouseOutput
         Interlocked.Add(ref intendedRelativeDyTotal, dy);
         Interlocked.Add(ref intendedAbsDxTotal, Math.Abs((long)dx));
         Interlocked.Add(ref intendedAbsDyTotal, Math.Abs((long)dy));
+        long submitAt = hitchTrace is null ? 0 : Stopwatch.GetTimestamp();
         uint inserted = send(1, ref input, InputSize);
+        // Preserve the native last-error value before diagnostics makes any managed calls.
+        int submitError = inserted != 1 ? getError() : 0;
+        hitchTrace?.Write(new(HitchKind.NativeSubmit, submitAt, End: Stopwatch.GetTimestamp(),
+            RuntimeRun: runtimeRun, Dx: dx, Dy: dy, Status: inserted == 1 ? HitchStatus.Success : HitchStatus.Failure));
         if (inserted != 1)
         {
-            int error = getError();
+            int error = submitError;
             Interlocked.Increment(ref failedCalls);
             RecordFailure("move", inserted, error);
             throw new Win32Exception(error,
