@@ -73,10 +73,8 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
     public int? ActiveSupportMs => DirectReconstruction ? null : runtime.CaptureActiveRuntimeSnapshot()?.Motion.FiniteCriticalSupportMs;
     public string ActiveMotionText => CinematicActive ? "Active C-Z1: Reconstruction 12 ms · zhq-derived servo · Tau 35 ms · Amax 80000 · Vmax 15000 · 4 ms / 250 Hz nominal · Java-compatible rounding · true glide" : ActiveTauMs is int tau
         ? $"Active: Tau {tau} ms · Support {ActiveSupportMs} ms" : DirectReconstruction && running ? "Active: " + MotionModes.Mr1Algorithm + " · Tau N/A · Support N/A" : "Active: Receiver stopped";
-    public string SavedMotionText => $"Saved: Tau {Settings.CommittedSettings.SmoothingTauMs} ms · Support {Settings.CommittedSettings.SmoothingSupportMs} ms";
     public bool RestartRequired => running && !DirectReconstruction && (ActiveTauMs != Settings.CommittedSettings.SmoothingTauMs ||
         ActiveSupportMs != Settings.CommittedSettings.SmoothingSupportMs);
-    public string RestartRequiredText => RestartRequired ? "Restart required" : "";
     public bool CanRestart => RestartRequired && !Settings.IsSaving && !busy && !IsRestarting;
     public ReceiverPage CurrentPage { get => currentPage; set => Set(ref currentPage, value); }
     public SettingsViewModel Settings { get; } = settings;
@@ -95,7 +93,7 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
         Set(ref canToggle, !busy && Stats.RuntimeState is not ("Starting" or "Stopping"), nameof(CanToggle));
         Settings.RefreshNotice();
         foreach (string name in new[] { nameof(ActiveTauMs), nameof(ActiveSupportMs), nameof(ActiveMotionText),
-            nameof(SavedMotionText), nameof(RestartRequired), nameof(RestartRequiredText), nameof(CanRestart),
+            nameof(RestartRequired), nameof(CanRestart),
             nameof(IsRestarting), nameof(RestartText), nameof(RestartError), nameof(MotionExplanation),
             nameof(MotionQuantizerName), nameof(MotionModeName) }) Changed(name);
     }

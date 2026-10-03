@@ -26,9 +26,11 @@ internal static class Program
         }
         bool motionOnly = args.SequenceEqual(new[] { "--motion-profile" });
         bool mr1Only = args.SequenceEqual(new[] { "--mr1" });
-        if (args.Length != 0 && !motionOnly && !mr1Only) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--mr1 | --motion-profile | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
+        bool uiSettingsOnly = args.SequenceEqual(new[] { "--ui-settings" });
+        if (args.Length != 0 && !motionOnly && !mr1Only && !uiSettingsOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--ui-settings | --mr1 | --motion-profile | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            .. MotionUiCleanupTests.Cases,
             .. HitchTraceTests.Cases,
             .. Mr1MotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. Mf1ReconstructionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
@@ -278,6 +280,12 @@ internal static class Program
             .. ProfileMotionEquivalenceTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. MotionProfileTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. ZhqTrackpadDynamicsTests.Cases.Select(test => (test.Name, Sync(test.Run)))
+        ];
+        if (uiSettingsOnly) tests =
+        [
+            .. MotionUiCleanupTests.Cases,
+            ("Tau/Support schema compatibility", Sync(SettingsTests.TauSupportSchema)),
+            ("Tau/Support historical Save API", SettingsTests.TauSupportSave)
         ];
         int failed = 0;
         foreach (var test in tests)

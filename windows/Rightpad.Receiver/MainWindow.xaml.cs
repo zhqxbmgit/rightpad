@@ -61,7 +61,6 @@ public partial class MainWindow : Window
             PageContent.Content = pages[(int)page];
     }
     private async void SaveSettings(object sender, RoutedEventArgs e) => await model.Settings.SaveAsync();
-    private async void RestartReceiver(object sender, RoutedEventArgs e) => await model.RestartAsync();
     private void WindowClosing(object? sender, CancelEventArgs e)
     {
         e.Cancel = trayBehavior.HandleClosing(Hide);

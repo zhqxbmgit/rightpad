@@ -51,7 +51,7 @@ Four UserControls selected by a ListBox / ReceiverPage enum / ContentControl:
 | Page | Contents |
 |---|---|
 | Overview | Connection: status, current presence Android IP, Last Seen, listener, sample/packet Hz, Gap/Old/Invalid. Receiver: runtime state, a compact Start with Windows toggle, and one Start/Stop button. |
-| Motion (default) | Sensitivity X/Y plus integer Smoothing Tau and Support numeric editors, followed by a read-only summary of the fixed production algorithm. No cadence selector, slider or mode dropdown. |
+| Motion (default) | Sensitivity X/Y numeric editors, followed by a read-only summary of the actual Active algorithm. No cadence selector, slider or mode dropdown. |
 | Tap | Tap settings: duration, movement threshold, click hold. No Enabled row or toggle. |
 | Diagnostics | Input/Transport: sample/packet Hz, Gap/Old/Invalid/Duplicate/Input Timeout, Heartbeat Packets, Presence Timeouts, Outdated Run Packets. Receiver: state, backend, touch session, last accepted age, last remote IP. |
 
@@ -84,15 +84,13 @@ errors leave a Start retry in Overview and a concise global error message.
 | Parameter | Default | Display precision | Product range | Button/key step |
 |---|---:|---:|---:|---:|
 | Sensitivity X/Y | 7.0 | 1 decimal place | 0.1..30.0 | 0.5 |
-| Smoothing Tau | 24 ms | Integer | 8..60 ms, integer | 1 ms |
-| Support | 120 ms | Integer | 40..300 ms, integer | 5 ms |
 | Tap Max Duration | 300 ms | Integer | 50..1500 ms, integer | 10 ms |
 | Movement Threshold | 8 px | Up to 2 decimal places | 0.5..100 px | 0.5 px |
 | Click Hold | 25 ms | Integer | 1..200 ms, integer | 1 ms |
 
 Native TextBox supports typing and copy/paste; +/- and keyboard Up/Down step.
 Sensitivity displays one decimal place and accepts at most one decimal place in
-direct input; Tau and Support accept integers only; threshold displays up to two. Enter/blur formats,
+direct input; threshold displays up to two. Enter/blur formats,
 Escape restores the last successfully saved value. Editors operate only on one
 shared draft across Motion and Tap. Empty/unfinished decimal text remains a UI
 draft; invalid/out-of-range text has an inline hint and disables Save. Only the
@@ -120,23 +118,24 @@ the complete reference using Interlocked.Exchange; readers use Volatile.Read.
   endpoint. Draft/failed Save never changes live gain. Existing targets, pending
   displacement, realized history and Q0-C state are preserved. No settings read
   is added to the 1000 Hz output tick.
-- Smoothing Tau and Support: captured once when a production Receiver run is
-  constructed. Tau is the finite-critical time constant; Support is the maximum
+- Saved Smoothing Tau and Support remain readable/writable for compatibility and
+  historical M12/M-F1 regression, without normal-user editing controls or schema
+  migration. Active M-R1 reports Tau/Support N/A; Active C-Z1 reports fixed tau
+  35 ms and Support N/A. In the retained M-F1 path they are captured once when a
+  Receiver run is constructed. Tau is the finite-critical time constant; Support is the maximum
   retained history/truncation duration, not a fixed added delay. They are
   independently configurable and no Tau/Support ratio is imposed. A successful
   Save updates the committed snapshot but never rebuilds or changes the current
   run's kernel; Stop/Start constructs the next run from the saved values.
-- Motion shows Active from the actual running MotionConfiguration and Saved from
-  committed settings. A mismatch while running displays Restart required.
-  Restart Receiver is enabled only for that mismatch, outside Save and lifecycle
-  work. During async restart it reads Restarting..., and Save, numeric editors
-  and Start/Stop are disabled. A stopped receiver retains its ordinary Start.
-- Restart holds the Runtime lifecycle lock across complete Stop/cleanup and new
+- Motion shows the actual Active algorithm. The normal UI has no Saved Tau/Support
+  summary, Tau/Support restart warning or associated Restart Receiver action.
+  The underlying Save and restart APIs remain available for historical/dev tests.
+- The retained restart API holds the Runtime lifecycle lock across complete Stop/cleanup and new
   Start. It retries the same committed target once, then attempts the previously
   active Motion configuration with current committed sensitivity and gesture
   settings. Recovery never writes settings.json or republishes old settings.
-  The WPF process remains alive. Successful recovery shows the old Active/new
-  Saved mismatch and a nonmodal error with both target failures. Failed recovery
+  The WPF process remains alive. Successful recovery retains the old Active/new
+  Saved mismatch for API diagnostics and an error with both target failures. Failed recovery
   shows a high-priority error with all failures and leaves manual Start available.
 - Duration/threshold: capture at accepted DOWN, retain for that entire gesture.
 - Click Hold: read when requesting the click. Every queued request owns its hold

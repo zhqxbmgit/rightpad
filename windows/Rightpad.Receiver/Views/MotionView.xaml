@@ -4,15 +4,9 @@
       <TextBlock Text="Motion settings" Style="{StaticResource SectionTitle}"/>
       <local:NumericEditor DataContext="{Binding Settings.SensitivityX}"/>
       <local:NumericEditor DataContext="{Binding Settings.SensitivityY}"/>
-      <local:NumericEditor DataContext="{Binding Settings.SmoothingTau}"/>
-      <local:NumericEditor DataContext="{Binding Settings.SmoothingSupport}"/>
       <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,14,0,0" Padding="0,12,0,0"><StackPanel>
-        <TextBlock Text="Production motion: 1000 Hz · Q0-C · Earned-Settle · 12 ms playout." TextWrapping="Wrap" Style="{StaticResource Muted}" FontSize="13"/>
-        <TextBlock Text="Sensitivity changes apply immediately after Save. Tau and Support require a Receiver restart." TextWrapping="Wrap" Style="{StaticResource Muted}" FontSize="13" Margin="0,4,0,0"/>
-        <TextBlock Text="Current baseline: Tau 24 ms · Support 120 ms." TextWrapping="Wrap" Style="{StaticResource Muted}" FontSize="13" Margin="0,4,0,0"/>
+        <TextBlock Text="Sensitivity changes apply to new real displacement after Save." TextWrapping="Wrap" Style="{StaticResource Muted}" FontSize="13"/>
         <TextBlock Text="{Binding ActiveMotionText}" AutomationProperties.AutomationId="ActiveMotion" Margin="0,12,0,0"/>
-        <TextBlock Text="{Binding SavedMotionText}" AutomationProperties.AutomationId="SavedMotion" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
-        <TextBlock Text="{Binding RestartRequiredText}" AutomationProperties.AutomationId="RestartRequired" Style="{StaticResource OptionalNotice}"/>
       </StackPanel></Border>
     </StackPanel></Border>
   </StackPanel>

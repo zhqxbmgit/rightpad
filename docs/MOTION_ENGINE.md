@@ -184,7 +184,13 @@ capacity/nonfinite/history errors visibly rather than shortening Support.
 Once the full support contains a constant endpoint, output converges to that
 already-earned endpoint and parks. This is finite filter settlement, not glide.
 
-## Product settings and run snapshot
+## Compatibility settings and run snapshot
+
+Normal Receiver Motion settings expose Sensitivity X/Y. Saved Tau/Support remain
+in the settings schema for compatibility and historical M12/M-F1 regression,
+but have no normal-user editing controls under the selected M-R1/C-Z1 baseline.
+M-R1 reports Active Tau/Support N/A; C-Z1 uses fixed tau 35 ms and Support N/A.
+The following ranges and run snapshot behavior describe the retained M-F1 filter.
 
 | Setting | Default | Legal range | Step |
 |---|---:|---:|---:|

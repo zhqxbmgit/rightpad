@@ -110,7 +110,7 @@ internal static class ProfileMotionEquivalenceTests
             vm.Refresh(new(1,ReceiverState.Running,MotionProfile:profile,ActiveMotionProfile:a.Profile,
                 ActiveMotionTauMs:a.TauMs,ActiveMotionSupportMs:a.SupportMs,ActiveMotionAlgorithm:a.Algorithm,NativeOutputCadence:h.Motion.NativeOutputCadence),0);
             Equal(profile==MotionProfile.Normal?"M-F1 · Finite-Critical · Reconstruction 8 ms · Q0-C · 1 ms / 1000 Hz · Earned-Settle":"C-Z1 · Reconstruction 12 ms · zhq-derived servo · Amax 80000 · Vmax 15000 · Java-compatible rounding · true glide",vm.MotionAlgorithm,"active algorithm");Equal(profile==MotionProfile.Normal?"13 ms":"35 ms",vm.ActiveTau,"active Tau");
-            Equal(profile==MotionProfile.Normal?"83 ms":"—",vm.ActiveSupport,"active Support");Equal(profile==MotionProfile.Normal?"1000 Hz":"250 Hz",vm.NativeOutputCadence,"active cadence");
+            Equal(profile==MotionProfile.Normal?"83 ms":"N/A",vm.ActiveSupport,"active Support");Equal(profile==MotionProfile.Normal?"1000 Hz":"250 Hz",vm.NativeOutputCadence,"active cadence");
         }
     }
 }
