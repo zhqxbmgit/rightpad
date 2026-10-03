@@ -3,7 +3,7 @@ param(
     [string]$Mode = 'Status',
     [ValidateSet('production', 'sendinput', 'virtualhid')]
     [string]$DevMouseBackend = 'production',
-    [ValidateSet('RAW', 'RESAMPLED_250HZ', 'RESAMPLED_250HZ_BOXCAR_4MS', 'RESAMPLED_250HZ_BOXCAR_8MS', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5', 'RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE')]
+    [ValidateSet('RAW', 'M_R1', 'RESAMPLED_250HZ', 'RESAMPLED_250HZ_BOXCAR_4MS', 'RESAMPLED_250HZ_BOXCAR_8MS', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5', 'RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE')]
     [string]$DevMotionMode = 'RAW',
     [switch]$DevMotionTrace
 )
@@ -35,7 +35,7 @@ function Get-ReceiverArguments([string]$LogDirectory, [string]$BackendOverride =
 }
 
 function Get-MotionArguments([string]$MotionMode = '', [string]$TraceDirectory = '') {
-    if ($MotionMode -and $MotionMode -notin @('RAW', 'RESAMPLED_250HZ', 'RESAMPLED_250HZ_BOXCAR_4MS', 'RESAMPLED_250HZ_BOXCAR_8MS', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5', 'RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE')) { throw 'Invalid experimental motion mode.' }
+    if ($MotionMode -and $MotionMode -notin @('RAW', 'M_R1', 'RESAMPLED_250HZ', 'RESAMPLED_250HZ_BOXCAR_4MS', 'RESAMPLED_250HZ_BOXCAR_8MS', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5', 'RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE')) { throw 'Invalid experimental motion mode.' }
     $arguments = if ($MotionMode) { " --dev-motion-mode $MotionMode" } else { '' }
     if ($TraceDirectory) {
         if ($TraceDirectory.Contains('"')) { throw 'Invalid trace directory.' }

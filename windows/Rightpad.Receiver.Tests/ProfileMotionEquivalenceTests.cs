@@ -1,17 +1,17 @@
 using static Rightpad.Receiver.Tests.Program;
 namespace Rightpad.Receiver.Tests;
 
-// Product gate: profiles are labels over exactly one fixed Motion/output path.
+// M gate: a deferred C request must never disturb the production chain.
 internal static class ProfileMotionEquivalenceTests
 {
     public static IEnumerable<(string Name, Action Run)> Cases =>
     [
         .. new[] { "slow", "medium", "fast", "reversal", "stop", "micro", "missed", "live sensitivity" }
-            .Select(label => ($"Profile M/C exact position/logical/native/timing/settle {label}", (Action)(() => Equivalence(label)))),
-        ("Profile saved kernels exact M/C equivalence at six configurations", Saved),
+            .Select(label => ($"M deferred C exact position/logical/native/timing/settle {label}", (Action)(() => Equivalence(label)))),
+        ("M saved kernels exact deferred-request equivalence at six configurations", Saved),
         ("Profile deferred stationary contact and settlement with joining DOWN", Deferred),
         ("Profile Reset stale tick and fresh run baseline", Reset),
-        ("Profile diagnostics identical algorithm Saved values and 1000Hz", Diagnostics)
+        ("Profile diagnostics actual M/C algorithm and cadence", Diagnostics)
     ];
     private const long Origin=100_000, Frequency=1_000_000;
     private sealed class H : IDisposable
@@ -55,12 +55,14 @@ internal static class ProfileMotionEquivalenceTests
     }
     private static void Equivalence(string label,int tau=18,int support=90)
     {
-        using var m=new H(MotionProfile.Normal,tau,support);using var c=new H(MotionProfile.Cinematic,tau,support);
+        using var m=new H(MotionProfile.Normal,tau,support);using var c=new H(MotionProfile.Normal,tau,support);
         float scale=label switch{"slow"=>.05f,"medium"=>2,"fast"=>40,"micro"=>.005f,_=>10};
         float X(int t)=>label=="reversal"?(t<=48?t:96-t)*scale:label=="stop"?Math.Min(t,32)*scale:t*scale;
         for(int t=0;t<=650;t++)
         {
             if(t==0){m.Touch(TouchEventType.Down,t,0);c.Touch(TouchEventType.Down,t,0);Compare(m,c);}
+            if(t==1)c.Motion.RequestProfile(MotionProfile.Cinematic);
+            if(t==102)c.Motion.RequestProfile(MotionProfile.Normal);
             if(label=="live sensitivity" && t==40){m.Sensitivity.Publish(6,3);c.Sensitivity.Publish(6,3);Compare(m,c);}
             if(t>0 && t<=100 && t%4==0)
             {m.Touch(TouchEventType.Move,t,X(t),X(t)*.37f);c.Touch(TouchEventType.Move,t,X(t),X(t)*.37f);Compare(m,c);}
@@ -72,13 +74,13 @@ internal static class ProfileMotionEquivalenceTests
         Equal(m.Total,c.Total,"native cumulative exact");Equal(m.Total,(m.Motion.TotalDx,m.Motion.TotalDy),"logical endpoint paid immediately");
         Check(m.Motion.Schedule.Deadline is null && c.Motion.Schedule.Deadline is null,"same finite settlement and park");
         Equal(0L,m.Motion.UpFlushCount,"Earned-Settle no UP bypass");Equal(0L,c.Motion.UpFlushCount,"C same lifecycle");
-        Console.WriteLine($"Profile M==C {label} Tau/Support={tau}/{support} logical={m.Logical().Length} native={m.Native.Count} final={m.Total} EXACT");
+        Console.WriteLine($"M deferred-request equivalence {label} Tau/Support={tau}/{support} logical={m.Logical().Length} native={m.Native.Count} final={m.Total} EXACT");
     }
     private static void Saved()
     {foreach(var pair in new[]{(8,40),(13,83),(18,90),(18,100),(24,120),(60,300)})Equivalence("reversal",pair.Item1,pair.Item2);}
     private static void Deferred()
     {
-        foreach(var profile in new[]{MotionProfile.Normal,MotionProfile.Cinematic})
+        foreach(var profile in new[]{MotionProfile.Normal})
         {
             using var h=new H(profile);var next=profile==MotionProfile.Normal?MotionProfile.Cinematic:MotionProfile.Normal;
             h.Touch(TouchEventType.Down,0,0);h.Motion.RequestProfile(next);Equal(profile,h.Motion.ActiveMotionProfile,"stationary held defers");
@@ -93,7 +95,7 @@ internal static class ProfileMotionEquivalenceTests
     }
     private static void Reset()
     {
-        using var m=new H(MotionProfile.Normal);using var c=new H(MotionProfile.Cinematic);
+        using var m=new H(MotionProfile.Normal);using var c=new H(MotionProfile.Normal);
         foreach(var h in new[]{m,c}){h.Touch(TouchEventType.Down,0,0);h.Touch(TouchEventType.Move,4,100);h.Tick(20);}
         var generation=m.Motion.Schedule.Generation;foreach(var h in new[]{m,c})h.Motion.Reset();Compare(m,c);
         foreach(var h in new[]{m,c}){h.Now+=100000;h.Motion.Tick(h.Now,generation);}Compare(m,c);
@@ -107,8 +109,8 @@ internal static class ProfileMotionEquivalenceTests
             using var h=new H(profile,13,83);var a=h.Motion.ActiveAlgorithm;var vm=new RuntimeStatsViewModel();
             vm.Refresh(new(1,ReceiverState.Running,MotionProfile:profile,ActiveMotionProfile:a.Profile,
                 ActiveMotionTauMs:a.TauMs,ActiveMotionSupportMs:a.SupportMs,ActiveMotionAlgorithm:a.Algorithm,NativeOutputCadence:h.Motion.NativeOutputCadence),0);
-            Equal("Finite-Critical",vm.MotionAlgorithm,"same algorithm");Equal("13 ms",vm.ActiveTau,"actual Saved Tau");
-            Equal("83 ms",vm.ActiveSupport,"actual Saved Support");Equal("1000 Hz",vm.NativeOutputCadence,"same native cadence");
+            Equal(profile==MotionProfile.Normal?"M-F1 · Finite-Critical · Reconstruction 8 ms · Q0-C · 1 ms / 1000 Hz · Earned-Settle":"C-Z1 · Reconstruction 12 ms · zhq-derived servo · Amax 80000 · Vmax 15000 · Java-compatible rounding · true glide",vm.MotionAlgorithm,"active algorithm");Equal(profile==MotionProfile.Normal?"13 ms":"35 ms",vm.ActiveTau,"active Tau");
+            Equal(profile==MotionProfile.Normal?"83 ms":"—",vm.ActiveSupport,"active Support");Equal(profile==MotionProfile.Normal?"1000 Hz":"250 Hz",vm.NativeOutputCadence,"active cadence");
         }
     }
 }

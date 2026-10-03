@@ -199,7 +199,7 @@ public final class ScreenControlsSmoke extends Instrumentation {
             lrProduction();
             lrRuntimeConfig();
             modePlaceholder();
-            cinematicProfile();
+            profileAndFixedAcquisition();
             healthIndicator();
             result.putString("stream", "PASS ScreenControlsSmoke checks=" + checks + "\n");
         } catch (Throwable error) {
@@ -267,7 +267,7 @@ public final class ScreenControlsSmoke extends Instrumentation {
             editor.cancel();
         });
     }
-    private void cinematicProfile() throws Exception {
+    private void profileAndFixedAcquisition() throws Exception {
         // Exercise the real View/capture/encoder/sender over loopback; no production seam or socket is added.
         try (var socket = new java.net.DatagramSocket(0, java.net.InetAddress.getByName("127.0.0.1"));
                 var sender = new UdpTouchSender("127.0.0.1", socket.getLocalPort())) {
@@ -292,8 +292,11 @@ public final class ScreenControlsSmoke extends Instrumentation {
                     public void legacy(ScreenControlFeedback.Event e, long ms) { haptics[0]++; }
                 });
                 check(route[0].profile() == ScreenControlRouter.Profile.NORMAL, "C1 fresh View is M");
+                check(!view[0].getContentDescription().toString().contains("Buffered")
+                        && !view[0].getContentDescription().toString().contains("Unbuffered"), "no acquisition selector");
             } catch (Exception e) { throw new AssertionError(e); } });
             long time = SystemClock.uptimeMillis();
+            profileTriple(socket, sender, 0, 0);
             byte[][] normal = profileMousePackets(view[0], socket, time);
             main(() -> {
                 profileEvent(view[0], time, MotionEvent.ACTION_DOWN, 600, 900, 0, 1);
@@ -301,11 +304,12 @@ public final class ScreenControlsSmoke extends Instrumentation {
                 check(route[0].owner() == ScreenControlRouter.Owner.MODE, "C1 MOVE outside retains MODE");
                 profileEvent(view[0], time + 2, MotionEvent.ACTION_UP, 300, 500, 0, 1);
                 profileEvent(view[0], time + 3, MotionEvent.ACTION_UP, 300, 500, 0, 1);
-                check(route[0].profile() == ScreenControlRouter.Profile.CINEMATIC, "C1 matching UP switches once to C");
+                check(route[0].profile() == ScreenControlRouter.Profile.CINEMATIC, "matching UP switches once to C");
             });
+            profileTriple(socket, sender, 1, 1);
             byte[][] cinematic = profileMousePackets(view[0], socket, time);
             for (int i = 0; i < normal.length; i++) {
-                check(java.util.Arrays.equals(normal[i], cinematic[i]), "C1 M/C encoded Touch packet equal index=" + i);
+                check(java.util.Arrays.equals(normal[i], cinematic[i]), "M/C encoded Touch packet equal index=" + i);
             }
             main(() -> {
                 for (int fault = 0; fault < 3; fault++) {
@@ -314,11 +318,17 @@ public final class ScreenControlsSmoke extends Instrumentation {
                     if (fault == 1) profileEvent(view[0], time + 1, MotionEvent.ACTION_POINTER_DOWN | (1 << 8), 600, 900, 0, 2);
                     if (fault == 2) profileEvent(view[0], time + 1, MotionEvent.ACTION_MOVE, 600, 900, 9, 1);
                     profileEvent(view[0], time + 2, MotionEvent.ACTION_UP, 600, 900, 0, 1);
-                    check(route[0].profile() == ScreenControlRouter.Profile.CINEMATIC, "C1 cancelled Mode preserves C fault=" + fault);
+                    check(route[0].profile() == ScreenControlRouter.Profile.CINEMATIC, "cancelled Mode preserves C fault=" + fault);
                 }
                 profileEvent(view[0], time, MotionEvent.ACTION_DOWN, 600, 900, 0, 1);
                 profileEvent(view[0], time + 1, MotionEvent.ACTION_UP, 600, 900, 0, 1);
                 check(route[0].profile() == ScreenControlRouter.Profile.NORMAL, "C1 second valid gesture restores M");
+                check(view[0].unbufferedDispatchRequestsForDiagnostics() == 2, "fixed U in both M and C contacts");
+                try {
+                    Field latest = UdpTouchSender.class.getDeclaredField("latestProfile"); latest.setAccessible(true);
+                    Field profileSequence = UdpTouchSender.class.getDeclaredField("profileSequence"); profileSequence.setAccessible(true);
+                    check(latest.getInt(sender) == 0 && profileSequence.getLong(sender) == 2, "M/C publishes type7 sequence 0/1/2");
+                } catch (Exception e) { throw new AssertionError(e); }
                 check(haptics[0] == 0, "C1 Mode and Mouse produce zero local Screen Control haptics");
                 try {
                     Field sequence = UdpTouchSender.class.getDeclaredField("nextSequence"); sequence.setAccessible(true);
@@ -330,10 +340,78 @@ public final class ScreenControlsSmoke extends Instrumentation {
                 } catch (Exception e) { throw new AssertionError(e); }
                 view[0].stopCapture("c1_complete");
             });
+            profileTriple(socket, sender, 2, 0);
+            byte[][] restored = profileMousePackets(view[0], socket, time);
+            for (int i = 0; i < normal.length; i++) check(java.util.Arrays.equals(normal[i], restored[i]), "restored M exact Mouse bytes index=" + i);
+            main(() -> fixedUnbufferedBoundaries(view[0], route[0], time));
         }
+    }
+    private void profileTriple(java.net.DatagramSocket socket, UdpTouchSender sender, long seq, int profile) throws Exception {
+        byte[] expected = MotionProfileProtocol.encode(sender.getSenderRunId(), seq, profile);
+        for (int copy = 0; copy < 3; copy++) {
+            byte[] bytes;
+            do {
+                var packet = new java.net.DatagramPacket(new byte[4096], 4096); socket.receive(packet);
+                bytes = java.util.Arrays.copyOf(packet.getData(), packet.getLength());
+            } while (bytes[1] == 4 || bytes[1] == 5);
+            check(java.util.Arrays.equals(expected, bytes), "actual type7 profile=" + profile + " copy=" + copy);
+        }
+    }
+    private void fixedUnbufferedBoundaries(TouchCaptureView view, ScreenControlRouter route, long time) {
+        long requests = view.unbufferedDispatchRequestsForDiagnostics();
+        profileEvent(view, time, MotionEvent.ACTION_DOWN, 300, 500, 0, 1);
+        check(view.unbufferedDispatchRequestsForDiagnostics() == requests + 1, "admitted DOWN exactly once");
+        profileEvent(view, time + 1, MotionEvent.ACTION_MOVE, 320, 510, 0, 1);
+        check(view.unbufferedDispatchRequestsForDiagnostics() == requests + 1, "MOVE no repeat request");
+        profileEvent(view, time + 2, MotionEvent.ACTION_UP, 320, 510, 0, 1);
+        check(view.unbufferedDispatchRequestsForDiagnostics() == requests + 1, "UP no repeat request");
+        profileEvent(view, time + 3, MotionEvent.ACTION_DOWN, 300, 500, 0, 1);
+        profileEvent(view, time + 4, MotionEvent.ACTION_CANCEL, 300, 500, 0, 1);
+        check(view.unbufferedDispatchRequestsForDiagnostics() == requests + 2 && route.owner() == ScreenControlRouter.Owner.NONE,
+                "CANCEL no repeat request and clears pointer owner");
+        profileEvent(view, time + 5, MotionEvent.ACTION_DOWN, 300, 500, 0, 2);
+        profileEvent(view, time + 6, MotionEvent.ACTION_UP, 300, 500, 0, 1);
+        check(view.unbufferedDispatchRequestsForDiagnostics() == requests + 2, "multi-pointer DOWN rejected without request");
+        profileEvent(view, time + 7, MotionEvent.ACTION_DOWN, 300, 500, 0, 1);
+        profileEvent(view, time + 8, MotionEvent.ACTION_POINTER_DOWN | (1 << 8), 300, 500, 0, 2);
+        profileEvent(view, time + 9, MotionEvent.ACTION_UP, 300, 500, 0, 1);
+        check(view.unbufferedDispatchRequestsForDiagnostics() == requests + 3 && route.owner() == ScreenControlRouter.Owner.NONE,
+                "second pointer abort never adds request");
+        profileEvent(view, time + 10, MotionEvent.ACTION_DOWN, 300, 500, 0, 1);
+        profileEvent(view, time + 11, MotionEvent.ACTION_MOVE, 300, 500, 9, 1);
+        profileEvent(view, time + 12, MotionEvent.ACTION_UP, 300, 500, 0, 1);
+        check(view.unbufferedDispatchRequestsForDiagnostics() == requests + 4 && route.owner() == ScreenControlRouter.Owner.NONE,
+                "invalid pointer abort never adds request");
+        for (String id : new String[] {"xbox.b.slide", "xbox.x.slide_lr", ScreenControls.MODE_ID}) {
+            ControlRect rect = view.controls.rects().get(id);
+            long before = view.unbufferedDispatchRequestsForDiagnostics();
+            profileEvent(view, time, MotionEvent.ACTION_DOWN, rect.x + 5, rect.y + 5, 0, 1);
+            profileEvent(view, time + 1, MotionEvent.ACTION_CANCEL, rect.x + 5, rect.y + 5, 0, 1);
+            check(view.unbufferedDispatchRequestsForDiagnostics() == before, "control never requests U: " + id);
+        }
+        for (String prefix : new String[] {"settings", "power"}) { try {
+            Field fx = TouchCaptureView.class.getDeclaredField(prefix + "CenterX"); fx.setAccessible(true);
+            Field fy = TouchCaptureView.class.getDeclaredField(prefix + "CenterY"); fy.setAccessible(true);
+            long before = view.unbufferedDispatchRequestsForDiagnostics();
+            profileEvent(view, time, MotionEvent.ACTION_DOWN, fx.getFloat(view), fy.getFloat(view), 0, 1);
+            profileEvent(view, time + 1, MotionEvent.ACTION_CANCEL, fx.getFloat(view), fy.getFloat(view), 0, 1);
+            check(view.unbufferedDispatchRequestsForDiagnostics() == before, prefix + " never requests U");
+        } catch (ReflectiveOperationException error) { throw new AssertionError(error); } }
+        long before = view.unbufferedDispatchRequestsForDiagnostics();
+        MotionEvent.PointerProperties pointer = new MotionEvent.PointerProperties();
+        pointer.id = 0; pointer.toolType = MotionEvent.TOOL_TYPE_MOUSE;
+        MotionEvent.PointerCoords coords = new MotionEvent.PointerCoords();
+        coords.x = 300; coords.y = 500; coords.pressure = coords.size = 1;
+        MotionEvent mouse = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, 1,
+                new MotionEvent.PointerProperties[] {pointer}, new MotionEvent.PointerCoords[] {coords},
+                0, 0, 1, 1, 0, 0, InputDevice.SOURCE_MOUSE, 0);
+        try { view.dispatchTouchEvent(mouse); } finally { mouse.recycle(); }
+        check(view.unbufferedDispatchRequestsForDiagnostics() == before, "non-finger DOWN never requests U");
+        view.stopCapture("fixed_u_boundary_complete");
     }
     private byte[][] profileMousePackets(TouchCaptureView view, java.net.DatagramSocket socket, long time) throws Exception {
         main(() -> {
+            long requests = view.unbufferedDispatchRequestsForDiagnostics();
             profileEvent(view, time, MotionEvent.ACTION_DOWN, 300, 500, 0, 1);
             // Batched history must survive unchanged in both profiles.
             MotionEvent move = MotionEvent.obtain(time, time + 5, MotionEvent.ACTION_MOVE, 310, 510, 0);
@@ -341,6 +419,7 @@ public final class ScreenControlsSmoke extends Instrumentation {
             move.addBatch(time + 10, 320, 520, 1, 1, 0);
             view.dispatchTouchEvent(move); move.recycle();
             profileEvent(view, time + 20, MotionEvent.ACTION_UP, 320, 520, 0, 1);
+            check(view.unbufferedDispatchRequestsForDiagnostics() - requests == 1, "fixed U DOWN/MOVE/UP exactly once");
         });
         byte[][] packets = new byte[3][];
         int found = 0;
@@ -356,6 +435,13 @@ public final class ScreenControlsSmoke extends Instrumentation {
             java.util.Arrays.fill(bytes, 2, 10, (byte) 0);
             java.util.Arrays.fill(bytes, 12, 16, (byte) 0);
             buffer.putInt(16, type - 1);
+            TouchSample.Action action = TouchSample.Action.values()[type - 1];
+            TouchSample[] expected = type == 2
+                    ? new TouchSample[] {new TouchSample(310, 510, (time + 5) * 1000000, action, 0, 0, true),
+                            new TouchSample(320, 520, (time + 10) * 1000000, action, 0, 0, false)}
+                    : new TouchSample[] {new TouchSample(type == 1 ? 300 : 320, type == 1 ? 500 : 520,
+                            (type == 1 ? time : time + 20) * 1000000, action, 0, 0, false)};
+            check(java.util.Arrays.equals(bytes, ProtocolV2Encoder.encode(expected, type - 1, 0)), "exact XY bits/timestamps/history-current ordering type=" + type);
             packets[type - 1] = bytes; found++;
         }
         // Drain the UP redundancy before starting the next profile.
@@ -376,7 +462,21 @@ public final class ScreenControlsSmoke extends Instrumentation {
         }
         MotionEvent event = MotionEvent.obtain(time, time, action, count, properties, coordinates,
                 0, 0, 1, 1, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-        view.dispatchTouchEvent(event); event.recycle();
+        try {
+            view.dispatchTouchEvent(event);
+            check(Float.floatToRawIntBits(event.getX()) == Float.floatToRawIntBits(x)
+                    && Float.floatToRawIntBits(event.getY()) == Float.floatToRawIntBits(y)
+                    && event.getEventTimeNanos() == time * 1000000 && event.getPointerId(0) == pointer,
+                    "real View preserves original MotionEvent fields");
+            if (action == MotionEvent.ACTION_DOWN) {
+                try {
+                    Field field = TouchCaptureView.class.getDeclaredField("router"); field.setAccessible(true);
+                    var route = (ScreenControlRouter) field.get(view);
+                    if (route.owner() == ScreenControlRouter.Owner.MOUSE)
+                        check(view.lastUnbufferedEventIdentityForDiagnostics() == System.identityHashCode(event), "fixed U original DOWN identity");
+                } catch (Exception e) { throw new AssertionError(e); }
+            }
+        } finally { event.recycle(); }
     }
     private void healthIndicator() throws Exception {
         float[] point = new float[2];

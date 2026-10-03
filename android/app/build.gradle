@@ -15,6 +15,12 @@ android {
         testInstrumentationRunner 'com.rightpad.capture.ScreenControlsSmoke'
     }
 
+    // Preserve M-R8H sources as local history without compiling obsolete B/U state.
+    sourceSets {
+        main.java.exclude '**/TouchAcquisitionState.java'
+        androidTest.java.exclude '**/HumanAcquisitionSmoke.java'
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

@@ -6,7 +6,7 @@ internal enum MotionMode
     RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5, RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4,
     RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE,
     RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE,
-    RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE
+    RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE, M_R1
 }
 
 internal static class MotionModes
@@ -16,14 +16,20 @@ internal static class MotionModes
     {
         MotionMode.RAW => 0,
         MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE => 2,
-        MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE => 1,
+        MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE or MotionMode.M_R1 => 1,
         _ when Enum.IsDefined(mode) => 4,
         _ => throw new ArgumentOutOfRangeException(nameof(mode))
     };
-    public static string QuantizerName(MotionMode mode) => IsFiniteCritical(mode) ? "Q0C" : "Q0I";
+    public static bool UsesCanonicalQuantizer(MotionMode mode) => IsFiniteCritical(mode) || mode == MotionMode.M_R1;
+    public static bool SupportsProfiles(MotionMode mode) => mode is ProductionMode or MotionMode.M_R1;
+    public static bool WaitsForPlayout(MotionMode mode) => IsEarnedSettle(mode) || mode == MotionMode.M_R1;
+    public static bool KeepsCausalHistory(MotionMode mode) => UsesCanonicalQuantizer(mode) || BoxcarWindowMs(mode) != 0;
+    public static int ReconstructionDelayMs(MotionMode mode) => mode == MotionMode.RAW ? 0 : SupportsProfiles(mode) ? 8 : 12;
+    public const string Mr1Algorithm = "M-R1 · Reconstruction 8 ms · Direct reconstructed position / No position filter · Q0-C · 1 ms / 1000 Hz opportunities · Reconstruction-completion / No glide";
+    public static string QuantizerName(MotionMode mode) => UsesCanonicalQuantizer(mode) ? "Q0C" : "Q0I";
     public static int BoxcarWindowMs(MotionMode mode) => mode switch
     {
-        MotionMode.RAW or MotionMode.RESAMPLED_250HZ or
+        MotionMode.RAW or MotionMode.M_R1 or MotionMode.RESAMPLED_250HZ or
         MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 or
         MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE or
         MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE or
@@ -56,7 +62,8 @@ internal static class MotionModes
 
     public static MotionConfiguration FixedConfiguration(MotionMode mode)
     {
-        var kernel = FiniteCriticalParameters(mode);
+        // M-R1 retains the bounded history recorder only; these are not shaping parameters.
+        var kernel = FiniteCriticalParameters(mode == MotionMode.M_R1 ? ProductionMode : mode);
         return new(mode, kernel.TauMs, kernel.SupportMs);
     }
 }
@@ -68,6 +75,11 @@ internal readonly record struct MotionConfiguration(MotionMode Mode, int FiniteC
     public int PeriodMs => MotionModes.PeriodMs(Mode);
     public bool IsFiniteCritical => MotionModes.IsFiniteCritical(Mode);
     public bool IsEarnedSettle => MotionModes.IsEarnedSettle(Mode);
+    public bool IsDirectReconstruction => Mode == MotionMode.M_R1;
+    public bool UsesCanonicalQuantizer => MotionModes.UsesCanonicalQuantizer(Mode);
+    public bool SupportsProfiles => MotionModes.SupportsProfiles(Mode);
+    public bool WaitsForPlayout => MotionModes.WaitsForPlayout(Mode);
+    public bool KeepsCausalHistory => MotionModes.KeepsCausalHistory(Mode);
     public double KernelNormalization
     {
         get

@@ -2,9 +2,9 @@ using System.Diagnostics;
 
 namespace Rightpad.Receiver;
 
-internal sealed class ResampledMotion : ITouchMotion, IDisposable
+internal sealed class M12HistoricalMotion : ITouchMotion, IDisposable
 {
-    public const int PlayoutDelayMs = 12, MExperimentPlayoutDelayMs = 8, Capacity = 4096;
+    public const int PlayoutDelayMs = 12, Capacity = 4096;
     private readonly int productionPeriodMs;
     public int PeriodMs => IsC ? 4 : productionPeriodMs;
     private bool IsC => profileEnabled && activeProfile == MotionProfile.Cinematic;
@@ -15,9 +15,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     private readonly object gate = new();
     private readonly Action<int, int> output;
     private readonly Func<long> now;
-    private readonly long frequency, period;
-    private long delay;
-    public int ReconstructionDelayMs { get { lock (gate) return profileEnabled && !IsC ? MExperimentPlayoutDelayMs : PlayoutDelayMs; } }
+    private readonly long frequency, period, delay;
     private readonly double sensitivityX, sensitivityY;
     private readonly LiveSensitivity? liveSensitivity;
     private SensitivitySnapshot? lastSensitivity;
@@ -27,7 +25,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     private readonly CausalBoxcar? boxcar;
     private readonly CausalFiniteCritical? finiteCritical;
     private readonly bool profileEnabled;
-    private readonly bool waitsForPlayout, directReconstruction, keepsCausalHistory;
+    private readonly bool earnedSettle;
     private MotionProfile requestedProfile, activeProfile;
     public MotionProfile ActiveMotionProfile { get { lock (gate) return activeProfile; } }
     public (MotionProfile Profile, int TauMs, int SupportMs) ActiveKernel
@@ -37,8 +35,8 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     public string NativeOutputCadence => $"{1000 / PeriodMs} Hz";
     public (MotionProfile Profile, int TauMs, int SupportMs, string Algorithm) ActiveAlgorithm
     {
-        get { lock (gate) return IsC ? (activeProfile, 35, 0, "C-Z1 · Reconstruction 12 ms · zhq-derived servo · Amax 80000 · Vmax 15000 · Java-compatible rounding · true glide") : (activeProfile, KernelTauMs, KernelSupportMs,
-            directReconstruction ? MotionModes.Mr1Algorithm : finiteCritical is not null ? (profileEnabled ? "M-F1 · Finite-Critical · Reconstruction 8 ms · Q0-C · 1 ms / 1000 Hz · Earned-Settle" : "Finite-Critical") : "—"); }
+        get { lock (gate) return IsC ? (activeProfile, 35, 0, "zhq servo · Java-compatible rounding · true glide") : (activeProfile, KernelTauMs, KernelSupportMs,
+            finiteCritical is not null ? "Finite-Critical" : "—"); }
     }
 
     public void RequestProfile(MotionProfile profile)
@@ -56,12 +54,9 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
         var next = profileEnabled ? requestedProfile : MotionProfile.Normal;
         if (next != activeProfile) { cinematic.Reset(); releaseMarker = null; }
         activeProfile = next;
-        // Only this idle boundary selects delay; Requested never retimes a busy chain.
-        delay = checked(frequency * ReconstructionDelayMs) / 1000;
         trace?.Profile(activeProfile);
     }
-    private bool HasPositionFilter => !IsC && !directReconstruction && (boxcar is not null || finiteCritical is not null);
-    private bool MaintainsCausalHistory => !IsC && keepsCausalHistory;
+    private bool HasPositionFilter => !IsC && (boxcar is not null || finiteCritical is not null);
     private long SupportTicks => boxcar?.WindowTicks ?? finiteCritical!.SupportTicks;
     private long integratedAt;
     private double baseX, baseY, integratedX, integratedY;
@@ -102,11 +97,11 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     public (double X, double Y) BoxcarPending { get { lock (gate) return (baseX - playedX, baseY - playedY); } }
     public int BoxcarWindowMs => boxcar?.WindowMs ?? 0;
     public (double X, double Y) KernelPending { get { lock (gate) return (baseX - playedX, baseY - playedY); } }
-    public int KernelTauMs => directReconstruction ? 0 : finiteCritical?.TauMs ?? 0;
-    public int KernelSupportMs => directReconstruction ? 0 : finiteCritical?.SupportMs ?? 0;
+    public int KernelTauMs => finiteCritical?.TauMs ?? 0;
+    public int KernelSupportMs => finiteCritical?.SupportMs ?? 0;
     public int KernelSegmentsIntegrated => finiteCritical?.LastIntegratedSegments ?? 0;
 
-    public ResampledMotion(Action<int, int> output, double sensitivityX = 1, double sensitivityY = 1,
+    public M12HistoricalMotion(Action<int, int> output, double sensitivityX = 1, double sensitivityY = 1,
         Func<long>? monotonicNow = null, long? clockFrequency = null, MotionTrace? trace = null, int boxcarWindowMs = 0,
         MotionMode finiteCriticalMode = MotionMode.RESAMPLED_250HZ, MotionConfiguration? configuration = null,
         LiveSensitivity? liveSensitivity = null, HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0)
@@ -123,21 +118,19 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
         this.liveSensitivity = liveSensitivity;
         this.hitchTrace = hitchTrace;
         this.runtimeRun = runtimeRun;
-        waitsForPlayout = activeConfiguration.WaitsForPlayout;
-        directReconstruction = activeConfiguration.IsDirectReconstruction;
-        profileEnabled = activeConfiguration.SupportsProfiles;
-        keepsCausalHistory = activeConfiguration.KeepsCausalHistory || boxcarWindowMs != 0;
+        earnedSettle = activeConfiguration.IsEarnedSettle;
+        profileEnabled = activeConfiguration.IsFiniteCritical && earnedSettle && PeriodMs == 1;
         period = frequency / (1000 / PeriodMs);
         // Playout is a fixed duration, independent of the selected output cadence.
-        delay = checked(frequency * ReconstructionDelayMs) / 1000;
+        delay = checked(frequency * PlayoutDelayMs) / 1000;
         boxcar = boxcarWindowMs == 0 ? null : new CausalBoxcar(boxcarWindowMs, frequency);
-        if (activeConfiguration.IsFiniteCritical || directReconstruction)
+        if (activeConfiguration.IsFiniteCritical)
         {
             if (boxcar is not null) throw new ArgumentException("Position filters cannot be combined.");
             finiteCritical = new CausalFiniteCritical(activeConfiguration.FiniteCriticalTauMs,
                 activeConfiguration.FiniteCriticalSupportMs, frequency);
+            canonicalQuantizer = new();
         }
-        if (activeConfiguration.UsesCanonicalQuantizer) canonicalQuantizer = new();
     }
 
     public void Process(TouchPacket packet) => Process(packet, sensitivityX, sensitivityY);
@@ -161,13 +154,13 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                     BeginCContact(packet, receivedAt);
                     return;
                 }
-                if (waitsForPlayout && settling && run == h.SenderRunId)
+                if (earnedSettle && settling && run == h.SenderRunId)
                 {
                     try
                     {
                         // Continue the same earned ledger and realized history. DOWN itself
                         // creates no displacement, emits nothing and keeps the clock phase.
-                        if (MaintainsCausalHistory) AdvanceHistory(receivedAt);
+                        if (HasPositionFilter) AdvanceHistory(receivedAt);
                         EndStarvation(receivedAt);
                         session = h.SessionId; settling = false; fallback = false;
                         var first = packet.Samples[0];
@@ -175,7 +168,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                         rawX = first.X; rawY = first.Y;
                         lastPointTime = Math.Max(lastPointTime, origin + delay);
                         Append(new(lastPointTime, targetX, targetY));
-                        trace?.Write(directReconstruction ? MotionEventKind.ReconstructionContinue : MotionEventKind.SettleContinue, receivedAt, run: run, session: h.SessionId,
+                        trace?.Write(MotionEventKind.SettleContinue, receivedAt, run: run, session: h.SessionId,
                             x: targetX, y: targetY, a: playedX, b: playedY, count: generation);
                         Changed?.Invoke();
                         return;
@@ -200,7 +193,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
             try
             {
                 EndStarvation(receivedAt);
-                if (MaintainsCausalHistory) AdvanceHistory(receivedAt);
+                if (HasPositionFilter) AdvanceHistory(receivedAt);
                 foreach (var s in packet.Samples)
                 {
                     if (liveSensitivity is not null)
@@ -232,10 +225,10 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                         settling = true; releaseMarker = lastPointTime;
                         ArmClock(receivedAt); Changed?.Invoke(); return;
                     }
-                    if (waitsForPlayout)
+                    if (earnedSettle)
                     {
                         settling = true;
-                        trace?.Write(directReconstruction ? MotionEventKind.ReconstructionRelease : MotionEventKind.SettleStart, receivedAt, lastPointTime, run, h.SessionId,
+                        trace?.Write(MotionEventKind.SettleStart, receivedAt, lastPointTime, run, h.SessionId,
                             x: targetX, y: targetY, a: targetX - playedX, b: targetY - playedY, count: generation);
                         ArmClock(receivedAt);
                         Changed?.Invoke();
@@ -364,7 +357,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
             {
                 if (actualWake < nextDeadline) return;
                 // A wake sampled before another gate owner ran must not rewind F's causal history.
-                if (MaintainsCausalHistory) actualWake = Math.Max(actualWake, integratedAt);
+                if (HasPositionFilter) actualWake = Math.Max(actualWake, integratedAt);
                 long period = IsC ? frequency / 250 : this.period;
                 long deadline = nextDeadline, missed = (actualWake - deadline) / period;
                 MissedTicks += missed; TickCount++;
@@ -374,12 +367,12 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                     Generation: generation, Missed: missed));
                 trace?.Write(MotionEventKind.Tick, actualWake, deadline, run, session.Value, a: count,
                     b: (lastPointTime - actualWake) * 1000.0 / frequency, count: missed);
-                long kernelStarted = HasPositionFilter && finiteCritical is not null && trace is not null ? Stopwatch.GetTimestamp() : 0;
-                if (MaintainsCausalHistory) AdvanceHistory(actualWake);
+                long kernelStarted = finiteCritical is not null && trace is not null ? Stopwatch.GetTimestamp() : 0;
+                if (HasPositionFilter) AdvanceHistory(actualWake);
                 while (count > 1 && At(1).Time <= actualWake) { head = (head + 1) % Capacity; count--; }
                 Point p = At(0);
                 double x = p.X, y = p.Y;
-                if (actualWake < p.Time) { x = MaintainsCausalHistory ? integratedX : playedX; y = MaintainsCausalHistory ? integratedY : playedY; }
+                if (actualWake < p.Time) { x = HasPositionFilter ? integratedX : playedX; y = HasPositionFilter ? integratedY : playedY; }
                 else if (count > 1)
                 {
                     var right = At(1);
@@ -396,8 +389,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                     trace?.Write(MotionEventKind.BoxcarPosition, actualWake, lastPointTime, run, session.Value,
                         x: x, y: y, a: baseX - x, b: baseY - y, count: generation);
                 }
-                // M-R1 keeps Add/Trim and its capacity faults, but never evaluates convolution.
-                if (!directReconstruction && finiteCritical is not null)
+                if (finiteCritical is not null)
                 {
                     (x, y) = finiteCritical.Position(actualWake, x, y);
                     if (trace is not null)
@@ -420,7 +412,7 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
                         nextDeadline = 0;
                         if (settling)
                         {
-                            trace?.Write(directReconstruction ? MotionEventKind.ReconstructionComplete : MotionEventKind.SettleComplete, actualWake, run: run, session: session.Value,
+                            trace?.Write(MotionEventKind.SettleComplete, actualWake, run: run, session: session.Value,
                                 x: targetX, y: targetY, count: generation);
                             Clear(actualWake, aborted: false);
                             return;

@@ -79,3 +79,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Input health tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Motion profile test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.MotionProfileTests
 if ($LASTEXITCODE -ne 0) { throw 'Motion profile tests failed.' }
+
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'FixedUnbufferedAcquisitionTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Fixed unbuffered test compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.FixedUnbufferedAcquisitionTests $androidRoot
+if ($LASTEXITCODE -ne 0) { throw 'Fixed unbuffered tests failed.' }

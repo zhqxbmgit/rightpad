@@ -15,8 +15,8 @@ internal static class MotionProfileTests
         ("C2A presence timeout retention and new run reset M", Lifecycle),
         ("C2A profile/gamepad/Touch/config sequence isolation", Isolation),
         ("C2A Diagnostics read-only M/C projection", Diagnostics),
-        ("Profile M/C production replay fingerprint and exact equivalence", () => Equivalence(false)),
-        ("Profile M/C production missed-tick fingerprint and exact equivalence", () => Equivalence(true))
+        ("M-F1 ordinary independent golden fingerprint", () => Equivalence(false)),
+        ("M-F1 missed-tick independent golden fingerprint", () => Equivalence(true))
     ];
     private static byte[] Packet(ulong run, uint seq, MotionProfile p)
     {
@@ -132,7 +132,7 @@ internal static class MotionProfileTests
         }
         Send(PresenceTests.Heartbeat(1)); Send(Packet(1,0,profile));
         Equal(profile,r.CurrentMotionProfile,"profile accepted through production receiver");
-        Equal(1,m.PeriodMs,"1000Hz"); Equal(12,ResampledMotion.PlayoutDelayMs,"12ms");
+        Equal(1,m.PeriodMs,"1000Hz"); Equal(8,m.ReconstructionDelayMs,"M-F1 fixed 8ms");
         uint seq=0;
         for(int ms=0;ms<=400;ms++)
         {
@@ -151,13 +151,13 @@ internal static class MotionProfileTests
     }
     private static void Equivalence(bool missed)
     {
-        var m=Replay(MotionProfile.Normal,missed); var c=Replay(MotionProfile.Cinematic,missed);
-        Equal(missed ? "A3719B0D077F924ECEE47B4857B1EEA844EAB01CD3141A7D600374A37B759D08" :
-            "72FFC866FE2B59C9FB90B9FBA4DE229028EEA6895E6AADC3A815FF0D056C0F49", Fingerprint(m),
-            "production M byte fingerprint: every output/time and continuous/pending/schedule state");
-        Equal((m.X,m.Y,m.Missed),(c.X,c.Y,c.Missed),"exact final totals");
-        Check(m.Moves.SequenceEqual(c.Moves),"every native dx/dy and actual submit time exact");
-        Check(m.States.SequenceEqual(c.States),"every continuous/logical/settle/missed/deadline state exact");
+        var m=Replay(MotionProfile.Normal,missed);
+        // Pinned after saved-Z1 structural proof and M12 translated behavior
+        // review passed; the two historical M12 goldens remain separate tests.
+        Equal(missed ? "514F6145B3864CF48A075EE350BCAC5CD09D67B41FF7BC140F3CA40986FE1D3D" :
+            "ABF432CDEEABA0E9C90A56610DB338B818F154401331A9990715883AE4D5F734", Fingerprint(m),
+            "M-F1 8ms fingerprint: every native output/time and continuous/pending/schedule state");
+        Console.WriteLine($"M-F1 golden missed={missed} fingerprint={Fingerprint(m)} EXACT");
     }
     private static string Fingerprint(Result r) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join(";", r.Moves) + "|" + string.Join(";", r.States))));
 }

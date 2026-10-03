@@ -131,7 +131,9 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     private MotionConfiguration ResolveMotionConfiguration(RuntimeSettings snapshot) =>
         useProductMotionSettings && motionMode == MotionModes.ProductionMode
             ? MotionConfiguration.Product(snapshot)
-            : MotionModes.FixedConfiguration(motionMode);
+            : motionMode == MotionMode.M_R1
+                ? new(motionMode, snapshot.SmoothingTauMs, snapshot.SmoothingSupportMs)
+                : MotionModes.FixedConfiguration(motionMode);
 
     public async Task StopAsync()
     {
@@ -246,11 +248,11 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                     MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 or MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 or
                     MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE or
                     MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE or
-                    MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE =>
+                    MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE or MotionMode.M_R1 =>
                         new ResampledMotion(move, initial.SensitivityX, initial.SensitivityY, trace: motionTrace,
                             boxcarWindowMs: MotionModes.BoxcarWindowMs(motionMode),
-                            finiteCriticalMode: MotionModes.IsFiniteCritical(motionMode) ? motionMode : MotionMode.RESAMPLED_250HZ,
-                            configuration: MotionModes.IsFiniteCritical(motionMode) ? motionConfiguration : null,
+                            finiteCriticalMode: MotionModes.UsesCanonicalQuantizer(motionMode) ? motionMode : MotionMode.RESAMPLED_250HZ,
+                            configuration: MotionModes.UsesCanonicalQuantizer(motionMode) ? motionConfiguration : null,
                             liveSensitivity: settings.Sensitivity, hitchTrace: HitchTrace, runtimeRun: run.Id),
                     _ => throw new ArgumentOutOfRangeException(nameof(motionMode))
                 };
@@ -260,7 +262,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                     motionClock = new(resampled, run.Cancellation.Cancel);
                 }
             }
-            output.WriteLine($"motion_mode: name={motionMode} quantizer={MotionModes.QuantizerName(motionMode)} periodMs={MotionModes.PeriodMs(motionMode)} playoutDelayMs={(motionMode == MotionMode.RAW ? 0 : 12)} boxcarWindowMs={MotionModes.BoxcarWindowMs(motionMode)} trace={(motionTrace is null ? "off" : "on")}");
+            output.WriteLine($"motion_mode: name={motionMode} quantizer={MotionModes.QuantizerName(motionMode)} periodMs={MotionModes.PeriodMs(motionMode)} playoutDelayMs={MotionModes.ReconstructionDelayMs(motionMode)} boxcarWindowMs={MotionModes.BoxcarWindowMs(motionMode)} trace={(motionTrace is null ? "off" : "on")}");
+            if (motionConfiguration.IsDirectReconstruction) output.WriteLine($"motion_algorithm: {MotionModes.Mr1Algorithm}; Active Tau=N/A; Active Support=N/A");
             flightRecorder?.Event("motion_configuration", ("runtimeRunId", run.Id), ("mode", motionMode.ToString()), ("quantizer", MotionModes.QuantizerName(motionMode)));
             if (MotionModes.IsFiniteCritical(motionMode))
             {
@@ -425,6 +428,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 ActiveMotionTauMs = kernel.TauMs,
                 ActiveMotionSupportMs = kernel.SupportMs,
                 ActiveMotionAlgorithm = kernel.Algorithm ?? "—",
+                MotionModeName = kernel.Profile == MotionProfile.Cinematic ? "C-Z1 / Reconstruction 12 ms / zhq-derived servo / Amax 80000 / Vmax 15000 / 4 ms / Java-compatible rounding / true glide" : run.MotionConfiguration.IsDirectReconstruction ? MotionModes.Mr1Algorithm : kernel.Algorithm?.StartsWith("M-F1", StringComparison.Ordinal) == true ? "M-F1 / Reconstruction 8 ms / " + snapshot.MotionModeName : snapshot.MotionModeName,
                 GamepadBackend = gamepad?.BackendName ?? (run.GamepadError is null ? "Not created" : LibVirtualHidXboxGamepad.Backend),
                 GamepadDeviceIdentity = gamepad?.DeviceIdentity,
                 GamepadAvailable = snapshot.RuntimeState == ReceiverState.Running && !run.GamepadClosed && run.GamepadError is null && gamepad?.Available == true,

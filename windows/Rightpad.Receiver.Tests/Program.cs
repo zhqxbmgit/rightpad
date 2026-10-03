@@ -24,12 +24,18 @@ internal static class Program
             try { await WindowsMouseOutputTests.AndroidSmoke(); return 0; }
             catch (Exception exception) { Console.WriteLine($"FAIL Android mouse smoke: {exception}"); return 1; }
         }
-        if (args.Length != 0) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
+        bool motionOnly = args.SequenceEqual(new[] { "--motion-profile" });
+        bool mr1Only = args.SequenceEqual(new[] { "--mr1" });
+        if (args.Length != 0 && !motionOnly && !mr1Only) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--mr1 | --motion-profile | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
             .. HitchTraceTests.Cases,
+            .. Mr1MotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. Mf1ReconstructionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. HistoricalM12GoldenTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. ProfileMotionEquivalenceTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. MotionProfileTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. ZhqTrackpadDynamicsTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             ("RPST strict codec and shared unsigned golden", Sync(StatusTests.Codec)),
             ("RPST true backend health without output activity", Sync(StatusTests.Health)),
             ("RPST current presence route and no lease renewal", Sync(StatusTests.Presence)),
@@ -247,6 +253,32 @@ internal static class Program
             ("witness environment failure preserves input and recorder", WindowsInputEnvironmentTests.EnvironmentFailureDoesNotAffectInput)
         ];
 
+        if (motionOnly) tests =
+        [
+            .. Mr1MotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. TauSupportMotionTests.Cases,
+            .. Mf1ReconstructionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. HistoricalM12GoldenTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. ProfileMotionEquivalenceTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. MotionProfileTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. ZhqTrackpadDynamicsTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. ResampledMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. FiniteCriticalMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. EarnedSettleTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. CadenceTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. CanonicalPositionQuantizerTests.Cases.Select(test => (test.Name, Sync(test.Run)))
+        ];
+        if (mr1Only) tests =
+        [
+            .. Mr1MotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. CanonicalPositionQuantizerTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. Mf1ReconstructionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. HistoricalM12GoldenTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. ResampledMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. ProfileMotionEquivalenceTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. MotionProfileTests.Cases.Select(test => (test.Name, Sync(test.Run))),
+            .. ZhqTrackpadDynamicsTests.Cases.Select(test => (test.Name, Sync(test.Run)))
+        ];
         int failed = 0;
         foreach (var test in tests)
         {

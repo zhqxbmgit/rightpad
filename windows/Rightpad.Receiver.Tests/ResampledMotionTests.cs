@@ -187,7 +187,7 @@ internal static class ResampledMotionTests
             using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, "metadata.json")));
             var root = json.RootElement;
             long expectedRunId = restart ? 2 : 1;
-            Equal(mode.ToString(), root.GetProperty("Mode").GetString(), "trace active mode");
+            Equal(mode == MotionModes.ProductionMode ? "M-F1 / " + mode : mode.ToString(), root.GetProperty("Mode").GetString(), "trace active mode");
             Equal(expectedPeriodMs, root.GetProperty("PeriodMs").GetInt32(), "trace active period");
             Equal(expectedRunId, root.GetProperty("RuntimeRunId").GetInt64(), "trace Runtime run id");
             long[] qpcs = File.ReadAllLines(Path.Combine(dir, "motion.csv")).Skip(1)

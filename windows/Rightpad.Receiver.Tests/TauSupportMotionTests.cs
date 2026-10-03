@@ -18,7 +18,7 @@ internal static class TauSupportMotionTests
     {
         get
         {
-            yield return ("product Tau24/Support120 exact paired replay against fixed K24-r5", () => Sync(DefaultRegression));
+            yield return ("M-F1 Tau24/Support120 exact paired replay against fixed K24-r5 with M12 deadline reference", () => Sync(DefaultRegression));
             yield return ("product legal Tau/Support combinations conserve endpoint and settle", () => Sync(CombinationCorrectness));
             yield return ("product Support300 fixed history capacity boundary", () => Sync(Support300Capacity));
             yield return ("product trace metadata freezes actual Tau/Support", () => Sync(TraceMetadata));
@@ -86,7 +86,20 @@ internal static class TauSupportMotionTests
             Same($"{sample.Item1}@{sample.Item2}");
         }
         legacy.SkipTo(25); product.SkipTo(25); Same("skipped wake at 25");
-        Equal(13L, legacy.Motion.MissedTicks, "legacy skipped-tick count");
+        // The same 25ms wake skips (25-8)/1 = 17 deadlines for M-F1.
+        // Preserve and execute the old (25-12)/1 = 13 result independently.
+        Equal(17L, legacy.Motion.MissedTicks, "M-F1 fixed-8ms skipped-tick count");
+        long historicalNow=Origin;
+        using(var historical=new M12HistoricalMotion((_,_)=>{},9,9,()=>historicalNow,Frequency,finiteCriticalMode:Production))
+        {
+            historical.Process(new(new(2,TouchEventType.Down,1,1,0,1),[new(0,0,0)]));
+            historicalNow=Origin+3000;
+            historical.Process(new(new(2,TouchEventType.Move,1,1,1,1),[new(3_000_000,7,-2)]));
+            Equal(Origin+12000,historical.Schedule.Deadline,"M12 fixed deadline retained");
+            historicalNow=Origin+25000;historical.Tick(historicalNow,historical.Schedule.Generation);
+            Equal(13L,historical.MissedTicks,"historical M12 skipped-tick count retained");
+            Equal(historical.Schedule.Deadline,legacy.Motion.Schedule.Deadline,"identical resumed 26ms absolute phase after skipping");
+        }
         Equal(legacy.Motion.MissedTicks, product.Motion.MissedTicks, "skipped-tick policy identical");
         foreach (var sample in new[]
         {
@@ -114,7 +127,7 @@ internal static class TauSupportMotionTests
         Same("reset and stale tick");
         Equal(1, product.Motion.PeriodMs, "production cadence remains 1 ms");
         Equal("Q0C", MotionModes.QuantizerName(Production), "Q0-C unchanged");
-        Equal(ResampledMotion.PlayoutDelayMs, 12, "playout unchanged");
+        Equal(8, product.Motion.ReconstructionDelayMs, "M-F1 fixed delay");
     }
 
     private static void CombinationCorrectness()
@@ -205,7 +218,7 @@ internal static class TauSupportMotionTests
             Equal(18, metadata.RootElement.GetProperty("TauMs").GetInt32(), "trace Tau");
             Equal(90, metadata.RootElement.GetProperty("SupportMs").GetInt32(), "trace Support");
             Equal(1, metadata.RootElement.GetProperty("PeriodMs").GetInt32(), "trace 1000 Hz");
-            Equal(12, metadata.RootElement.GetProperty("PlayoutDelayMs").GetInt32(), "trace 12 ms");
+            Equal(8, metadata.RootElement.GetProperty("PlayoutDelayMs").GetInt32(), "M-F1 trace 8 ms");
             Equal("Q0C", metadata.RootElement.GetProperty("Quantizer").GetString()!, "trace Q0-C");
         }
         finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }

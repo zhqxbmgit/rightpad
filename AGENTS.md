@@ -2,6 +2,20 @@
 
 # rightpad Project Instructions
 
+Current selected baseline (2026-10-03): Touchpad R&D is paused. Android uses
+fixed unbuffered acquisition for each admitted single-finger Mouse DOWN and the
+normal `rightpad.input.mode` M/C control. The selected deployed Receiver uses
+the existing explicit `M_R1` identity: M8 causal reconstruction, direct P(t)=R(t),
+Q0-C, 1 ms opportunities, reconstruction-completion release and no glide. Saved
+Tau/Support remain inactive for M-R1 shaping; committed Sensitivity stays live.
+C remains C-Z1 (C12, tau 35 ms, damping 1, Amax 80000, Vmax 15000, fixed 4 ms,
+Java-compatible rounding and true glide). The code's `ProductionMode` default
+remains M-F1; selecting this current M-R1 baseline uses its explicit launcher
+argument. Historical stage restrictions below describe those stages; the user
+separately authorized their later deployments and this final source audit,
+commit and ordinary fast-forward push. Preserve historical regressions/evidence
+and the user's saved settings and layout.
+
 ## 1. Project Identity
 
 Project name:
@@ -177,6 +191,62 @@ preserves Relative Mouse semantics and does not permit momentum or joystick
 behavior.
 
 ## Fixed Feel / No Runtime Adaptation
+
+Explicit Phase Z1 experiment exception (2026-10-02): manual C selects
+"zhq dynamics-faithful, Rightpad gain/transport-normalized" for human M/C game
+A/B, referencing zhq revision 2eff689a2f3a7b645c977900ecfcca7a5069f603.
+Only C is authorized to use true velocity glide, with fixed DT=4 ms, tau=35 ms,
+dampingRatio=1, vector Vmax=15000, vector Amax=80000, glideDeceleration=120000,
+position threshold 0.5 and velocity threshold 2. Java-compatible rounding has
+its own successful-submit ledger and natural-stop carryOver. The live
+committed Sensitivity and C 12 ms timestamp reconstruction remain; no reference
+x7 gain or view scaling is imported. UP enters glide at its mapped playout
+marker, without Earned-Settle or endpoint correction. One existing MotionClock
+performs at most one fixed step per valid C deadline, skipping missed deadlines
+without catch-up. Touching, release-pending and glide defer Requested changes;
+new DOWN interrupts C using only the last natural carry and fences old work.
+Hard lifecycle aborts clear all C state without output. M remains production
+EXACT: Finite-Critical, Q0-C, 1 ms, Earned-Settle and immediate libvirtualhid.
+This is an explicit fixed experiment, not a new general product glide permission
+or an automatic/adaptive mode. See docs/MOTION_ENGINE.md.
+
+Explicit Phase Z2 experiment history (2026-10-02): the fixed C Amax 160000
+single-variable hypothesis has completed human validation. The user preferred
+Z1 Amax 80000 for stronger gimbal character; Z2 reduced that character. True glide
+was not subjectively obvious and did not hinder operation. Phase M-F1 precisely
+restores C source to Z1 Amax 80000 and its 12 ms reconstruction; Z2 evidence stays
+preserved. This is baseline recovery, not a new C experiment.
+
+Explicit Phase M-F1 experiment exception (2026-10-02): only the M fixed
+reconstruction/playout offset changes from historical 12 ms to 8 ms. Active M
+uses 8 ms, Active C-Z1 uses 12 ms. The idle chain boundary chooses the delay;
+Requested changes cannot retime touching, M earned settlement, C release-pending
+or glide. M joining DOWN keeps its chain; C interrupted DOWN retains C12 and
+fences old work. Saved Tau/Support, live committed Sensitivity, Finite-Critical,
+Q0-C, 1 ms opportunities, Earned-Settle, native submit and missed-wake semantics
+remain unchanged. No prediction, extrapolation, adaptation or delay sweep.
+M12 historical goldens remain test-only references; M-F1 has independent goldens.
+This implementation/automated-validation task excludes deployment, Stop, Restart,
+Android build/deploy and human game testing. Preserve the current live Receiver
+process and installed binaries, irrespective of its existing experiment identity.
+
+Explicit Phase M-R1 experiment exception (2026-10-03): development identity M_R1
+selects M-only direct reconstructed position P(t)=R(t), preserving fixed M8,
+live committed Sensitivity, Q0-C, immediate native submit, 1 ms opportunities,
+actual-time skip/no-catch-up and all input/causal/lifecycle safeguards. It never
+evaluates Finite-Critical Position or IsSettled. Existing bounded Add/Trim history
+bookkeeping and capacity faults remain, using the frozen run snapshot solely as
+the history safety horizon; Tau/Support do not shape M-R1 position or release.
+UP waits for its final mapped reconstruction boundary, then Q0-C evaluates the
+endpoint and parks. Same-run DOWN while release is pending joins the same target,
+ledger and phase; no completed-chain fractional carry is added. Requested defers
+while touching or release-pending. C-Z1 remains EXACT, including C12 and true glide.
+ProductionMode remains M-F1; RAW, B, M12 and M-F1 baselines are not redefined.
+Active M-R1 displays no position filter, Q0-C, reconstruction completion, no glide,
+and Tau/Support N/A; Saved settings stay intact. This stage authorizes isolated
+builds/tests/evidence only: no deployment, Stop/Restart of the current Receiver,
+Android changes, human game testing or Git write operations. This specific scope
+overrides the general runtime-change deployment rule for this stage.
 
 Explicit manual-Save exception (2026-09-18): the user may hot-apply committed
 Sensitivity X/Y after a successful disk Save and settings publication. The pair

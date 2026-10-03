@@ -6,15 +6,18 @@ internal enum ReceiverPage { Overview, Motion, Tap, Diagnostics, Controls }
 
 internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel settings, StartupViewModel startup) : ObservableModel
 {
-    public string MotionQuantizerName => $"quantizer={MotionModes.QuantizerName(runtime.ActiveMotionMode)}";
-    public string MotionModeName => runtime.ActiveMotionMode switch
+    private bool CinematicActive => Stats.ActiveMotionProfile == "C";
+    private bool DirectReconstruction => runtime.ActiveMotionConfiguration.IsDirectReconstruction;
+    public string MotionQuantizerName => CinematicActive ? "quantizer=Java-compatible rounding" : $"quantizer={MotionModes.QuantizerName(runtime.ActiveMotionMode)}";
+    public string MotionModeName => CinematicActive ? "C-Z1 / Reconstruction 12 ms / zhq-derived servo / Amax 80000 / Vmax 15000 / 4 ms / 250 Hz nominal / true glide" : runtime.ActiveMotionMode switch
     {
+        MotionMode.M_R1 => MotionModes.Mr1Algorithm,
         MotionMode.RESAMPLED_250HZ_BOXCAR_4MS => "RESAMPLED_250HZ / BOXCAR 4 ms / quantizer=Q0I",
         MotionMode.RESAMPLED_250HZ_BOXCAR_8MS => "RESAMPLED_250HZ / BOXCAR 8 ms / quantizer=Q0I",
         MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 => "RESAMPLED_250HZ / FINITE CRITICAL K24-r5 / quantizer=Q0C",
         MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE => "RESAMPLED_250HZ / FINITE CRITICAL K24-r5 SETTLE / quantizer=Q0C",
         MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE => "RESAMPLED_500HZ / FINITE CRITICAL K24-r5 SETTLE / quantizer=Q0C",
-        MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE => "RESAMPLED_1000HZ / FINITE CRITICAL SETTLE / quantizer=Q0C",
+        MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE => "M-F1 / Reconstruction 8 ms / RESAMPLED_1000HZ / FINITE CRITICAL SETTLE / quantizer=Q0C",
         MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 => "RESAMPLED_250HZ / FINITE CRITICAL K35-r4 / quantizer=Q0C",
         _ => $"{runtime.ActiveMotionMode} / quantizer=Q0I"
     };
@@ -22,15 +25,17 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
     {
         get
         {
+            if (CinematicActive) return "C-Z1: fixed zhq-derived servo, Amax 80000, Vmax 15000, tau 35 ms, 4 ms / 250 Hz nominal dynamics, Java-compatible rounding and true glide after the UP playout marker. Live committed Sensitivity and C-only fixed 12 ms reconstruction remain unchanged.";
             MotionConfiguration configuration = runtime.ActiveMotionConfiguration;
             return runtime.ActiveMotionMode switch
             {
+        MotionMode.M_R1 => MotionModes.Mr1Algorithm + ". Sensitivity changes apply to new real displacement after Save. Saved Tau/Support are retained for the filtered baseline; they do not shape M-R1.",
         MotionMode.RAW => "RAW applies a fixed gain without filtering.",
         MotionMode.RESAMPLED_250HZ => "Experimental motion: 250 Hz output opportunities with a fixed 12 ms playback delay.",
         MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5 => "Experimental fixed K24-r5: 250 Hz, 12 ms playback, tau 24 ms, support 120 ms, Q0C. Sensitivity changes apply immediately after Save.",
         MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE => "Research K24-r5 SETTLE: 250 Hz, 12 ms playback, tau 24 ms, support 120 ms, Q0C. Earned movement settles after release; the next contact continues the unfinished movement. Sensitivity changes apply immediately after Save.",
         MotionMode.RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE => "Research K24-r5 SETTLE: 500 Hz, 12 ms playback, tau 24 ms, support 120 ms, Q0C. Earned movement settles after release; the next contact continues the unfinished movement. Sensitivity changes apply immediately after Save.",
-        MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE => $"Production finite-critical SETTLE: fixed 1000 Hz, 12 ms playback, tau {configuration.FiniteCriticalTauMs} ms, support {configuration.FiniteCriticalSupportMs} ms, Q0C. Earned movement settles after release; the next contact continues the unfinished movement. Sensitivity changes apply immediately after Save. Tau and Support require a Receiver restart.",
+        MotionMode.RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE => $"M-F1 finite-critical SETTLE: fixed 1000 Hz, 8 ms reconstruction/playback, tau {configuration.FiniteCriticalTauMs} ms, support {configuration.FiniteCriticalSupportMs} ms, Q0C. Earned movement settles after release; the next contact continues the unfinished movement. Sensitivity changes apply immediately after Save. Tau and Support require a Receiver restart.",
         MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4 => "Experimental fixed K35-r4: 250 Hz, 12 ms playback, tau 35 ms, support 140 ms, Q0C. Sensitivity changes apply immediately after Save.",
         _ => $"Experimental motion: 250 Hz output opportunities, fixed 12 ms playback delay and fixed {MotionModes.BoxcarWindowMs(runtime.ActiveMotionMode)} ms causal boxcar position average."
             };
@@ -64,12 +69,12 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
     public bool IsRestarting => isRestarting;
     public string RestartText => IsRestarting ? "Restarting..." : "Restart Receiver";
     public string RestartError => restartError;
-    public int? ActiveTauMs => runtime.CaptureActiveRuntimeSnapshot()?.Motion.FiniteCriticalTauMs;
-    public int? ActiveSupportMs => runtime.CaptureActiveRuntimeSnapshot()?.Motion.FiniteCriticalSupportMs;
-    public string ActiveMotionText => ActiveTauMs is int tau
-        ? $"Active: Tau {tau} ms · Support {ActiveSupportMs} ms" : "Active: Receiver stopped";
+    public int? ActiveTauMs => DirectReconstruction ? null : runtime.CaptureActiveRuntimeSnapshot()?.Motion.FiniteCriticalTauMs;
+    public int? ActiveSupportMs => DirectReconstruction ? null : runtime.CaptureActiveRuntimeSnapshot()?.Motion.FiniteCriticalSupportMs;
+    public string ActiveMotionText => CinematicActive ? "Active C-Z1: Reconstruction 12 ms · zhq-derived servo · Tau 35 ms · Amax 80000 · Vmax 15000 · 4 ms / 250 Hz nominal · Java-compatible rounding · true glide" : ActiveTauMs is int tau
+        ? $"Active: Tau {tau} ms · Support {ActiveSupportMs} ms" : DirectReconstruction && running ? "Active: " + MotionModes.Mr1Algorithm + " · Tau N/A · Support N/A" : "Active: Receiver stopped";
     public string SavedMotionText => $"Saved: Tau {Settings.CommittedSettings.SmoothingTauMs} ms · Support {Settings.CommittedSettings.SmoothingSupportMs} ms";
-    public bool RestartRequired => running && (ActiveTauMs != Settings.CommittedSettings.SmoothingTauMs ||
+    public bool RestartRequired => running && !DirectReconstruction && (ActiveTauMs != Settings.CommittedSettings.SmoothingTauMs ||
         ActiveSupportMs != Settings.CommittedSettings.SmoothingSupportMs);
     public string RestartRequiredText => RestartRequired ? "Restart required" : "";
     public bool CanRestart => RestartRequired && !Settings.IsSaving && !busy && !IsRestarting;
@@ -91,7 +96,8 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
         Settings.RefreshNotice();
         foreach (string name in new[] { nameof(ActiveTauMs), nameof(ActiveSupportMs), nameof(ActiveMotionText),
             nameof(SavedMotionText), nameof(RestartRequired), nameof(RestartRequiredText), nameof(CanRestart),
-            nameof(IsRestarting), nameof(RestartText), nameof(RestartError), nameof(MotionExplanation) }) Changed(name);
+            nameof(IsRestarting), nameof(RestartText), nameof(RestartError), nameof(MotionExplanation),
+            nameof(MotionQuantizerName), nameof(MotionModeName) }) Changed(name);
     }
     public async Task StartAsync()
     {

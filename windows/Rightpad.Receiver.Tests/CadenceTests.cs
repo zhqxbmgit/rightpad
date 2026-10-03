@@ -32,7 +32,7 @@ internal static class CadenceTests
         {
             foreach(var mode in Modes)
             {
-                yield return ($"Cadence {mode}: fixed period, CLI, Q0C and 12ms playout",()=>Configuration(mode));
+                yield return ($"Cadence {mode}: fixed period, CLI, Q0C and fixed profile playout",()=>Configuration(mode));
                 yield return ($"Cadence {mode}: earned endpoint, settle completion and silent UP",()=>Endpoint(mode));
                 yield return ($"Cadence {mode}: hard reset cancels old tail",()=>Reset(mode));
                 yield return ($"Cadence {mode}: skip overdue opportunities, no catch-up output",()=>Skip(mode));
@@ -50,8 +50,9 @@ internal static class CadenceTests
         Equal("Q0C",MotionModes.QuantizerName(mode),"unchanged quantizer");
         using var h=new Harness(mode);h.Send(TouchEventType.Down,0,0);h.Send(TouchEventType.Move,1,1);
         Equal(period,h.Motion.PeriodMs,"runtime period");
-        Equal((long?)(Origin+12000),h.Motion.Schedule.Deadline,"12ms playout independent of period");
-        h.Advance(12);Equal((long?)(Origin+12000+period*1000),h.Motion.Schedule.Deadline,"next opportunity");
+        int delay=mode==MotionModes.ProductionMode?8:12;
+        Equal((long?)(Origin+delay*1000),h.Motion.Schedule.Deadline,"fixed playout independent of period");
+        h.Advance(delay);Equal((long?)(Origin+delay*1000+period*1000),h.Motion.Schedule.Deadline,"next opportunity");
         Equal((24,120),(h.Motion.KernelTauMs,h.Motion.KernelSupportMs),"fixed K24");
     }
     private static void Endpoint(MotionMode mode)
@@ -90,14 +91,28 @@ internal static class CadenceTests
     }
     private static void SameContinuousPosition()
     {
-        using var a=new Harness(Modes[0]);using var b=new Harness(Modes[1]);using var c=new Harness(Modes[2]);
-        Harness[] all=[a,b,c];foreach(var h in all)h.Send(TouchEventType.Down,0,0);
+        using var a=new Harness(Modes[0]);using var b=new Harness(Modes[1]);
+        long now=Origin;
+        using var c=new M12HistoricalMotion((_,_)=>{},9,9,()=>now,Frequency,finiteCriticalMode:Modes[2]);
+        void SendReference(TouchEventType e,int t,float x)
+        {
+            long end=Origin+t*1000L;
+            while(c.Schedule.Deadline is long d && d<=end){now=d;c.Tick(d,c.Schedule.Generation);}
+            now=end;c.Process(new(new(2,e,1,1,(uint)t,1),[new((ulong)t*1_000_000,x,0)]));
+        }
+        Harness[] all=[a,b];foreach(var h in all)h.Send(TouchEventType.Down,0,0);
+        SendReference(TouchEventType.Down,0,0);
         for(int t=4;t<=100;t+=4)
         {
             foreach(var h in all)h.Send(TouchEventType.Move,t,t/4f);
+            SendReference(TouchEventType.Move,t,t/4f);
             foreach(var h in all)Check(Math.Abs(h.Motion.Position.X-a.Motion.Position.X)<1e-8,"same continuous target at shared QPC, independent of segmentation");
+            Check(Math.Abs(c.Position.X-a.Motion.Position.X)<1e-8,"historical 1000Hz at identical 12ms delay preserves cadence-only comparison");
         }
         foreach(var h in all){h.Send(TouchEventType.Up,101,25);h.Advance(300);Equal(225,h.Moves.Sum(m=>m.X),"same final integer endpoint");}
+        SendReference(TouchEventType.Up,101,25);
+        while(c.Schedule.Deadline is long d){now=d;c.Tick(d,c.Schedule.Generation);}
+        Equal(225L,c.TotalDx,"historical 1000Hz same endpoint");
     }
     private static void ActualTime()
     {

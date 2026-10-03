@@ -136,6 +136,7 @@ internal static class Program
                 else if (arg == "--dev-motion-mode") motion = args[i] switch
                 {
                     "RAW" => MotionMode.RAW,
+                    "M_R1" => MotionMode.M_R1,
                     "RESAMPLED_250HZ" => MotionMode.RESAMPLED_250HZ,
                     "RESAMPLED_250HZ_BOXCAR_4MS" => MotionMode.RESAMPLED_250HZ_BOXCAR_4MS,
                     "RESAMPLED_250HZ_BOXCAR_8MS" => MotionMode.RESAMPLED_250HZ_BOXCAR_8MS,

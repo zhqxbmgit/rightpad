@@ -1,5 +1,18 @@
 # rightpad System Architecture
 
+Current selected baseline (2026-10-03): Touchpad R&D is paused. The normal
+Android App uses fixed unbuffered Mouse DOWN acquisition and the restored M/C
+profile control. The selected deployed Receiver runs the existing explicit
+`M_R1` identity: M8 reconstruction -> direct P(t)=R(t) -> Q0-C -> immediate
+libvirtualhid, with 1 ms opportunities and reconstruction-completion release.
+C remains the fixed C-Z1 servo/glide profile with C12 reconstruction. Saved
+Tau/Support remain available for filtered baselines and do not shape M-R1.
+The source `ProductionMode` default remains M-F1; the current selected M-R1
+baseline uses the explicit development launch argument. Historical implementation
+scope notes below refer to their original stages. See
+[MOTION_ENGINE.md](MOTION_ENGINE.md) and
+[MOTION_PROFILE_PROTOCOL.md](MOTION_PROFILE_PROTOCOL.md) for the current contracts.
+
 ## 1. Overview
 
 rightpad is a dedicated Android-to-Windows gaming input system.
@@ -99,7 +112,7 @@ Receiver owns behavior; Android-local layout and all input/haptic contracts stay
 See [SCREEN_CONTROLS.md](SCREEN_CONTROLS.md) for horizontal priority and timing.
 
 The production layout registry contains the stable ID `rightpad.input.mode`.
-The manual M/C profile shell uses it as a reserved future experiment slot, with
+The manual M/C profile shell uses it as the manually selected Phase Z1 experiment slot, with
 unchanged normalized X/Y/W/H persistence and generic editor operations.
 The Activity's TouchCaptureView owns a ScreenControlRouter whose in-memory profile
 starts NORMAL (M); matching MODE UP toggles CINEMATIC (C), while cancellation or
@@ -112,18 +125,44 @@ Windows validates current-run/source and independent serial ordering and exposes
 read-only requested M/C in Diagnostics. New admitted runs start M; ordinary presence timeout
 retains the run's profile. See
 [MOTION_PROFILE_PROTOCOL.md](MOTION_PROFILE_PROTOCOL.md).
-The current product uses one identical Motion/output path for M and C:
-live committed sensitivity -> 12 ms reconstruction -> Saved Finite-Critical
--> Q0-C -> immediate libvirtualhid output, at fixed 1000 Hz with Earned-Settle.
-C is a reserved future experiment slot; currently it changes only the label.
-Requested/Active selection still defers across contact and unfinished settlement;
-new same-run DOWN retains the current chain, history, integer ledger and phase.
-The kernel is frozen from committed Tau/Support at Runtime start and never changes
-because a profile label changes. Diagnostics shows the actual Saved kernel and
-1000 Hz for both labels. No experimental planner, filter or native batching is
-present. H1 remains independent passive instrumentation.
+M retains the production path: live committed sensitivity -> fixed M-F1 8 ms
+reconstruction -> Saved Finite-Critical -> Q0-C -> immediate libvirtualhid,
+at 1000 Hz with Earned-Settle. Phase Z1 C shares the same input, authority,
+Sensitivity front end, retains C-only fixed 12 ms reconstruction, then runs fixed zhq servo dynamics
+(tau 35 ms, 4 ms / 250 Hz nominal), Java-compatible rounding and true glide.
+ZhqTrackpadDynamics owns only math/state; ResampledMotion owns release markers,
+profile boundaries and lifecycle fences. The existing MotionClock schedules both
+profiles, without a second thread or native batching. C release waits for its
+final UP playout marker, then stops attracting the target and glides. Requested
+changes defer through the whole active chain; M waits for earned settlement,
+C waits for natural glide stop. New DOWN during C release/glide restarts its
+phase from the last natural carry and invalidates old targets/markers/wakes.
+Phase Z2 human validation is complete: the user preferred Z1 Amax 80000 for its
+stronger gimbal character. C source is precisely recovered to that Z1 baseline.
+Phase M-F1 changes only M's reconstruction delay from 12 to 8 ms. The idle Active
+profile boundary chooses delay; touching/settling/release/glide and joining or
+interrupting DOWN never follow Requested early. C remains Z1 with 12 ms delay.
+Saved Tau/Support, Q0-C, native output, clock period and lifecycle are unchanged.
+This stage builds into isolated evidence directories and does not deploy/restart
+the current live Receiver. Historical M12 goldens remain independent references.
+Diagnostics identifies the actual Active algorithm, caps and cadence. H1's passive
+record schema remains unchanged. See [MOTION_ENGINE.md](MOTION_ENGINE.md).
 Research conclusions are consolidated in
 [MOTION_RND_CONCLUSIONS.md](MOTION_RND_CONCLUSIONS.md).
+
+Phase M-R1 adds the explicit `--dev-motion-mode M_R1` development identity;
+normal production selection remains M-F1. Within this container M follows live
+Sensitivity -> fixed 8 ms causal reconstruction -> direct R(t) -> Q0-C -> immediate
+libvirtualhid, with the existing 1 ms MotionClock. Position convolution and filter
+settlement are bypassed; the existing bounded history recorder, causal watermark,
+late admission and queue safeguards remain. UP waits only for its mapped final
+reconstruction boundary and Q0-C evaluation. A pending-release joining DOWN keeps
+the target, ledger, M8 and phase. Requested changes apply only at idle completion.
+C-Z1 retains its exact dynamics, C12, release/glide/carry, rounding and cadence.
+Saved Tau/Support remain available to M-F1; M-R1 displays them as inactive.
+M12 and M-F1 fingerprints remain independent, and M-R1 has separate oracle-reviewed
+fingerprints. This stage uses isolated test outputs and does not deploy or restart
+the live Receiver. See MOTION_ENGINE.md for evidence and the history-only boundary.
 
 Responsibilities:
 

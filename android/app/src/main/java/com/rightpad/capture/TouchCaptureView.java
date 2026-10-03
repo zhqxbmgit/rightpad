@@ -30,6 +30,10 @@ final class TouchCaptureView extends View {
     private final Runnable requestSettings;
     final ScreenControls controls;
     private final ScreenControlRouter router = new ScreenControlRouter();
+    private long unbufferedDispatchRequests;
+    private int lastUnbufferedEventIdentity;
+    long unbufferedDispatchRequestsForDiagnostics() { return unbufferedDispatchRequests; }
+    int lastUnbufferedEventIdentityForDiagnostics() { return lastUnbufferedEventIdentity; }
     private final PowerGestureTracker settingsGesture = new PowerGestureTracker();
     private boolean inputModal;
     private final float density;
@@ -112,7 +116,7 @@ final class TouchCaptureView extends View {
         density = getResources().getDisplayMetrics().density;
         scaledDensity = getResources().getDisplayMetrics().scaledDensity;
         configurePaints();
-        setContentDescription(ConnectionDisplay.title(null) + " " + ConnectionDisplay.address(null));
+        updateContentDescription();
         setOnApplyWindowInsetsListener((view, windowInsets) -> {
             Insets cutoutSafe = windowInsets.getInsets(WindowInsets.Type.displayCutout());
             // Both controls sit outside the centered camera cutout. Preserve side
@@ -317,8 +321,13 @@ final class TouchCaptureView extends View {
     void setConnection(String address) {
         if (java.util.Objects.equals(receiverAddress, address)) return;
         receiverAddress = address;
-        setContentDescription(ConnectionDisplay.title(address) + " " + ConnectionDisplay.address(address));
+        updateContentDescription();
         invalidate();
+    }
+
+    private void updateContentDescription() {
+        String description = ConnectionDisplay.title(receiverAddress) + " " + ConnectionDisplay.address(receiverAddress);
+        setContentDescription(description);
     }
 
     void setInputHealth(InputHealthStatus value) {
@@ -450,6 +459,10 @@ final class TouchCaptureView extends View {
             if (owner == ScreenControlRouter.Owner.SCREEN_CONTROL) {
                 controls.down(router.controlId(), event);
             } else if (owner == ScreenControlRouter.Owner.MOUSE) {
+                // Fixed acquisition policy for admitted Touchpad contacts in both M and C.
+                unbufferedDispatchRequests++;
+                lastUnbufferedEventIdentity = System.identityHashCode(event);
+                requestUnbufferedDispatch(event);
                 sessionId++;
                 activePointerId = event.getPointerId(0);
                 captureEvent(event, 0, TouchSample.Action.DOWN);

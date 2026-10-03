@@ -69,10 +69,13 @@ internal sealed class RuntimeStatsViewModel : ObservableModel
         MotionProfile = s.MotionProfile == Rightpad.Receiver.MotionProfile.Cinematic ? "C" : "M";
         ActiveMotionProfile = s.ActiveMotionProfile == Rightpad.Receiver.MotionProfile.Cinematic ? "C" : "M";
         NativeOutputCadence = s.NativeOutputCadence;
-        MotionAlgorithm = s.ActiveMotionTauMs > 0 ? s.ActiveMotionAlgorithm : "—";
-        ActiveTau = s.ActiveMotionTauMs > 0 ? $"{s.ActiveMotionTauMs} ms" : "—";
-        ActiveSupport = s.ActiveMotionSupportMs > 0 ? $"{s.ActiveMotionSupportMs} ms" : "—";
-        ActiveMotionKernel = s.ActiveMotionTauMs == 0 ? "—" : $"Finite-Critical · Tau {s.ActiveMotionTauMs} ms · Support {s.ActiveMotionSupportMs} ms";
+        bool direct = s.ActiveMotionAlgorithm == MotionModes.Mr1Algorithm;
+        MotionAlgorithm = direct || s.ActiveMotionTauMs > 0 ? s.ActiveMotionAlgorithm : "—";
+        ActiveTau = direct ? "N/A" : s.ActiveMotionTauMs > 0 ? $"{s.ActiveMotionTauMs} ms" : "—";
+        ActiveSupport = direct ? "N/A" : s.ActiveMotionSupportMs > 0 ? $"{s.ActiveMotionSupportMs} ms" : "—";
+        ActiveMotionKernel = direct ? MotionModes.Mr1Algorithm : s.ActiveMotionTauMs == 0 ? "—" : s.ActiveMotionProfile == Rightpad.Receiver.MotionProfile.Cinematic
+            ? "C-Z1 · Reconstruction 12 ms · zhq-derived servo · Tau 35 ms · Amax 80000 · Vmax 15000 · 4 ms / 250 Hz nominal · Java-compatible rounding · true glide"
+            : $"{s.ActiveMotionAlgorithm} · Tau {s.ActiveMotionTauMs} ms · Support {s.ActiveMotionSupportMs} ms";
         RuntimeState = s.RuntimeState.ToString();
         RemoteIp = s.Presence?.RemoteIp ?? "—";
         LastSeen = s.Presence?.RunId is null ? "Never" :

@@ -1,0 +1,7 @@
+gradle.beforeProject { project ->
+    project.afterEvaluate {
+        if (project.plugins.hasPlugin('com.android.application')) {
+            project.android.defaultConfig.testInstrumentationRunner = 'com.rightpad.capture.FixedAcquisitionDeviceSmoke'
+        }
+    }
+}

@@ -10,7 +10,8 @@ internal enum MotionEventKind
     Sample, Enqueue, Tick, Position, Logical, ManagedBegin, ManagedEnd, NativeBegin, NativeEnd,
     UpFlush, Fence, Reset, StarvationStart, StarvationEnd, DuplicateTimestamp, BackwardTimestamp, LateSample, BufferOverflow,
     BoxcarPosition, BoxcarUpPending, KernelPosition, KernelUpPending, KernelIntegration, KernelHistoryError,
-    SettleStart, SettleComplete, SettleContinue, SensitivityChanged
+    SettleStart, SettleComplete, SettleContinue, SensitivityChanged,
+    ReconstructionRelease, ReconstructionComplete, ReconstructionContinue
 }
 
 internal readonly record struct MotionTraceEvent(MotionEventKind Kind, long Qpc, long ReferenceQpc,
@@ -25,6 +26,8 @@ internal sealed class MotionTrace : IDisposable
     private readonly string directory;
     private readonly System.Threading.Timer requests;
     private MotionConfiguration configuration;
+    private MotionProfile activeProfile;
+    private readonly List<(long Qpc, MotionProfile Profile)> profileSegments = [];
     private long runtimeRunId;
     private long start, allocationStart;
     private TimeSpan cpuStart;
@@ -41,6 +44,7 @@ internal sealed class MotionTrace : IDisposable
         Directory.CreateDirectory(directory);
         events = new MotionTraceEvent[capacity];
         ResetAccounting();
+        profileSegments.Add((start, MotionProfile.Normal));
         requests = new(_ => { if (File.Exists(Path.Combine(directory, "freeze.request"))) Freeze(); }, null, 1000, 1000);
     }
 
@@ -56,9 +60,22 @@ internal sealed class MotionTrace : IDisposable
             if (frozen) return;
             runtimeRunId = id;
             configuration = activeConfiguration;
+            activeProfile = MotionProfile.Normal;
+            profileSegments.Clear();
             head = length = 0;
             overwritten = 0;
             ResetAccounting();
+            profileSegments.Add((start, MotionProfile.Normal));
+        }
+    }
+
+    public void Profile(MotionProfile profile)
+    {
+        lock (gate)
+        {
+            if (frozen || activeProfile == profile) return;
+            activeProfile = profile;
+            profileSegments.Add((Stopwatch.GetTimestamp(), profile));
         }
     }
 
@@ -115,6 +132,17 @@ internal sealed class MotionTrace : IDisposable
             MotionConfiguration exportedConfiguration = configuration;
             MotionMode exportedMode = exportedConfiguration.Mode;
             long exportedRuntimeRunId = runtimeRunId, exportedStart = start;
+            bool cinematic = activeProfile == MotionProfile.Cinematic;
+            bool mr1 = exportedConfiguration.IsDirectReconstruction;
+            bool mf1 = exportedConfiguration.IsFiniteCritical && exportedConfiguration.IsEarnedSettle && exportedConfiguration.PeriodMs == 1;
+            var segments = profileSegments.Select(p => new
+            {
+                p.Qpc, Profile = p.Profile.ToString(),
+                Algorithm = p.Profile == MotionProfile.Cinematic ? "zhq-derived servo / Amax 80000 / Vmax 15000 / true glide" : mr1 ? MotionModes.Mr1Algorithm : mf1 ? "M-F1 / " + exportedMode : exportedMode.ToString(),
+                PeriodMs = p.Profile == MotionProfile.Cinematic ? 4 : exportedConfiguration.PeriodMs,
+                PlayoutDelayMs = p.Profile == MotionProfile.Cinematic ? 12 : MotionModes.ReconstructionDelayMs(exportedMode),
+                Quantizer = p.Profile == MotionProfile.Cinematic ? "Java-compatible rounding" : MotionModes.QuantizerName(exportedMode)
+            }).ToArray();
             export = Task.Run(() =>
             {
                 using var writer = new StreamWriter(Path.Combine(directory, "motion.csv"));
@@ -127,16 +155,18 @@ internal sealed class MotionTrace : IDisposable
                 }
                 File.WriteAllText(Path.Combine(directory, "metadata.json"), JsonSerializer.Serialize(new
                 {
-                    Mode = exportedMode.ToString(), RuntimeRunId = exportedRuntimeRunId,
+                    Mode = cinematic ? "C-Z1" : mr1 ? "M-R1" : mf1 ? "M-F1 / " + exportedMode : exportedMode.ToString(), RuntimeRunId = exportedRuntimeRunId,
                     Frequency = Stopwatch.Frequency, StartQpc = exportedStart, EndQpc = end,
-                    Quantizer = MotionModes.QuantizerName(exportedMode),
+                    ActiveProfile = cinematic ? "C" : "M", ProfileSegments = segments,
+                    Algorithm = cinematic ? "zhq-derived servo / Amax 80000 / Vmax 15000 / true glide" : mr1 ? MotionModes.Mr1Algorithm : mf1 ? "M-F1 / " + exportedMode : exportedMode.ToString(),
+                    Quantizer = cinematic ? "Java-compatible rounding" : MotionModes.QuantizerName(exportedMode),
                     Events = length, Overwritten = overwritten, AllocatedBytes = allocated, ProcessCpuMs = cpuMs,
-                    PeriodMs = MotionModes.PeriodMs(exportedMode), PlayoutDelayMs = exportedMode == MotionMode.RAW ? 0 : 12,
+                    PeriodMs = cinematic ? 4 : MotionModes.PeriodMs(exportedMode), PlayoutDelayMs = cinematic ? 12 : MotionModes.ReconstructionDelayMs(exportedMode),
                     BoxcarWindowMs = MotionModes.BoxcarWindowMs(exportedMode), Pid = Environment.ProcessId,
                     GcCollections = collections, LogicalProcessors = Environment.ProcessorCount,
-                    TauMs = exportedConfiguration.FiniteCriticalTauMs,
-                    SupportMs = exportedConfiguration.FiniteCriticalSupportMs,
-                    KernelNormalization = exportedConfiguration.KernelNormalization,
+                    TauMs = cinematic ? 35 : mr1 ? (int?)null : exportedConfiguration.FiniteCriticalTauMs,
+                    SupportMs = cinematic ? 0 : mr1 ? (int?)null : exportedConfiguration.FiniteCriticalSupportMs,
+                    KernelNormalization = cinematic ? 0 : exportedConfiguration.KernelNormalization,
                     Scope = "Managed and native-call boundaries; no VHF submit or hardware timestamp. CPU/allocation are whole-process including instrumentation."
                 }, new JsonSerializerOptions { WriteIndented = true }));
             });
