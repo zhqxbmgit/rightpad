@@ -27,10 +27,13 @@ internal static class Program
         bool motionOnly = args.SequenceEqual(new[] { "--motion-profile" });
         bool mr1Only = args.SequenceEqual(new[] { "--mr1" });
         bool uiSettingsOnly = args.SequenceEqual(new[] { "--ui-settings" });
-        if (args.Length != 0 && !motionOnly && !mr1Only && !uiSettingsOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--ui-settings | --mr1 | --motion-profile | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
+        bool gamepadOnly = args.SequenceEqual(new[] { "--gamepad" });
+        bool guiStartupOnly = args.SequenceEqual(new[] { "--normal-gui-startup" });
+        if (args.Length != 0 && !motionOnly && !mr1Only && !uiSettingsOnly && !gamepadOnly && !guiStartupOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--normal-gui-startup | --gamepad | --ui-settings | --mr1 | --motion-profile | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
             .. MotionUiCleanupTests.Cases,
+            .. NormalGuiStartupTests.Cases,
             .. HitchTraceTests.Cases,
             .. Mr1MotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. Mf1ReconstructionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
@@ -49,12 +52,13 @@ internal static class Program
             .. ControlConfigTests.Cases,
             .. LRConfigTests.Cases,
             .. VirtualGamepadTests.Cases,
+            .. GamepadStartupRecoveryTests.Cases,
             .. ResampledMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. BoxcarMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. FiniteCriticalMotionTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. EarnedSettleTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             .. CadenceTests.Cases.Select(test => (test.Name, Sync(test.Run))),
-            ("product motion fixed 1000 and explicit development overrides", Sync(SettingsTests.ProductMotion)),
+            ("normal GUI M-R1 and explicit historical development overrides", Sync(SettingsTests.ProductMotion)),
             ("legacy cadence settings ignored and removed on save", SettingsTests.LegacyCadence),
             .. CanonicalPositionQuantizerTests.Cases.Select(test => (test.Name, Sync(test.Run))),
             ("haptic codec / golden unsigned identities / malformed", Sync(HapticFeedbackTests.Codec)),
@@ -288,6 +292,15 @@ internal static class Program
             ("Tau/Support historical Save API", SettingsTests.TauSupportSave)
         ];
         int failed = 0;
+        if (gamepadOnly) tests = [.. VirtualGamepadTests.Cases, .. GamepadStartupRecoveryTests.Cases];
+        if (guiStartupOnly) tests =
+        [
+            .. NormalGuiStartupTests.Cases,
+            ("GUI default / explicit dev entries", Sync(SettingsTests.Entry)),
+            ("normal GUI M-R1 and explicit historical overrides", Sync(SettingsTests.ProductMotion)),
+            ("legacy cadence cannot override normal GUI default", SettingsTests.LegacyCadence),
+            ("ordinary and explicit launcher arguments", LauncherTests.Arguments)
+        ];
         foreach (var test in tests)
         {
             try

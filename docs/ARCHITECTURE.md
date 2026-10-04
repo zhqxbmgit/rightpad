@@ -7,8 +7,10 @@ profile control. The selected deployed Receiver runs the existing explicit
 libvirtualhid, with 1 ms opportunities and reconstruction-completion release.
 C remains the fixed C-Z1 servo/glide profile with C12 reconstruction. Saved
 Tau/Support remain available for filtered baselines and do not shape M-R1.
-The source `ProductionMode` default remains M-F1; the current selected M-R1
-baseline uses the explicit development launch argument. Historical implementation
+FIX-2 (2026-10-04) makes normal GUI startup default to M-R1, including bare HKCU
+startup and ordinary launcher Start; explicit development arguments still override
+that choice. `ProductionMode` remains the historical M-F1 configuration identity.
+Historical implementation
 scope notes below refer to their original stages. See
 [MOTION_ENGINE.md](MOTION_ENGINE.md) and
 [MOTION_PROFILE_PROTOCOL.md](MOTION_PROFILE_PROTOCOL.md) for the current contracts.

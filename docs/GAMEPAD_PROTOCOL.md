@@ -9,7 +9,44 @@ and configuration sync are implemented separately in
 workers/ports. Control and layout behavior is specified in
 [SCREEN_CONTROLS.md](SCREEN_CONTROLS.md).
 
-## Exact wire format
+## Bounded startup readiness recovery (FIX-1, 2026-10-04)
+
+Mouse creation and the ordinary Receiver/Touch/Discovery startup continue after
+an unsuccessful initial Xbox360 create. Only native create status 8 with the exact
+vendor error `Polar validation is unavailable; the one-device fallback is already
+in use.` permits asynchronous startup recovery. The native wrapper exposes typed
+status, native error, operation and `IsStartupReadinessTransient`; Runtime does
+not parse a formatted exception message. Other create/ABI/load/license errors,
+initial neutral/report failures and later SetState failures do not enter recovery.
+
+Recovery waits a cancellable fixed 2 seconds between attempts. Its monotonic
+deadline is 120 seconds from the initial attempt, with an independent hard cap of
+60 recovery attempts. A wake at or beyond the deadline cannot begin a create;
+with ideal 2-second timing this permits 59 recoveries before expiry. Expiry retains
+the last actual error and leaves Mouse, Touch and Receiver running.
+
+Each attempt belongs to one Run. GamepadGate reserves one create and protects
+candidate installation, while native create runs outside that gate. Stop cancels
+the delay, fences installation and joins any in-flight create before a new Run
+can begin. A rejected candidate is disposed. Recovery installs a neutral backend
+and releases only the startup submission-failure latch atomically with the
+GamepadSessionProcessor gate, preserving sender authority and serial watermarks.
+It does not replay an old held state; the next fresh state can submit normally.
+
+While recovering, existing diagnostics show unavailable and the last create
+error. Successful recovery clears that error and removes only recovered startup
+failures from the current GamepadFailures health count, so RPST XBOX health can
+become GOOD. Runtime output/cleanup failures remain failures. Original startup
+attempt errors remain in `gamepad_unavailable`; `gamepad_backend` remains the
+backend result. Minimal additional events are `gamepad_startup_retry`,
+`gamepad_startup_recovered` and `gamepad_startup_retry_timeout`, carrying RunId,
+attempt, elapsedMs, last error, identity and historical startup failure count.
+
+This changes no wire bytes, Motion configuration, Android behavior, HKCU startup
+or production Motion default. Deterministic fake-clock/factory tests validate
+recovery and cancellation; natural cold-boot validation is still required.
+
+## Exact wire format (unchanged)
 
 All fields are little endian; datagram length must be exactly **30 bytes**.
 The prior uncommitted 26-byte type5 format is superseded and rejected. Touch and

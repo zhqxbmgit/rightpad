@@ -5,13 +5,16 @@ Receiver is explicitly launched as `M_R1`, paired with the normal Android App's
 fixed unbuffered acquisition and M/C control. M uses M8, direct P(t)=R(t), Q0-C,
 1 ms opportunities, reconstruction-completion release and no glide; C retains
 the C-Z1 parameters and C12 described below. Saved Tau/Support do not shape
-M-R1 output. The code's `ProductionMode` default remains M-F1, and all M12/M-F1
-historical fingerprints remain regression references. The candidate/stage-only
+M-R1 output. FIX-2 (2026-10-04) selects M-R1 for normal GUI startup, including
+bare HKCU startup and ordinary launcher Start. Explicit motion arguments still
+override this startup-only default. `ProductionMode` remains the historical M-F1
+configuration identity, and all M12/M-F1 fingerprints remain regression references.
+The candidate/stage-only
 wording below records the original implementation stage, before the later
 authorized deployment and baseline selection. It does not describe the current
 deployed selection or claim superior game feel.
 
-Production M-F1 source: Finite-Critical, 1000 Hz, 8 ms reconstruction,
+Historical M-F1 source: Finite-Critical, 1000 Hz, 8 ms reconstruction,
 Q0-C, Earned-Settle for M. C source is recovered to Phase Z1 (Amax 80000),
 with unchanged 12 ms reconstruction. Project requirements in
 AGENTS.md are binding; research conclusions live only in
@@ -24,7 +27,8 @@ it does not replace the production identity or historical baseline fingerprints.
 
 H-MR1 tests whether removing Finite-Critical position dynamics yields a more
 direct relative touchpad character. No conclusion of superior game feel is made.
-The candidate is selected only with `--dev-motion-mode M_R1` (or the launcher's
+At the original implementation stage, the candidate was selected only with
+`--dev-motion-mode M_R1` (or the launcher's
 explicit development argument after a separately authorized deployment).
 
 ```text
@@ -403,8 +407,8 @@ state across Saved configurations. C has an independent dynamics/reconstruction
 oracle and explicit threshold, rounding, glide/carry, missed-step and lifecycle gates.
 Debug/Release and native fake are required for this source-only stage. Actual-device functional smoke and human game acceptance follow later authorized deployment. Functional tests cannot claim subjective human game feel.
 
-C-Z1 is the selected fixed C baseline; M-F1 remains production and M-R1 is the
-explicit direct-position development hypothesis. Other Motion R&D
+C-Z1 is the selected fixed C baseline; M-R1 is the normal GUI startup default,
+and M-F1 remains an explicit historical regression mode. Other Motion R&D
 remains paused. Wobble is deferred to separate work. Camera image tracking
 is CLOSED / INCONCLUSIVE. Experimental production code/tests/fixtures/docs,
 harnesses and raw data are deleted. All 43 explicitly authorized cleanup targets

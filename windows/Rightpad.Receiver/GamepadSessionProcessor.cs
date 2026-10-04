@@ -130,6 +130,19 @@ internal sealed class GamepadSessionProcessor(Func<XboxGamepadState, bool> submi
     {
         lock (gate) { stopped = true; Neutral("stop"); }
     }
+    // Only a recovered startup create may reopen this latch. Never replay an old held state,
+    // reset sender authority/sequence, or reopen a backend after a runtime output failure.
+    internal bool StartupBackendRecovered(Func<bool> install)
+    {
+        lock (gate)
+        {
+            if (stopped || !install()) return false;
+            failed = false;
+            state = XboxGamepadState.Neutral;
+            ClearDwell();
+            return true;
+        }
+    }
     public async Task MaintainAsync(CancellationToken cancellationToken)
     {
         try

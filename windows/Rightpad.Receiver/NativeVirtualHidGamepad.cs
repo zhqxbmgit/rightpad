@@ -5,6 +5,17 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Rightpad.Receiver;
 
+internal sealed class NativeVirtualHidGamepadException(int status, string nativeError, string operation)
+    : IOException($"libvirtualhid gamepad status={status}: {nativeError}")
+{
+    public int Status { get; } = status;
+    public string NativeError { get; } = nativeError;
+    public string Operation { get; } = operation;
+    // Vendor wording is confined to the native boundary; other status=8 failures are permanent here.
+    public bool IsStartupReadinessTransient => Operation == "create" && Status == 8 &&
+        NativeError == "Polar validation is unavailable; the one-device fallback is already in use.";
+}
+
 internal sealed class NativeVirtualHidGamepad : IVirtualHidGamepad
 {
     [StructLayout(LayoutKind.Sequential, Pack = 2)]
@@ -37,7 +48,7 @@ internal sealed class NativeVirtualHidGamepad : IVirtualHidGamepad
             NativeVirtualHidAbi.Validate(api.AbiVersion());
             var error = new StringBuilder(BufferSize);
             var identity = new StringBuilder(BufferSize);
-            Check(api.Create(out var pointer, identity, BufferSize, error, BufferSize), error);
+            Check(api.Create(out var pointer, identity, BufferSize, error, BufferSize), error, "create");
             handle = new GamepadHandle(api, pointer);
             if (handle.IsInvalid) throw new IOException("libvirtualhid gamepad create returned an invalid handle.");
             DeviceIdentity = identity.ToString();
@@ -52,7 +63,7 @@ internal sealed class NativeVirtualHidGamepad : IVirtualHidGamepad
             ObjectDisposedException.ThrowIf(handle.IsClosed, this);
             var error = new StringBuilder(BufferSize);
             var native = new NativeState(state);
-            try { Check(api.SetState(handle.DangerousGetHandle(), in native, error, BufferSize), error); }
+            try { Check(api.SetState(handle.DangerousGetHandle(), in native, error, BufferSize), error, "set_state"); }
             finally { GC.KeepAlive(handle); }
         }
     }
@@ -65,11 +76,11 @@ internal sealed class NativeVirtualHidGamepad : IVirtualHidGamepad
             int result;
             try { result = api.Destroy(handle.DangerousGetHandle(), error, BufferSize); }
             finally { handle.SetHandleAsInvalid(); handle.Dispose(); }
-            Check(result, error);
+            Check(result, error, "destroy");
         }
     }
-    private static void Check(int status, StringBuilder error)
-    { if (status != 0) throw new IOException($"libvirtualhid gamepad status={status}: {error}"); }
+    private static void Check(int status, StringBuilder error, string operation)
+    { if (status != 0) throw new NativeVirtualHidGamepadException(status, error.ToString(), operation); }
     private sealed class GamepadHandle : SafeHandleZeroOrMinusOneIsInvalid
     {
         private readonly IApi api;

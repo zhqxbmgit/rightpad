@@ -4,7 +4,9 @@ Current selected baseline (2026-10-03): Touchpad R&D is paused. The deployed
 Receiver uses the explicit `M_R1` identity, and Android uses fixed unbuffered
 acquisition with the normal M/C control. NORMAL selects direct M8 reconstruction
 with Q0-C and reconstruction-completion release; CINEMATIC selects unchanged
-C-Z1/C12. The source default `ProductionMode` remains M-F1. Original stage-only
+C-Z1/C12. FIX-2 (2026-10-04) selects M-R1 for normal GUI startup, including
+bare HKCU startup and ordinary launcher Start. Explicit motion arguments remain
+authoritative; `ProductionMode` retains the historical M-F1 identity. Original stage-only
 deployment restrictions below are historical; later deployment and this final
 source commit/push were separately authorized. The type7 wire contract is unchanged.
 
@@ -20,7 +22,8 @@ is complete and the user preferred Z1 gimbal character. No deployment in M-F1.
 The wire format and admission/order/source contracts are unchanged.
 
 Phase M-R1 (2026-10-03) adds an explicit Windows development container `M_R1`;
-the wire values remain NORMAL/M and CINEMATIC/C. Production still selects M-F1.
+the wire values remain NORMAL/M and CINEMATIC/C. At that original stage,
+production still selected M-F1.
 M in this container uses direct reconstructed R(t), M8, Q0-C and 1 ms opportunities.
 Touching and ReleasedAwaitingPlayout are busy. UP seals the real target and keeps
 the existing final mapped boundary; its first valid matured evaluation submits

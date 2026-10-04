@@ -7,6 +7,7 @@ namespace Rightpad.Receiver;
 
 internal static class Program
 {
+    internal const MotionMode NormalGuiMotionMode = MotionMode.M_R1;
     internal enum LaunchMode { Gui, Diagnostics, RawMouse }
     internal sealed record LaunchOptions(LaunchMode Mode, Options Input, string? LogDirectory, string? SettingsPath,
         MouseBackend Backend, MotionMode Motion = MotionMode.RAW, string? MotionTraceDirectory = null,
@@ -80,7 +81,7 @@ internal static class Program
     }
 
     internal static MotionMode ResolveGuiMotionMode(LaunchOptions launch) =>
-        launch.MotionExplicit ? launch.Motion : MotionModes.ProductionMode;
+        launch.MotionExplicit ? launch.Motion : NormalGuiMotionMode;
 
     private static async Task<int> RunDevelopmentAsync(LaunchOptions launch, TextWriter log)
     {

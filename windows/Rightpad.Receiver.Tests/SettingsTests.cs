@@ -346,8 +346,8 @@ internal static class SettingsTests
     public static void ProductMotion()
     {
         var ordinary = Rightpad.Receiver.Program.ParseLaunchArguments([]);
-        Equal(MotionModes.ProductionMode, Rightpad.Receiver.Program.ResolveGuiMotionMode(ordinary),
-            "ordinary GUI fixed to production 1000");
+        Equal(MotionMode.M_R1, Rightpad.Receiver.Program.ResolveGuiMotionMode(ordinary),
+            "ordinary GUI defaults to M-R1");
         foreach (var item in new[]
         {
             (Name: "RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE", Mode: MotionMode.RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE),
@@ -372,7 +372,7 @@ internal static class SettingsTests
             Check(loaded.Warning is null, $"legacy cadence {legacyCadence} ignored without warning");
             Equal(new RuntimeSettings(9, 9, 300, 8, 25, 130), loaded.Settings,
                 $"legacy cadence {legacyCadence} absent from runtime settings");
-            Equal(MotionModes.ProductionMode,
+            Equal(MotionMode.M_R1,
                 Rightpad.Receiver.Program.ResolveGuiMotionMode(Rightpad.Receiver.Program.ParseLaunchArguments([])),
                 $"legacy cadence {legacyCadence} cannot affect ordinary launch");
 

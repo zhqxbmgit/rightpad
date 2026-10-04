@@ -12,8 +12,15 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     FlightRecorder? flightRecorder = null,
     IPEndPoint? discoveryEndpoint = null, Func<byte[]>? identityFactory = null,
     MotionMode motionMode = MotionMode.RAW, MotionTrace? motionTrace = null,
-    bool useProductMotionSettings = false, Func<IVirtualGamepad>? gamepadFactory = null)
+    bool useProductMotionSettings = false, Func<IVirtualGamepad>? gamepadFactory = null,
+    Func<TimeSpan, CancellationToken, Task>? gamepadStartupDelay = null,
+    Func<long>? gamepadStartupTimestamp = null)
 {
+    internal static readonly TimeSpan GamepadStartupRetryInterval = TimeSpan.FromSeconds(2);
+    internal static readonly TimeSpan GamepadStartupRetryWindow = TimeSpan.FromSeconds(120);
+    internal const int GamepadStartupMaxRecoveryAttempts = 60;
+    private readonly Func<TimeSpan, CancellationToken, Task> startupDelay = gamepadStartupDelay ?? Task.Delay;
+    private readonly Func<long> startupTimestamp = gamepadStartupTimestamp ?? Stopwatch.GetTimestamp;
     private readonly SemaphoreSlim lifecycle = new(1, 1);
     public HitchTraceRecorder HitchTrace { get; } = new();
     private Run? current;
@@ -59,6 +66,9 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         public bool GamepadClosed;
         public string? GamepadError;
         public long GamepadFailures;
+        public bool GamepadCreating;
+        public long GamepadStartupFailures, GamepadStartupStartedAt;
+        public Task GamepadStartupRetry = Task.CompletedTask;
         public ITouchMotion? Motion;
         public int State = (int)ReceiverState.Starting;
         public string? Error;
@@ -85,21 +95,119 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         }
     }
 
-    private void InitializeGamepad(Run run)
+    private bool CanCreateGamepad(Run run) => Volatile.Read(ref current) == run &&
+        !run.Cancellation.IsCancellationRequested &&
+        (ReceiverState)Volatile.Read(ref run.State) is ReceiverState.Starting or ReceiverState.Running &&
+        run.Gamepad is null && !run.GamepadClosed;
+
+    // Returns true only for a failed factory create classified as startup readiness transient.
+    private bool InitializeGamepad(Run run, int attempt = 0)
     {
         lock (run.GamepadGate)
         {
-            try
-            {
-                run.Gamepad = gamepadFactory is not null ? gamepadFactory() : new LibVirtualHidXboxGamepad(flightRecorder);
-                if (run.Gamepad is null) throw new InvalidOperationException("Gamepad factory returned no backend.");
-                if (run.Gamepad.Available) run.Gamepad.SetState(XboxGamepadState.Neutral);
-                output.WriteLine($"gamepad_backend: name={run.Gamepad.BackendName} device={run.Gamepad.DeviceIdentity} available={run.Gamepad.Available} error={run.Gamepad.LastError}");
-                flightRecorder?.Event("gamepad_backend", ("runtimeRunId", run.Id), ("gamepadBackend", run.Gamepad.BackendName),
-                    ("gamepadDeviceIdentity", run.Gamepad.DeviceIdentity), ("gamepadAvailable", run.Gamepad.Available), ("error", run.Gamepad.LastError));
-            }
-            catch (Exception e) { GamepadFailed(run, "create", e); CloseGamepad(run); }
+            if (!CanCreateGamepad(run) || run.GamepadCreating) return false;
+            run.GamepadCreating = true;
         }
+        IVirtualGamepad? candidate = null;
+        try
+        {
+            // Native create stays outside the ownership gate: pending Xbox creation cannot block
+            // snapshots/status or the Mouse/Touch path. Stop fences installation and joins this work.
+            candidate = gamepadFactory is not null ? gamepadFactory() : new LibVirtualHidXboxGamepad(flightRecorder);
+            if (candidate is null) throw new InvalidOperationException("Gamepad factory returned no backend.");
+            if (candidate.Available) candidate.SetState(XboxGamepadState.Neutral);
+            var created = candidate;
+            bool Install()
+            {
+                lock (run.GamepadGate)
+                {
+                    if (!CanCreateGamepad(run)) return false;
+                    run.Gamepad = created;
+                    if (created.Available && created.LastError is null)
+                    {
+                        // Historical startup failures remain in flight events; current health and
+                        // RPST must not stay red after recovery. Never remove runtime output failures.
+                        run.GamepadFailures -= run.GamepadStartupFailures;
+                        run.GamepadError = null;
+                    }
+                    else if (created.LastError is { } error) run.GamepadError = error;
+                    return true;
+                }
+            }
+            bool recovered = attempt > 0 && created.Available && created.LastError is null;
+            // Processor -> GamepadGate is also the ordinary submission lock order. Installation
+            // and startup-latch release are atomic with respect to new state/Stop processing.
+            bool installed = recovered && run.GamepadSession is { } session
+                ? session.StartupBackendRecovered(Install) : Install();
+            if (!installed) return false;
+            candidate = null; // Ownership transferred to run; finally owns only rejected candidates.
+            lock (run.GamepadGate)
+            {
+                output.WriteLine($"gamepad_backend: name={created.BackendName} device={created.DeviceIdentity} available={created.Available} error={created.LastError}");
+                flightRecorder?.Event("gamepad_backend", ("runtimeRunId", run.Id), ("gamepadBackend", created.BackendName),
+                    ("gamepadDeviceIdentity", created.DeviceIdentity), ("gamepadAvailable", created.Available), ("error", created.LastError));
+                if (recovered) StartupEvent(run, "gamepad_startup_recovered", attempt, created.DeviceIdentity);
+            }
+            return false;
+        }
+        catch (Exception e)
+        {
+            bool transient = candidate is null && e is NativeVirtualHidGamepadException { IsStartupReadinessTransient: true };
+            lock (run.GamepadGate)
+            {
+                if (transient)
+                {
+                    run.GamepadStartupFailures++;
+                    run.GamepadFailures++;
+                    run.GamepadError = e.Message;
+                    output.WriteLine($"gamepad_unavailable: operation=create error={e.Message}");
+                    flightRecorder?.Event("gamepad_unavailable", ("runtimeRunId", run.Id), ("operation", "create"), ("error", e.Message));
+                }
+                else { GamepadFailed(run, candidate is null ? "create" : "set_state", e); CloseGamepad(run); }
+            }
+            return transient;
+        }
+        finally
+        {
+            try { candidate?.Dispose(); }
+            catch (Exception e) { lock (run.GamepadGate) GamepadFailed(run, "dispose", e); }
+            finally { lock (run.GamepadGate) run.GamepadCreating = false; }
+        }
+    }
+
+    private void StartupEvent(Run run, string name, int attempt, string? deviceIdentity = null)
+    {
+        double elapsed = Stopwatch.GetElapsedTime(run.GamepadStartupStartedAt, startupTimestamp()).TotalMilliseconds;
+        output.WriteLine(FormattableString.Invariant($"{name}: runtimeRunId={run.Id} attempt={attempt} elapsedMs={elapsed:F3} error={run.GamepadError} device={deviceIdentity}"));
+        flightRecorder?.Event(name, ("runtimeRunId", run.Id), ("attempt", attempt), ("elapsedMs", elapsed),
+            ("error", run.GamepadError), ("deviceIdentity", deviceIdentity), ("startupFailures", run.GamepadStartupFailures));
+    }
+
+    private async Task RecoverStartupGamepadAsync(Run run)
+    {
+        int attempt = 0;
+        try
+        {
+            while (attempt < GamepadStartupMaxRecoveryAttempts)
+            {
+                lock (run.GamepadGate) if (!CanCreateGamepad(run)) return;
+                var remaining = GamepadStartupRetryWindow - Stopwatch.GetElapsedTime(run.GamepadStartupStartedAt, startupTimestamp());
+                if (remaining <= TimeSpan.Zero) break;
+                await startupDelay(remaining < GamepadStartupRetryInterval ? remaining : GamepadStartupRetryInterval,
+                    run.Cancellation.Token).ConfigureAwait(false);
+                lock (run.GamepadGate)
+                {
+                    if (!CanCreateGamepad(run)) return;
+                    // A delayed wake skips expiry; it never starts a create after the fixed deadline.
+                    if (Stopwatch.GetElapsedTime(run.GamepadStartupStartedAt, startupTimestamp()) >= GamepadStartupRetryWindow) break;
+                    StartupEvent(run, "gamepad_startup_retry", ++attempt);
+                }
+                if (!InitializeGamepad(run, attempt)) return;
+            }
+            lock (run.GamepadGate) if (CanCreateGamepad(run)) StartupEvent(run, "gamepad_startup_retry_timeout", attempt);
+        }
+        catch (OperationCanceledException) when (run.Cancellation.IsCancellationRequested) { }
+        catch (Exception e) { lock (run.GamepadGate) GamepadFailed(run, "startup_retry", e); }
     }
     private void GamepadFailed(Run run, string operation, Exception e)
     {
@@ -236,7 +344,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             output.WriteLine($"mouse_backend: name={mouse?.BackendName ?? "None (diagnostics)"} device={mouse?.DeviceIdentity ?? "none"}");
             flightRecorder?.Event("mouse_backend", ("runtimeRunId", run.Id), ("mouseBackend", mouse?.BackendName), ("deviceIdentity", mouse?.DeviceIdentity));
             // Injected mouse tests never create real hardware unless they explicitly supply a gamepad factory.
-            if (rawMouse && (mouseFactory is null || gamepadFactory is not null)) InitializeGamepad(run);
+            run.GamepadStartupStartedAt = startupTimestamp();
+            bool recoverGamepad = rawMouse && (mouseFactory is null || gamepadFactory is not null) && InitializeGamepad(run);
             if (mouse is not null)
             {
                 Action<int, int> nativeMove = mouse.Move;
@@ -318,6 +427,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 run.Discovery = new(discoveryEndpoint ?? new(IPAddress.Any, DiscoveryCodec.Port), id, output, flightRecorder);
             }
             Volatile.Write(ref run.State, (int)ReceiverState.Running);
+            if (recoverGamepad) run.GamepadStartupRetry = Task.Run(() => RecoverStartupGamepadAsync(run));
             run.Started.TrySetResult(true);
             var touchTask = receiver.RunAsync(run.Cancellation.Token);
             if (run.Discovery is null) await touchTask.ConfigureAwait(false);
@@ -337,6 +447,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         }
         finally
         {
+            run.Cancellation.Cancel();
+            await run.GamepadStartupRetry.ConfigureAwait(false);
             // Join the motion writer before releasing buttons or disposing the shared native device.
             motionCancellation.Dispose();
             motionClock?.Dispose();

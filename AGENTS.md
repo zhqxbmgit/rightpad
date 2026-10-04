@@ -9,9 +9,11 @@ the existing explicit `M_R1` identity: M8 causal reconstruction, direct P(t)=R(t
 Q0-C, 1 ms opportunities, reconstruction-completion release and no glide. Saved
 Tau/Support remain inactive for M-R1 shaping; committed Sensitivity stays live.
 C remains C-Z1 (C12, tau 35 ms, damping 1, Amax 80000, Vmax 15000, fixed 4 ms,
-Java-compatible rounding and true glide). The code's `ProductionMode` default
-remains M-F1; selecting this current M-R1 baseline uses its explicit launcher
-argument. Historical stage restrictions below describe those stages; the user
+Java-compatible rounding and true glide). FIX-2 (2026-10-04) selects M-R1 for
+normal GUI startup, including bare quoted-EXE HKCU startup and ordinary launcher
+Start. Explicit development overrides remain authoritative. `ProductionMode`
+retains the historical M-F1 identity for configuration and regression compatibility.
+Historical stage restrictions below describe those stages; the user
 separately authorized their later deployments and this final source audit,
 commit and ordinary fast-forward push. Preserve historical regressions/evidence
 and the user's saved settings and layout.

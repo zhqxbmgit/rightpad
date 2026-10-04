@@ -340,8 +340,8 @@ switch ($Mode) {
         }
         if ($devMotionExplicit) {
             if ($stdout -notmatch "motion_mode: name=$DevMotionMode ") { throw 'Experimental motion mode did not match the requested launch.' }
-        } elseif ($stdout -notmatch 'motion_mode: name=RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE ') {
-            throw 'Ordinary launch did not use the fixed 1000 Hz product mode.'
+        } elseif ($stdout -notmatch 'motion_mode: name=M_R1 ') {
+            throw 'Ordinary GUI launch did not use the M-R1 default.'
         }
         Show-Status
     }

@@ -44,9 +44,13 @@ foreach ($mode in @('RESAMPLED_250HZ_BOXCAR_4MS','RESAMPLED_250HZ_BOXCAR_8MS')) 
     if ((& $paramProbe -DevMotionMode $mode) -cne $mode) { throw "Launcher mode validation mismatch: $mode" }
 }
 'PASS fixed F4 / F8 launcher validation and arguments'
-foreach ($mode in @('RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5','RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE')) {
+foreach ($mode in @('M_R1','RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5','RESAMPLED_250HZ_FINITE_CRITICAL_K35_R4', 'RESAMPLED_250HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_500HZ_FINITE_CRITICAL_K24_R5_SETTLE', 'RESAMPLED_1000HZ_FINITE_CRITICAL_K24_R5_SETTLE')) {
     if ((& $motionProbe $mode) -cne " --dev-motion-mode $mode") { throw "Fixed finite critical argument mismatch: $mode" }
     $paramProbe = [scriptblock]::Create($parameters + "`n" + '$DevMotionMode')
     if ((& $paramProbe -DevMotionMode $mode) -cne $mode) { throw "Launcher finite mode validation mismatch: $mode" }
 }
 'PASS fixed K24-r5 / K35-r4 launcher validation and arguments'
+if (!$source.Contains("elseif (`$stdout -notmatch 'motion_mode: name=M_R1 ')")) {
+    throw 'Ordinary GUI readiness must validate the EXE-owned M-R1 default.'
+}
+'PASS ordinary M-R1 startup validation and explicit M-R1 / historical overrides'

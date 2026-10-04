@@ -373,7 +373,7 @@ internal static class Mr1MotionTests
     private static void Identity()
     {
         Equal(MotionMode.M_R1,Receiver.Program.ParseLaunchArguments(["--dev-motion-mode","M_R1"]).Motion,"explicit identity");
-        Equal(MotionModes.ProductionMode,Receiver.Program.ResolveGuiMotionMode(Receiver.Program.ParseLaunchArguments([])),"production unchanged");
+        Equal(MotionMode.M_R1,Receiver.Program.ResolveGuiMotionMode(Receiver.Program.ParseLaunchArguments([])),"normal GUI defaults to M-R1");
         Equal("Q0C",MotionModes.QuantizerName(MotionMode.M_R1),"quantizer capability");
         string dir=ArtifactDirectory("trace");
         using(var trace=new MotionTrace(dir,MotionMode.M_R1))
