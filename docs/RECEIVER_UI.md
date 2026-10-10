@@ -1,5 +1,15 @@
 # rightpad Receiver UI v1
 
+Current Receiver update (2026-10-10; deployed and verified): the normal GUI owns
+independently persisted M_R1/C_Z1 selection and seven C-Z1 parameters. Validated
+complete snapshots apply at the existing safe idle chain boundary. Legacy Android
+type7 is validated telemetry and cannot override Receiver selection. Android is
+unchanged in this commit and deployment; its existing M/C control may still send
+legacy packets. M8/Q0-C/1 ms and default C12/4 ms dynamics remain unchanged.
+See [RECEIVER_TOUCH_MODE.md](RECEIVER_TOUCH_MODE.md) and
+[C_Z1_RECEIVER_PARAMETERS.md](C_Z1_RECEIVER_PARAMETERS.md). Historical baseline
+descriptions below record earlier authority and fixed-constant implementations.
+
 Implemented 2026-09-09. WPF visual/feel acceptance by the user remains separate
 from automated verification. AGENTS.md remains authoritative.
 

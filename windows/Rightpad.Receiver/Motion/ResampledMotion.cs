@@ -9,6 +9,31 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     public int PeriodMs => IsC ? 4 : productionPeriodMs;
     private bool IsC => profileEnabled && activeProfile == MotionProfile.Cinematic;
     private readonly ZhqTrackpadDynamics cinematic = new();
+    private Cz1Parameters requestedCz1 = Cz1Parameters.Default;
+    internal (Cz1Parameters Selected, Cz1Parameters Active, bool Pending) CaptureCz1State()
+    {
+        lock (gate) return (requestedCz1, cinematic.Parameters, requestedCz1 != cinematic.Parameters);
+    }
+    internal void RequestCz1(Cz1Parameters parameters)
+    {
+        parameters.Validate();
+        lock (gate)
+        {
+            if (disposed) return;
+            requestedCz1 = parameters;
+            ApplyRequestedCz1();
+        }
+    }
+    private void ApplyRequestedCz1()
+    {
+        // Same gate as Enqueue, Tick, native submit, Reset and Dispose. Interrupting
+        // DOWN in release/glide remains part of the busy chain and keeps its snapshot.
+        if (session is null)
+        {
+            cinematic.Configure(requestedCz1);
+            if (IsC) trace?.Profile(activeProfile, cinematic.Parameters);
+        }
+    }
     private long? releaseMarker;
     internal ZhqTrackpadDynamics CinematicDynamics => cinematic;
     internal long? ReleaseMarker => releaseMarker;
@@ -30,14 +55,23 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
     private readonly bool waitsForPlayout, directReconstruction, keepsCausalHistory;
     private MotionProfile requestedProfile, activeProfile;
     public MotionProfile ActiveMotionProfile { get { lock (gate) return activeProfile; } }
-    public (MotionProfile Profile, int TauMs, int SupportMs) ActiveKernel
+    // One lock observes the local request and the actual algorithm at the same boundary.
+    public (MotionProfile Selected, MotionProfile Active, double TauMs, int SupportMs, string Algorithm) CaptureProfileState()
     {
-        get { lock (gate) return IsC ? (activeProfile, 35, 0) : (activeProfile, KernelTauMs, KernelSupportMs); }
+        lock (gate)
+        {
+            var algorithm = ActiveAlgorithm;
+            return (requestedProfile, algorithm.Profile, algorithm.TauMs, algorithm.SupportMs, algorithm.Algorithm);
+        }
+    }
+    public (MotionProfile Profile, double TauMs, int SupportMs) ActiveKernel
+    {
+        get { lock (gate) return IsC ? (activeProfile, cinematic.Parameters.TauMs, 0) : (activeProfile, KernelTauMs, KernelSupportMs); }
     }
     public string NativeOutputCadence => $"{1000 / PeriodMs} Hz";
-    public (MotionProfile Profile, int TauMs, int SupportMs, string Algorithm) ActiveAlgorithm
+    public (MotionProfile Profile, double TauMs, int SupportMs, string Algorithm) ActiveAlgorithm
     {
-        get { lock (gate) return IsC ? (activeProfile, 35, 0, "C-Z1 · Reconstruction 12 ms · zhq-derived servo · Amax 80000 · Vmax 15000 · Java-compatible rounding · true glide") : (activeProfile, KernelTauMs, KernelSupportMs,
+        get { lock (gate) return IsC ? (activeProfile, cinematic.Parameters.TauMs, 0, FormattableString.Invariant($"C-Z1 · Reconstruction 12 ms · zhq-derived servo · Amax {cinematic.Parameters.MaxAcceleration:G} · Vmax {cinematic.Parameters.MaxVelocity:G} · Tau {cinematic.Parameters.TauMs:G} ms · damping {cinematic.Parameters.DampingRatio:G} · Glide {cinematic.Parameters.GlideDeceleration:G} · Java-compatible rounding · true glide")) : (activeProfile, KernelTauMs, KernelSupportMs,
             directReconstruction ? MotionModes.Mr1Algorithm : finiteCritical is not null ? (profileEnabled ? "M-F1 · Finite-Critical · Reconstruction 8 ms · Q0-C · 1 ms / 1000 Hz · Earned-Settle" : "Finite-Critical") : "—"); }
     }
 
@@ -58,7 +92,8 @@ internal sealed class ResampledMotion : ITouchMotion, IDisposable
         activeProfile = next;
         // Only this idle boundary selects delay; Requested never retimes a busy chain.
         delay = checked(frequency * ReconstructionDelayMs) / 1000;
-        trace?.Profile(activeProfile);
+        ApplyRequestedCz1();
+        trace?.Profile(activeProfile, cinematic.Parameters);
     }
     private bool HasPositionFilter => !IsC && !directReconstruction && (boxcar is not null || finiteCritical is not null);
     private bool MaintainsCausalHistory => !IsC && keepsCausalHistory;

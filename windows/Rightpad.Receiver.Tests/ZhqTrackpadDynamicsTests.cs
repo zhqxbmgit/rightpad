@@ -371,7 +371,7 @@ internal static class ZhqTrackpadDynamicsTests
             else {h.Now+=System.Diagnostics.Stopwatch.Frequency*3;Send(profile);}
             h.M.Tick(h.Now+1_000_000,old);Equal(n,h.Native.Count,"invalidation emits no tail");
             Check(h.M.Schedule.Deadline is null,"invalidation clears schedule");Equal((0.0,0.0),h.M.CinematicDynamics.CarryOver,"invalidation clears carry");
-            if(invalidation is "run" or "source")Equal(MotionProfile.Normal,h.M.ActiveMotionProfile,"new run M baseline");
+            if(invalidation is "run" or "source")Equal(MotionProfile.Cinematic,h.M.ActiveMotionProfile,"new run preserves locally selected C after clearing old chain");
         }
     }
     private static async Task RuntimeLifecycle()
@@ -379,17 +379,19 @@ internal static class ZhqTrackpadDynamicsTests
         foreach(string reason in new[]{"touching","pending","glide","failure"})
         {
             var native=new VirtualHidTests.FakeNative {FailMove=reason=="failure"};
-            var runtime=new ReceiverRuntime(new(),TextWriter.Null,MouseBackend.VirtualHid,new(IPAddress.Loopback,0),
-                ()=>new LibVirtualHidMouseOutput(native), motionMode:MotionModes.ProductionMode, useProductMotionSettings:true);
+            var local=new RuntimeSettingsStore(RuntimeSettings.Default with {TouchMode=TouchMode.C_Z1});
+            var runtime=new ReceiverRuntime(local,TextWriter.Null,MouseBackend.VirtualHid,new(IPAddress.Loopback,0),
+                ()=>new LibVirtualHidMouseOutput(native), motionMode:MotionMode.M_R1, useProductMotionSettings:true);
             using var sender=new UdpClient();
             try
             {
                 await runtime.StartAsync();var endpoint=runtime.LocalEndpoint!;
                 await sender.SendAsync(PresenceTests.Heartbeat(1),endpoint);
                 await RuntimeTests.Until(()=>runtime.CaptureSnapshot().Presence?.Connected==true);
-                byte[] profile=new byte[16];profile[0]=2;profile[1]=7;profile[2]=1;profile[14]=1;
+                byte[] profile=new byte[16];profile[0]=2;profile[1]=7;profile[2]=1;profile[14]=0;
                 await sender.SendAsync(profile,endpoint);
                 await RuntimeTests.Until(()=>runtime.CaptureSnapshot().ActiveMotionProfile==MotionProfile.Cinematic);
+                Equal(TouchMode.C_Z1,runtime.CaptureSnapshot().SelectedTouchMode,"local C survives legacy Android M");
                 await sender.SendAsync(PacketDecoderTests.Encode(TouchEventType.Down,1,0,new TouchSample(0,0,0)),endpoint);
                 await sender.SendAsync(PacketDecoderTests.Encode(TouchEventType.Move,1,1,new TouchSample(4_000_000,1e6f,0)),endpoint);
                 if(reason=="failure")

@@ -7,6 +7,10 @@ internal sealed class ZhqTrackpadDynamics
     public const double Dt = 0.004, Tau = 0.035, DampingRatio = 1.0;
     public const double MaxVelocity = 15000, MaxAcceleration = 80000, GlideDeceleration = 120000;
     public const double PositionThreshold = 0.5, VelocityThreshold = 2.0;
+    public Cz1Parameters Parameters { get; private set; } = Cz1Parameters.Default;
+    // Caller holds the motion gate and calls this only when the chain is idle.
+    public void Configure(Cz1Parameters parameters)
+    { parameters.Validate(); Parameters = parameters; }
     public (double X, double Y) Target { get; private set; }
     public (double X, double Y) Position { get; private set; }
     public (double X, double Y) Velocity { get; private set; }
@@ -27,13 +31,14 @@ internal sealed class ZhqTrackpadDynamics
     // this step, then the caller saves the remainder after successful submission.
     public bool Step()
     {
+        var p = Parameters;
         double px = Position.X, py = Position.Y, vx = Velocity.X, vy = Velocity.Y;
         bool shouldStop = false;
         if (Gliding)
         {
             double speed = Math.Sqrt(vx * vx + vy * vy);
-            double decel = GlideDeceleration * Dt;
-            if (speed <= decel + VelocityThreshold) { vx = vy = 0; shouldStop = true; }
+            double decel = p.GlideDeceleration * Dt;
+            if (speed <= decel + p.VelocityThreshold) { vx = vy = 0; shouldStop = true; }
             else
             {
                 double scale = (speed - decel) / speed;
@@ -46,20 +51,20 @@ internal sealed class ZhqTrackpadDynamics
             double dx = Target.X - px, dy = Target.Y - py;
             double distance = Math.Sqrt(dx * dx + dy * dy);
             double speed = Math.Sqrt(vx * vx + vy * vy);
-            if (distance < PositionThreshold && speed < VelocityThreshold)
+            if (distance < p.PositionThreshold && speed < p.VelocityThreshold)
             { px = Target.X; py = Target.Y; vx = vy = 0; }
             else
             {
-                double omega = 1.0 / Tau;
-                double ax = dx * omega * omega - vx * 2.0 * DampingRatio * omega;
-                double ay = dy * omega * omega - vy * 2.0 * DampingRatio * omega;
+                double omega = 1.0 / p.TauSeconds;
+                double ax = dx * omega * omega - vx * 2.0 * p.DampingRatio * omega;
+                double ay = dy * omega * omega - vy * 2.0 * p.DampingRatio * omega;
                 double acceleration = Math.Sqrt(ax * ax + ay * ay);
-                if (acceleration > MaxAcceleration)
-                { double scale = MaxAcceleration / acceleration; ax *= scale; ay *= scale; }
+                if (acceleration > p.MaxAcceleration)
+                { double scale = p.MaxAcceleration / acceleration; ax *= scale; ay *= scale; }
                 vx += ax * Dt; vy += ay * Dt;
                 double velocity = Math.Sqrt(vx * vx + vy * vy);
-                if (velocity > MaxVelocity)
-                { double scale = MaxVelocity / velocity; vx *= scale; vy *= scale; }
+                if (velocity > p.MaxVelocity)
+                { double scale = p.MaxVelocity / velocity; vx *= scale; vy *= scale; }
                 px += vx * Dt; py += vy * Dt;
             }
         }

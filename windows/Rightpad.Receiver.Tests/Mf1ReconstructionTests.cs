@@ -16,7 +16,7 @@ internal static class Mf1ReconstructionTests
         ("M-F1 and M12 dense history overflow visibly abort with identical capacity rule", HistoryFault),
         ("M-F1 delay frozen through M joining DOWN then C release/glide interruption and natural switch", Lifecycle),
         ("M-F1 missed wake actual-time evaluation fixed phase and stale reset fence", Missed),
-        ("M-F1 source/run invalidation reselects fixed M delay without output", Invalidation),
+        ("M-F1 source/run invalidation preserves locally selected C12 without output", Invalidation),
         ("M-F1 mixed MotionTrace identities and profile-specific delay", Trace)
     ];
     private const long Origin = 100_000, Frequency = 1_000_000;
@@ -191,7 +191,9 @@ internal static class Mf1ReconstructionTests
         h.M.RequestProfile(MotionProfile.Cinematic);h.Touch(TouchEventType.Down,0,0);h.Touch(TouchEventType.Move,4,10000);h.Tick(16);
         var old=h.M.Schedule;int n=h.Native.Count;
         receiver.ProcessDatagram(PresenceTests.Heartbeat(2),new(System.Net.IPAddress.Parse("127.0.0.2"),1234),h.Now);
-        h.Tick(200,old.Generation);Equal(n,h.Native.Count,"new source/run abort emits no tail");Equal(MotionProfile.Normal,h.M.ActiveMotionProfile,"new run defaults M");Equal(8,h.M.ReconstructionDelayMs,"new run M8 delay");
+        h.Tick(200,old.Generation);Equal(n,h.Native.Count,"new source/run abort emits no tail");
+        Equal(MotionProfile.Cinematic,h.M.ActiveMotionProfile,"new run preserves Receiver local C request");
+        Equal(12,h.M.ReconstructionDelayMs,"selected C retains fixed C12 delay after old chain invalidation");
     }
     private static void Trace()
     {

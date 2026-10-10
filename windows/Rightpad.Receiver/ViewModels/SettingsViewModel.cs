@@ -126,6 +126,7 @@ internal sealed class SettingsViewModel : ObservableModel
     public NumericField ClickHold { get; }
     public NumericField DoubleTapInterval { get; }
     public IReadOnlyList<ControlSettingsViewModel> Controls { get; }
+    public Cz1SettingsViewModel Cz1 { get; }
 
     public SettingsViewModel(RuntimeSettingsStore store, SettingsFileStore file, string? warning = null)
     {
@@ -152,6 +153,12 @@ internal sealed class SettingsViewModel : ObservableModel
             value => UpdateDraft(draftSettings with { Controls = d.Set(draftSettings.Controls, value) }), Recalculate)).ToArray();
         fields = [SensitivityX, SensitivityY, SmoothingTau, SmoothingSupport,
             TapMaxDuration, MovementThreshold, ClickHold, DoubleTapInterval, .. Controls.SelectMany(c => c.Fields)];
+        Cz1 = new(store, file, () => IsSaving || isRestarting, SetSaving, parameters =>
+        {
+            committedSettings = committedSettings with { Cz1 = parameters };
+            draftSettings = draftSettings with { Cz1 = parameters };
+            Recalculate();
+        });
         Recalculate();
         RefreshNotice();
     }
@@ -171,18 +178,20 @@ internal sealed class SettingsViewModel : ObservableModel
     {
         IsSaving = saving;
         foreach (var field in fields) field.SetEnabled(!saving && !isRestarting);
+        Cz1.Refresh();
         Recalculate();
     }
     public void SetRestarting(bool restarting)
     {
         isRestarting = restarting;
         foreach (var field in fields) field.SetEnabled(!IsSaving && !restarting);
+        Cz1.Refresh();
         Recalculate();
     }
     public async Task<bool> SaveAsync()
     {
         if (!CanSave) return false;
-        RuntimeSettings snapshot = draftSettings;
+        RuntimeSettings snapshot = draftSettings with { Cz1 = store.Current.Cz1 };
         if (!snapshot.IsProductValid) return false;
         SetSaving(true);
         try
@@ -194,6 +203,7 @@ internal sealed class SettingsViewModel : ObservableModel
             }
             store.Publish(snapshot);
             committedSettings = snapshot;
+            draftSettings = draftSettings with { Cz1 = snapshot.Cz1 };
             SensitivityX.SetCommitted(snapshot.SensitivityX);
             SensitivityY.SetCommitted(snapshot.SensitivityY);
             SmoothingTau.SetCommitted(snapshot.SmoothingTauMs);
@@ -205,6 +215,30 @@ internal sealed class SettingsViewModel : ObservableModel
             foreach (var control in Controls) control.SetCommitted(control.Definition.Get(snapshot.Controls));
             loadWarning = null;
             Notice = "";
+            return true;
+        }
+        finally { SetSaving(false); }
+    }
+    public async Task<bool> SelectTouchModeAsync(TouchMode mode)
+    {
+        if (!TouchModes.IsValid(mode) || IsSaving || isRestarting) return false;
+        if (store.Current.TouchMode == mode) return true;
+        // Mode clicks commit only this field. Keep any other Settings draft unsaved.
+        var snapshot = store.Current with { TouchMode = mode };
+        SetSaving(true);
+        try
+        {
+            if (!await file.SaveNowAsync(snapshot))
+            {
+                Notice = file.SaveError ?? "Settings save failed. Changes were not applied.";
+                return false;
+            }
+            store.Publish(snapshot);
+            committedSettings = snapshot;
+            draftSettings = draftSettings with { TouchMode = mode };
+            loadWarning = null;
+            Notice = "";
+            Changed(nameof(CommittedSettings));
             return true;
         }
         finally { SetSaving(false); }

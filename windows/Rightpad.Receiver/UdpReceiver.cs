@@ -189,8 +189,8 @@ internal sealed class UdpReceiver : IDisposable
                 }
                 lastProfileSequence = profile.Sequence;
                 Volatile.Write(ref motionProfile, (int)profile.Profile);
-                (motion as ResampledMotion)?.RequestProfile(profile.Profile);
-                output.WriteLine($"motion_profile: senderRunId={profile.SenderRunId:X16} sequence={profile.Sequence} profile={profile.Profile}");
+                // Legacy Android profile is validated telemetry, never an engine selection.
+                output.WriteLine($"android_motion_profile: senderRunId={profile.SenderRunId:X16} sequence={profile.Sequence} profile={profile.Profile} authority=receiver");
             }
             return; // No admission, presence renewal, input, config, lease or other sequence changes.
         }
@@ -245,7 +245,6 @@ internal sealed class UdpReceiver : IDisposable
             Statistics.ResetSequence();
             lastProfileSequence = null;
             Volatile.Write(ref motionProfile, (int)MotionProfile.Normal);
-            (motion as ResampledMotion)?.RequestProfile(MotionProfile.Normal);
             touchDeadline = null;
             Interlocked.Exchange(ref lastAcceptedAtTicks, 0);
             Volatile.Write(ref presence, new(h.SenderRunId));

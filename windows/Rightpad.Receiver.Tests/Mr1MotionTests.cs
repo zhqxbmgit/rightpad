@@ -342,7 +342,8 @@ internal static class Mr1MotionTests
             r.ProcessDatagram(Profile(1,0,MotionProfile.Cinematic),new(IPAddress.Parse("127.0.0.2"),1234),h.Now);
             Equal(MotionProfile.Normal,r.CurrentMotionProfile,"wrong source rejected");
             r.ProcessDatagram(Profile(1,0,MotionProfile.Cinematic),source,h.Now);Equal(MotionProfile.Cinematic,r.CurrentMotionProfile,"matching source accepted");
-            Equal(MotionProfile.Normal,h.M.ActiveMotionProfile,"valid request still deferred");
+            Equal(MotionProfile.Normal,h.M.ActiveMotionProfile,"legacy profile is telemetry only");
+            Equal(MotionProfile.Normal,h.M.CaptureProfileState().Selected,"Android cannot queue a hidden future C switch");
             if(expire){h.Now+=3*System.Diagnostics.Stopwatch.Frequency;r.CheckTimeouts(h.Now);Check(!r.Presence.Connected,"presence expired");}
             else r.ProcessDatagram(PresenceTests.Heartbeat(2),source,h.Now);
             h.Tick(100,old.Generation);Equal(0,h.Native.Count,"invalidation fences pending motion");

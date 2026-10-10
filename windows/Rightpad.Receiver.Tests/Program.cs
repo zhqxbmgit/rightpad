@@ -29,9 +29,13 @@ internal static class Program
         bool uiSettingsOnly = args.SequenceEqual(new[] { "--ui-settings" });
         bool gamepadOnly = args.SequenceEqual(new[] { "--gamepad" });
         bool guiStartupOnly = args.SequenceEqual(new[] { "--normal-gui-startup" });
-        if (args.Length != 0 && !motionOnly && !mr1Only && !uiSettingsOnly && !gamepadOnly && !guiStartupOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--normal-gui-startup | --gamepad | --ui-settings | --mr1 | --motion-profile | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
+        bool receiverModeOnly = args.SequenceEqual(new[] { "--receiver-touch-mode" });
+        bool cz1Only = args.SequenceEqual(new[] { "--cz1-parameters" });
+        if (args.Length != 0 && !cz1Only && !motionOnly && !mr1Only && !uiSettingsOnly && !gamepadOnly && !guiStartupOnly && !receiverModeOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--cz1-parameters | --receiver-touch-mode | --normal-gui-startup | --gamepad | --ui-settings | --mr1 | --motion-profile | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            .. Cz1ParameterTests.Cases,
+            .. ReceiverTouchModeTests.Cases,
             .. MotionUiCleanupTests.Cases,
             .. NormalGuiStartupTests.Cases,
             .. HitchTraceTests.Cases,
@@ -301,6 +305,8 @@ internal static class Program
             ("legacy cadence cannot override normal GUI default", SettingsTests.LegacyCadence),
             ("ordinary and explicit launcher arguments", LauncherTests.Arguments)
         ];
+        if (receiverModeOnly) tests = [.. ReceiverTouchModeTests.Cases];
+        if (cz1Only) tests = [.. Cz1ParameterTests.Cases];
         foreach (var test in tests)
         {
             try

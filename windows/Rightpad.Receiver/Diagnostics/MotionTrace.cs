@@ -27,7 +27,8 @@ internal sealed class MotionTrace : IDisposable
     private readonly System.Threading.Timer requests;
     private MotionConfiguration configuration;
     private MotionProfile activeProfile;
-    private readonly List<(long Qpc, MotionProfile Profile)> profileSegments = [];
+    private Cz1Parameters activeCz1 = Cz1Parameters.Default;
+    private readonly List<(long Qpc, MotionProfile Profile, Cz1Parameters Cz1)> profileSegments = [];
     private long runtimeRunId;
     private long start, allocationStart;
     private TimeSpan cpuStart;
@@ -44,7 +45,7 @@ internal sealed class MotionTrace : IDisposable
         Directory.CreateDirectory(directory);
         events = new MotionTraceEvent[capacity];
         ResetAccounting();
-        profileSegments.Add((start, MotionProfile.Normal));
+        profileSegments.Add((start, MotionProfile.Normal, Cz1Parameters.Default));
         requests = new(_ => { if (File.Exists(Path.Combine(directory, "freeze.request"))) Freeze(); }, null, 1000, 1000);
     }
 
@@ -65,17 +66,20 @@ internal sealed class MotionTrace : IDisposable
             head = length = 0;
             overwritten = 0;
             ResetAccounting();
-            profileSegments.Add((start, MotionProfile.Normal));
+            activeCz1 = Cz1Parameters.Default;
+            profileSegments.Add((start, MotionProfile.Normal, activeCz1));
         }
     }
 
-    public void Profile(MotionProfile profile)
+    public void Profile(MotionProfile profile, Cz1Parameters? parameters = null)
     {
         lock (gate)
         {
-            if (frozen || activeProfile == profile) return;
+            var next = parameters ?? Cz1Parameters.Default;
+            if (frozen || (activeProfile == profile && (profile != MotionProfile.Cinematic || activeCz1 == next))) return;
             activeProfile = profile;
-            profileSegments.Add((Stopwatch.GetTimestamp(), profile));
+            activeCz1 = next;
+            profileSegments.Add((Stopwatch.GetTimestamp(), profile, next));
         }
     }
 
@@ -88,6 +92,8 @@ internal sealed class MotionTrace : IDisposable
         gcStart[1] = GC.CollectionCount(1);
         gcStart[2] = GC.CollectionCount(2);
     }
+    private static string CAlgorithm(Cz1Parameters p) => FormattableString.Invariant(
+        $"zhq-derived servo / Amax {p.MaxAcceleration:G} / Vmax {p.MaxVelocity:G} / true glide");
 
     public void Write(MotionEventKind kind, long at = 0, long reference = 0, ulong run = 0,
         uint session = 0, uint sequence = 0, ulong android = 0, double x = 0, double y = 0,
@@ -133,12 +139,14 @@ internal sealed class MotionTrace : IDisposable
             MotionMode exportedMode = exportedConfiguration.Mode;
             long exportedRuntimeRunId = runtimeRunId, exportedStart = start;
             bool cinematic = activeProfile == MotionProfile.Cinematic;
+            var exportedCz1 = activeCz1;
             bool mr1 = exportedConfiguration.IsDirectReconstruction;
             bool mf1 = exportedConfiguration.IsFiniteCritical && exportedConfiguration.IsEarnedSettle && exportedConfiguration.PeriodMs == 1;
             var segments = profileSegments.Select(p => new
             {
                 p.Qpc, Profile = p.Profile.ToString(),
-                Algorithm = p.Profile == MotionProfile.Cinematic ? "zhq-derived servo / Amax 80000 / Vmax 15000 / true glide" : mr1 ? MotionModes.Mr1Algorithm : mf1 ? "M-F1 / " + exportedMode : exportedMode.ToString(),
+                Algorithm = p.Profile == MotionProfile.Cinematic ? CAlgorithm(p.Cz1) : mr1 ? MotionModes.Mr1Algorithm : mf1 ? "M-F1 / " + exportedMode : exportedMode.ToString(),
+                Cz1 = p.Profile == MotionProfile.Cinematic ? p.Cz1 : null,
                 PeriodMs = p.Profile == MotionProfile.Cinematic ? 4 : exportedConfiguration.PeriodMs,
                 PlayoutDelayMs = p.Profile == MotionProfile.Cinematic ? 12 : MotionModes.ReconstructionDelayMs(exportedMode),
                 Quantizer = p.Profile == MotionProfile.Cinematic ? "Java-compatible rounding" : MotionModes.QuantizerName(exportedMode)
@@ -158,13 +166,14 @@ internal sealed class MotionTrace : IDisposable
                     Mode = cinematic ? "C-Z1" : mr1 ? "M-R1" : mf1 ? "M-F1 / " + exportedMode : exportedMode.ToString(), RuntimeRunId = exportedRuntimeRunId,
                     Frequency = Stopwatch.Frequency, StartQpc = exportedStart, EndQpc = end,
                     ActiveProfile = cinematic ? "C" : "M", ProfileSegments = segments,
-                    Algorithm = cinematic ? "zhq-derived servo / Amax 80000 / Vmax 15000 / true glide" : mr1 ? MotionModes.Mr1Algorithm : mf1 ? "M-F1 / " + exportedMode : exportedMode.ToString(),
+                    Algorithm = cinematic ? CAlgorithm(exportedCz1) : mr1 ? MotionModes.Mr1Algorithm : mf1 ? "M-F1 / " + exportedMode : exportedMode.ToString(),
+                    Cz1 = cinematic ? exportedCz1 : null,
                     Quantizer = cinematic ? "Java-compatible rounding" : MotionModes.QuantizerName(exportedMode),
                     Events = length, Overwritten = overwritten, AllocatedBytes = allocated, ProcessCpuMs = cpuMs,
                     PeriodMs = cinematic ? 4 : MotionModes.PeriodMs(exportedMode), PlayoutDelayMs = cinematic ? 12 : MotionModes.ReconstructionDelayMs(exportedMode),
                     BoxcarWindowMs = MotionModes.BoxcarWindowMs(exportedMode), Pid = Environment.ProcessId,
                     GcCollections = collections, LogicalProcessors = Environment.ProcessorCount,
-                    TauMs = cinematic ? 35 : mr1 ? (int?)null : exportedConfiguration.FiniteCriticalTauMs,
+                    TauMs = cinematic ? exportedCz1.TauMs : mr1 ? (double?)null : exportedConfiguration.FiniteCriticalTauMs,
                     SupportMs = cinematic ? 0 : mr1 ? (int?)null : exportedConfiguration.FiniteCriticalSupportMs,
                     KernelNormalization = cinematic ? 0 : exportedConfiguration.KernelNormalization,
                     Scope = "Managed and native-call boundaries; no VHF submit or hardware timestamp. CPU/allocation are whole-process including instrumentation."

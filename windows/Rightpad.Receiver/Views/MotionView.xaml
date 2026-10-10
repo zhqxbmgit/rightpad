@@ -2,12 +2,48 @@
   <StackPanel><TextBlock Text="Motion" Style="{StaticResource PageTitle}"/>
     <Border Style="{StaticResource Card}"><StackPanel MaxWidth="720" HorizontalAlignment="Left">
       <TextBlock Text="Motion settings" Style="{StaticResource SectionTitle}"/>
+      <TextBlock Text="触控模式" Margin="0,8,0,8"/>
+      <StackPanel Orientation="Horizontal" IsEnabled="{Binding CanSelectTouchMode}">
+        <Button Content="M — 直接模式" Click="SelectDirect" AutomationProperties.AutomationId="SelectTouchModeM" Margin="0,0,8,0"/>
+        <Button Content="C — 重量模式" Click="SelectCinematic" AutomationProperties.AutomationId="SelectTouchModeC"/>
+      </StackPanel>
+      <TextBlock Text="{Binding SelectedTouchModeText}" AutomationProperties.AutomationId="SelectedTouchMode" Margin="0,10,0,0"/>
+      <TextBlock Text="{Binding ActiveTouchModeText}" AutomationProperties.AutomationId="ActiveTouchMode" Margin="0,4,0,0"/>
+      <TextBlock Text="{Binding PendingTouchModeText}" AutomationProperties.AutomationId="PendingTouchMode" TextWrapping="Wrap" Margin="0,4,0,0"/>
+      <TextBlock Text="{Binding TouchModeNotice}" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,4,0,12"/>
       <local:NumericEditor DataContext="{Binding Settings.SensitivityX}"/>
       <local:NumericEditor DataContext="{Binding Settings.SensitivityY}"/>
       <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,14,0,0" Padding="0,12,0,0"><StackPanel>
         <TextBlock Text="Sensitivity changes apply to new real displacement after Save." TextWrapping="Wrap" Style="{StaticResource Muted}" FontSize="13"/>
         <TextBlock Text="{Binding ActiveMotionText}" AutomationProperties.AutomationId="ActiveMotion" Margin="0,12,0,0"/>
       </StackPanel></Border>
+    </StackPanel></Border>
+    <Border Style="{StaticResource Card}" DataContext="{Binding Settings.Cz1}" Margin="0,12,0,0"><StackPanel MaxWidth="720" HorizontalAlignment="Left">
+      <TextBlock Text="C-Z1 模式参数" Style="{StaticResource SectionTitle}"/>
+      <TextBlock Text="固定参数；M 模式下也可准备。counts 为 Receiver 逻辑位移单位。" Style="{StaticResource Muted}" FontSize="13" TextWrapping="Wrap" Margin="0,6,0,8"/>
+      <local:Cz1ParameterEditor DataContext="{Binding Amax}"/>
+      <StackPanel Orientation="Horizontal" Margin="180,2,0,6" IsEnabled="{Binding CanEdit}">
+        <Button Content="80000 基线" Click="Cz1Baseline" FontSize="12" Padding="8,4" Margin="0,0,8,0"/>
+        <Button Content="160000 换向候选" Click="Cz1Reversal" FontSize="12" Padding="8,4"/>
+      </StackPanel>
+      <local:Cz1ParameterEditor DataContext="{Binding Vmax}"/>
+      <local:Cz1ParameterEditor DataContext="{Binding Tau}"/>
+      <local:Cz1ParameterEditor DataContext="{Binding Damping}"/>
+      <local:Cz1ParameterEditor DataContext="{Binding Glide}"/>
+      <Expander Header="高级：停止阈值" Margin="0,6,0,6"><StackPanel>
+        <local:Cz1ParameterEditor DataContext="{Binding PositionStop}"/>
+        <local:Cz1ParameterEditor DataContext="{Binding VelocityStop}"/>
+      </StackPanel></Expander>
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
+        <Button Content="应用" Click="ApplyCz1" IsEnabled="{Binding CanApply}" AutomationProperties.AutomationId="ApplyCz1" Margin="0,0,8,0"/>
+        <Button Content="保存" Click="SaveCz1" IsEnabled="{Binding CanSave}" AutomationProperties.AutomationId="SaveCz1" Margin="0,0,8,0"/>
+        <Button Content="恢复 C 默认" Click="RestoreCz1" IsEnabled="{Binding CanEdit}"/>
+      </StackPanel>
+      <TextBlock Text="应用仅提交到内存；保存只写 C 参数并提交。忙时等待整条运动链空闲。" Style="{StaticResource Muted}" FontSize="13" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding StatusText}" AutomationProperties.AutomationId="Cz1ParameterStatus" TextWrapping="Wrap" Margin="0,8,0,4"/>
+      <TextBlock Text="{Binding ActiveText}" AutomationProperties.AutomationId="ActiveCz1Parameters" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,4"/>
+      <TextBlock Text="{Binding SavedText}" TextWrapping="Wrap" Style="{StaticResource Muted}" FontSize="12"/>
+      <TextBlock Text="{Binding Notice}" Style="{StaticResource OptionalNotice}" TextWrapping="Wrap" Margin="0,6,0,0"/>
     </StackPanel></Border>
   </StackPanel>
 </UserControl>

@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Rightpad.Receiver;
 
@@ -76,8 +77,37 @@ internal sealed class SettingsFileStore(string path)
                     controls = definition.Set(controls, loaded);
                 }
             }
-            settings = settings with { Controls = controls };
-            return (settings, fallback ? "Some settings were invalid or missing. Defaults were used for those fields." : null);
+            var touchMode = TouchMode.M_R1;
+            if (root.TryGetProperty("touchMode", out var modeJson))
+            {
+                if (modeJson.ValueKind == JsonValueKind.String && modeJson.GetString() is "M_R1" or "C_Z1")
+                    touchMode = modeJson.GetString() == "C_Z1" ? TouchMode.C_Z1 : TouchMode.M_R1;
+                else fallback = true;
+            }
+            var cz1 = Cz1Parameters.Default;
+            bool cz1Fallback = false;
+            if (root.TryGetProperty("cz1", out var c))
+            {
+                double CField(string name, double defaultValue, (double Min, double Max) range)
+                {
+                    if (c.ValueKind == JsonValueKind.Object && c.TryGetProperty(name, out var item) &&
+                        item.ValueKind == JsonValueKind.Number && item.TryGetDouble(out var number) &&
+                        Cz1Parameters.Valid(number, range)) return number;
+                    cz1Fallback = true;
+                    return defaultValue;
+                }
+                cz1 = new(CField("maxAcceleration", 80000, Cz1Parameters.AccelerationRange),
+                    CField("maxVelocity", 15000, Cz1Parameters.VelocityRange),
+                    CField("tauMs", 35, Cz1Parameters.TauRange),
+                    CField("dampingRatio", 1, Cz1Parameters.DampingRange),
+                    CField("glideDeceleration", 120000, Cz1Parameters.GlideRange),
+                    CField("positionThreshold", .5, Cz1Parameters.PositionRange),
+                    CField("velocityThreshold", 2, Cz1Parameters.StopVelocityRange));
+            }
+            settings = settings with { Controls = controls, TouchMode = touchMode, Cz1 = cz1 };
+            string? warning = fallback ? "Some settings were invalid or missing. Defaults were used for those fields." : null;
+            if (cz1Fallback) warning = (warning is null ? "" : warning + " ") + "C-Z1 settings were invalid or incomplete; invalid fields use production defaults.";
+            return (settings, warning);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -165,13 +195,26 @@ internal sealed class SettingsFileStore(string path)
                 string temporary = target + ".tmp";
                 try
                 {
-                    string json = JsonSerializer.Serialize(value, new JsonSerializerOptions
+                    var known = JsonSerializer.SerializeToNode(value, new JsonSerializerOptions
                     {
                         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                         WriteIndented = true,
                         // Serialize positional values, not computed validation properties.
                         IgnoreReadOnlyProperties = true
-                    });
+                    })!.AsObject();
+                    // Preserve unknown settings recursively, only on an explicit Save.
+                    // Loading never rewrites the file. Malformed JSON is diagnosed by Load.
+                    JsonObject merged = new();
+                    if (File.Exists(target))
+                    {
+                        try { merged = JsonNode.Parse(await File.ReadAllTextAsync(target).ConfigureAwait(false)) as JsonObject ?? new(); }
+                        catch (JsonException) { }
+                    }
+                    Merge(merged, known);
+                    // This is a known retired field, not an unknown extension.
+                    // Preserve the existing migration contract on explicit Save.
+                    merged.Remove("motionCadenceHz");
+                    string json = merged.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
                     await File.WriteAllTextAsync(temporary, json).ConfigureAwait(false);
                     File.Move(temporary, target, overwrite: true);
                 }
@@ -187,6 +230,15 @@ internal sealed class SettingsFileStore(string path)
             return false;
         }
         finally { writer.Release(); }
+    }
+
+    private static void Merge(JsonObject target, JsonObject known)
+    {
+        foreach (var field in known)
+        {
+            if (field.Value is JsonObject child && target[field.Key] is JsonObject existing) Merge(existing, child);
+            else target[field.Key] = field.Value?.DeepClone();
+        }
     }
 
     public async Task FlushAsync()

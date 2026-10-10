@@ -22,5 +22,8 @@ internal sealed record RuntimeStatsSnapshot(long RunId, ReceiverState RuntimeSta
     long GamepadSuccesses = 0, long GamepadFailures = 0, string? LastGamepadError = null,
     bool MouseAvailable = false, MotionProfile MotionProfile = MotionProfile.Normal,
     MotionProfile ActiveMotionProfile = MotionProfile.Normal,
-    int ActiveMotionTauMs = 0, int ActiveMotionSupportMs = 0,
-    string ActiveMotionAlgorithm = "—", string NativeOutputCadence = "1000 Hz");
+    double ActiveMotionTauMs = 0, int ActiveMotionSupportMs = 0,
+    string ActiveMotionAlgorithm = "—", string NativeOutputCadence = "1000 Hz",
+    TouchMode SelectedTouchMode = TouchMode.M_R1, TouchMode? PendingTouchMode = null,
+    TouchMode? ActiveTouchMode = null, bool LocalTouchModeEnabled = false,
+    MotionProfile AndroidMotionProfile = MotionProfile.Normal);

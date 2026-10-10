@@ -44,6 +44,13 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     public MotionConfiguration ActiveMotionConfiguration => Volatile.Read(ref current)?.MotionConfiguration ??
         ResolveMotionConfiguration(settings.Current);
     public bool MotionTraceEnabled => motionTrace is not null;
+    public bool UsesLocalTouchMode => useProductMotionSettings && motionMode == MotionMode.M_R1;
+    public (Cz1Parameters Selected, Cz1Parameters Active, bool Pending)? CaptureCz1State()
+    {
+        var run = Volatile.Read(ref current);
+        return run is not null && (ReceiverState)Volatile.Read(ref run.State) == ReceiverState.Running &&
+            Volatile.Read(ref run.Motion) is ResampledMotion motion ? motion.CaptureCz1State() : null;
+    }
     public IPEndPoint? LocalEndpoint => Volatile.Read(ref current)?.Receiver?.LocalEndpoint;
     public Task Completion => Volatile.Read(ref current)?.Task ?? Task.CompletedTask;
     public IPEndPoint? DiscoveryEndpoint => Volatile.Read(ref current)?.Discovery?.LocalEndpoint;
@@ -70,6 +77,9 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         public long GamepadStartupFailures, GamepadStartupStartedAt;
         public Task GamepadStartupRetry = Task.CompletedTask;
         public ITouchMotion? Motion;
+        public readonly object TouchModeGate = new();
+        public Action? TouchModeChanged;
+        public Action? Cz1Changed;
         public int State = (int)ReceiverState.Starting;
         public string? Error;
         public SensitivitySnapshot? ReportedSensitivity;
@@ -367,6 +377,24 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 };
                 if (motion is ResampledMotion resampled)
                 {
+                    run.Cz1Changed = () =>
+                    {
+                        lock (run.TouchModeGate)
+                            if (run.Cz1Changed is not null) resampled.RequestCz1(settings.RequestedCz1);
+                    };
+                    settings.Cz1Published += run.Cz1Changed;
+                    run.Cz1Changed();
+                    if (UsesLocalTouchMode)
+                    {
+                        run.TouchModeChanged = () =>
+                        {
+                            lock (run.TouchModeGate)
+                                if (run.TouchModeChanged is not null)
+                                    resampled.RequestProfile(TouchModes.Profile(settings.Current.TouchMode));
+                        };
+                        settings.Published += run.TouchModeChanged;
+                        run.TouchModeChanged();
+                    }
                     motionCancellation = run.Cancellation.Token.Register(resampled.Reset);
                     motionClock = new(resampled, run.Cancellation.Cancel);
                 }
@@ -450,7 +478,18 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             run.Cancellation.Cancel();
             await run.GamepadStartupRetry.ConfigureAwait(false);
             // Join the motion writer before releasing buttons or disposing the shared native device.
+            if (run.TouchModeChanged is { } modeChanged)
+            {
+                settings.Published -= modeChanged;
+                // Join any publication that already captured this run's handler before disposal.
+                lock (run.TouchModeGate) run.TouchModeChanged = null;
+            }
             motionCancellation.Dispose();
+            if (run.Cz1Changed is { } cz1Changed)
+            {
+                settings.Cz1Published -= cz1Changed;
+                lock (run.TouchModeGate) run.Cz1Changed = null;
+            }
             motionClock?.Dispose();
             if (motionClock?.Failure is { } clockFailure)
             {
@@ -492,7 +531,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         var run = Volatile.Read(ref current);
         string selectedName = rawMouse ? MouseOutputFactory.Name(backend) : "None (diagnostics)";
         if (run is null) return new(0, ReceiverState.Stopped, MouseBackend: selectedName,
-            MotionModeName: ActiveMotionMode.ToString());
+            MotionModeName: ActiveMotionMode.ToString(), SelectedTouchMode: settings.Current.TouchMode,
+            LocalTouchModeEnabled: UsesLocalTouchMode);
         var state = (ReceiverState)Volatile.Read(ref run.State);
         var live = settings.Sensitivity.Current;
         if (state == ReceiverState.Running && Interlocked.Exchange(ref run.ReportedSensitivity, live) != live)
@@ -523,24 +563,32 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             run.MotionMode.ToString(), resampled?.TickCount ?? 0, resampled?.MissedTicks ?? 0));
     }
 
-    private static RuntimeStatsSnapshot WithGamepad(Run run, RuntimeStatsSnapshot snapshot)
+    private RuntimeStatsSnapshot WithGamepad(Run run, RuntimeStatsSnapshot snapshot)
     {
         lock (run.GamepadGate)
         {
             var gamepad = run.Gamepad;
             var stats = gamepad?.Stats ?? default;
             var activeMotion = Volatile.Read(ref run.Motion) as ResampledMotion;
-            var kernel = activeMotion?.ActiveAlgorithm ?? default;
+            var kernel = activeMotion?.CaptureProfileState() ?? default;
+            bool running = snapshot.RuntimeState == ReceiverState.Running && activeMotion is not null;
+            var selected = UsesLocalTouchMode && running ? TouchModes.FromProfile(kernel.Selected) : settings.Current.TouchMode;
+            TouchMode? active = UsesLocalTouchMode && running ? TouchModes.FromProfile(kernel.Active) : null;
             return snapshot with
             {
                 MouseAvailable = snapshot.RuntimeState == ReceiverState.Running && Volatile.Read(ref run.Mouse) is not null,
-                MotionProfile = Volatile.Read(ref run.Receiver)?.CurrentMotionProfile ?? MotionProfile.Normal,
+                MotionProfile = kernel.Selected,
+                AndroidMotionProfile = Volatile.Read(ref run.Receiver)?.CurrentMotionProfile ?? MotionProfile.Normal,
+                SelectedTouchMode = selected,
+                ActiveTouchMode = active,
+                PendingTouchMode = active is not null && active != selected ? selected : null,
+                LocalTouchModeEnabled = UsesLocalTouchMode,
                 NativeOutputCadence = activeMotion?.NativeOutputCadence ?? "—",
-                ActiveMotionProfile = kernel.Profile,
+                ActiveMotionProfile = kernel.Active,
                 ActiveMotionTauMs = kernel.TauMs,
                 ActiveMotionSupportMs = kernel.SupportMs,
                 ActiveMotionAlgorithm = kernel.Algorithm ?? "—",
-                MotionModeName = kernel.Profile == MotionProfile.Cinematic ? "C-Z1 / Reconstruction 12 ms / zhq-derived servo / Amax 80000 / Vmax 15000 / 4 ms / Java-compatible rounding / true glide" : run.MotionConfiguration.IsDirectReconstruction ? MotionModes.Mr1Algorithm : kernel.Algorithm?.StartsWith("M-F1", StringComparison.Ordinal) == true ? "M-F1 / Reconstruction 8 ms / " + snapshot.MotionModeName : snapshot.MotionModeName,
+                MotionModeName = kernel.Active == MotionProfile.Cinematic ? kernel.Algorithm + " · 4 ms" : run.MotionConfiguration.IsDirectReconstruction ? MotionModes.Mr1Algorithm : kernel.Algorithm?.StartsWith("M-F1", StringComparison.Ordinal) == true ? "M-F1 / Reconstruction 8 ms / " + snapshot.MotionModeName : snapshot.MotionModeName,
                 GamepadBackend = gamepad?.BackendName ?? (run.GamepadError is null ? "Not created" : LibVirtualHidXboxGamepad.Backend),
                 GamepadDeviceIdentity = gamepad?.DeviceIdentity,
                 GamepadAvailable = snapshot.RuntimeState == ReceiverState.Running && !run.GamepadClosed && run.GamepadError is null && gamepad?.Available == true,

@@ -9,7 +9,8 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
     private bool CinematicActive => Stats.ActiveMotionProfile == "C";
     private bool DirectReconstruction => runtime.ActiveMotionConfiguration.IsDirectReconstruction;
     public string MotionQuantizerName => CinematicActive ? "quantizer=Java-compatible rounding" : $"quantizer={MotionModes.QuantizerName(runtime.ActiveMotionMode)}";
-    public string MotionModeName => CinematicActive ? "C-Z1 / Reconstruction 12 ms / zhq-derived servo / Amax 80000 / Vmax 15000 / 4 ms / 250 Hz nominal / true glide" : runtime.ActiveMotionMode switch
+    private string CParametersText => (runtime.CaptureCz1State()?.Active ?? Settings.CommittedSettings.Cz1).Description;
+    public string MotionModeName => CinematicActive ? "C-Z1 / Reconstruction 12 ms / zhq-derived servo / " + CParametersText + " / 4 ms / 250 Hz nominal / true glide" : runtime.ActiveMotionMode switch
     {
         MotionMode.M_R1 => MotionModes.Mr1Algorithm,
         MotionMode.RESAMPLED_250HZ_BOXCAR_4MS => "RESAMPLED_250HZ / BOXCAR 4 ms / quantizer=Q0I",
@@ -25,7 +26,7 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
     {
         get
         {
-            if (CinematicActive) return "C-Z1: fixed zhq-derived servo, Amax 80000, Vmax 15000, tau 35 ms, 4 ms / 250 Hz nominal dynamics, Java-compatible rounding and true glide after the UP playout marker. Live committed Sensitivity and C-only fixed 12 ms reconstruction remain unchanged.";
+            if (CinematicActive) return "C-Z1: fixed zhq-derived servo, " + CParametersText + ". 4 ms / 250 Hz nominal dynamics, Java-compatible rounding and true glide after the UP playout marker. C parameter changes wait for an idle chain; Sensitivity applies after Save.";
             MotionConfiguration configuration = runtime.ActiveMotionConfiguration;
             return runtime.ActiveMotionMode switch
             {
@@ -71,7 +72,7 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
     public string RestartError => restartError;
     public int? ActiveTauMs => DirectReconstruction ? null : runtime.CaptureActiveRuntimeSnapshot()?.Motion.FiniteCriticalTauMs;
     public int? ActiveSupportMs => DirectReconstruction ? null : runtime.CaptureActiveRuntimeSnapshot()?.Motion.FiniteCriticalSupportMs;
-    public string ActiveMotionText => CinematicActive ? "Active C-Z1: Reconstruction 12 ms · zhq-derived servo · Tau 35 ms · Amax 80000 · Vmax 15000 · 4 ms / 250 Hz nominal · Java-compatible rounding · true glide" : ActiveTauMs is int tau
+    public string ActiveMotionText => CinematicActive ? "Active C-Z1: Reconstruction 12 ms · zhq-derived servo · " + CParametersText + " · 4 ms / 250 Hz nominal · Java-compatible rounding · true glide" : ActiveTauMs is int tau
         ? $"Active: Tau {tau} ms · Support {ActiveSupportMs} ms" : DirectReconstruction && running ? "Active: " + MotionModes.Mr1Algorithm + " · Tau N/A · Support N/A" : "Active: Receiver stopped";
     public bool RestartRequired => running && !DirectReconstruction && (ActiveTauMs != Settings.CommittedSettings.SmoothingTauMs ||
         ActiveSupportMs != Settings.CommittedSettings.SmoothingSupportMs);
@@ -83,19 +84,39 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
     public string ActionText => running ? "Stop Receiver" : "Start Receiver";
     public bool CanToggle => canToggle;
     public bool IsStopped => !running;
+    public bool CanSelectTouchMode => runtime.UsesLocalTouchMode && !Settings.IsSaving && !busy && !IsRestarting;
+    public string SelectedTouchModeText => "Selected：" + TouchModes.Label(Settings.CommittedSettings.TouchMode);
+    private string activeTouchModeText = "Active：Receiver stopped", pendingTouchModeText = "";
+    public string ActiveTouchModeText => activeTouchModeText;
+    public string PendingTouchModeText => pendingTouchModeText;
+    public string TouchModeNotice => runtime.UsesLocalTouchMode
+        ? "选择后自动保存；触摸或未完成运动期间，将在安全空闲时生效。"
+        : "当前使用显式开发模式覆盖；生产触控模式选择器未启用。";
+    public async Task<bool> SelectTouchModeAsync(TouchMode mode)
+    {
+        if (!CanSelectTouchMode) return false;
+        try { return await Settings.SelectTouchModeAsync(mode); }
+        finally { Refresh(); }
+    }
     public void Refresh()
     {
         var snapshot = runtime.CaptureSnapshot();
         Stats.Refresh(snapshot, Stopwatch.GetTimestamp());
+        Set(ref activeTouchModeText, snapshot.ActiveTouchMode is { } active
+            ? "Active：" + TouchModes.Label(active) : "Active：" + (runtime.UsesLocalTouchMode ? snapshot.RuntimeState.ToString() : "开发模式 " + snapshot.MotionModeName), nameof(ActiveTouchModeText));
+        Set(ref pendingTouchModeText, snapshot.PendingTouchMode is { } pending
+            ? "Pending：" + TouchModes.Label(pending) + "（等待当前运动完成）" : "", nameof(PendingTouchModeText));
         bool wasRunning = running;
         running = snapshot.RuntimeState == ReceiverState.Running;
         if (running != wasRunning) { Changed(nameof(ActionText)); Changed(nameof(IsStopped)); }
         Set(ref canToggle, !busy && Stats.RuntimeState is not ("Starting" or "Stopping"), nameof(CanToggle));
         Settings.RefreshNotice();
+        Settings.Cz1.Refresh(runtime.CaptureCz1State());
         foreach (string name in new[] { nameof(ActiveTauMs), nameof(ActiveSupportMs), nameof(ActiveMotionText),
             nameof(RestartRequired), nameof(CanRestart),
             nameof(IsRestarting), nameof(RestartText), nameof(RestartError), nameof(MotionExplanation),
-            nameof(MotionQuantizerName), nameof(MotionModeName) }) Changed(name);
+            nameof(MotionQuantizerName), nameof(MotionModeName), nameof(CanSelectTouchMode),
+            nameof(SelectedTouchModeText), nameof(TouchModeNotice) }) Changed(name);
     }
     public async Task StartAsync()
     {
