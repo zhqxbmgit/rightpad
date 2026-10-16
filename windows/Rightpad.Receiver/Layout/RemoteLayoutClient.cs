@@ -1,0 +1,106 @@
+using System.Diagnostics;
+using System.Net;
+
+namespace Rightpad.Receiver;
+
+/** One bounded operation, three attempts, then read-only reconciliation. No automatic trial replay. */
+internal sealed class RemoteLayoutClient(Func<SenderPresence> presence, Action<IPAddress, byte[]> send)
+{
+    private readonly object gate = new();
+    private LayoutMessage? latest, operation;
+    private LayoutMessage? reconcileTrial;
+    private string? address;
+    private ulong? run;
+    private ulong request;
+    private long nextSend, receivedAt, deadline;
+    private int attempts;
+    private bool uncertain;
+    private readonly Dictionary<ulong, long> queries = new();
+    public (LayoutMessage? Snapshot, bool Connected, bool Uncertain, int Remaining, long At) Capture(long now)
+    {
+        lock (gate)
+        {
+            var p = presence();
+            bool connected = p.Connected && p.RunId == run && p.RemoteIp == address;
+            bool fresh = connected && latest is not null && Stopwatch.GetElapsedTime(receivedAt, now).TotalSeconds < 4;
+            return (fresh ? latest : null, connected, uncertain,
+                latest?.State == 2 ? (int)Math.Max(0, (deadline - now) * 1000.0 / Stopwatch.Frequency) : 0, receivedAt);
+        }
+    }
+    public void Poll(long now, bool force = false)
+    {
+        lock (gate)
+        {
+            var p = presence();
+            if (!p.Connected || p.RunId is null || p.RemoteIp is null)
+            { operation = reconcileTrial = latest = null; queries.Clear(); run = null; return; }
+            if (p.RunId != run || p.RemoteIp != address)
+            {
+                run = p.RunId; address = p.RemoteIp; operation = latest = null;
+                reconcileTrial = null;
+                queries.Clear(); attempts = 0; nextSend = 0; uncertain = false;
+            }
+            if (!force && now < nextSend) return;
+            nextSend = now + Stopwatch.Frequency;
+            if (operation is not null && attempts < 3)
+            { send(IPAddress.Parse(address!), RemoteLayoutProtocol.Encode(operation)); attempts++; }
+            else
+            {
+                if (operation is not null) {
+                    uncertain = true;
+                    if (operation.Kind == RemoteLayoutProtocol.Try) reconcileTrial = operation;
+                    operation = null;
+                }
+                ulong id = ++request;
+                if (queries.Count >= 8) queries.Remove(queries.Keys.First());
+                queries[id] = now;
+                send(IPAddress.Parse(address!), RemoteLayoutProtocol.Encode(new(RemoteLayoutProtocol.Query,
+                    0, 0, run!.Value, reconcileTrial?.Epoch ?? 0, reconcileTrial?.Revision ?? 0,
+                    reconcileTrial?.Geometry ?? 0, reconcileTrial?.Transaction ?? 0, id, 0, 0, 0, 0, 0, [])));
+            }
+        }
+    }
+    public bool Begin(byte kind, LayoutMessage basis, LayoutItem[]? draft, long now)
+    {
+        lock (gate)
+        {
+            var p = presence();
+            if (!p.Connected || p.RunId != basis.Run || p.RemoteIp != address || latest is null ||
+                latest.Epoch != basis.Epoch || latest.Revision != basis.Revision || latest.Geometry != basis.Geometry ||
+                operation is not null || Stopwatch.GetElapsedTime(receivedAt, now).TotalSeconds >= 4) return false;
+            if (kind == RemoteLayoutProtocol.Try && latest.State is 1 or 2) return false;
+            if (kind == RemoteLayoutProtocol.Keep && (latest.State != 2 || now >= deadline)) return false;
+            ulong txn = kind == RemoteLayoutProtocol.Try ? latest.Next : latest.Transaction;
+            operation = basis with { Kind = kind, State = 0, Error = 0, Transaction = txn, Request = ++request,
+                Remaining = 0, Serial = 0, Items = kind == RemoteLayoutProtocol.Try ? draft! : [] };
+            attempts = 0; uncertain = true; nextSend = 0;
+            reconcileTrial = null;
+            queries.Clear();
+        }
+        Poll(now); return true;
+    }
+    public void Accept(byte[] bytes, IPAddress source, long now)
+    {
+        var m = RemoteLayoutProtocol.Decode(bytes);
+        if (m?.Kind != RemoteLayoutProtocol.Snapshot) return;
+        lock (gate)
+        {
+            var p = presence();
+            if (!p.Connected || m.Run != p.RunId || source.ToString() != p.RemoteIp || p.RunId != run || address != p.RemoteIp) return;
+            bool queryReply = queries.Remove(m.Request, out long queryAt);
+            bool opReply = operation?.Request == m.Request;
+            if (m.Request != 0 && !queryReply && !opReply) return;
+            // Unsolicited snapshots may update an already observed epoch, never establish one.
+            if (latest is null && !queryReply && !opReply) return;
+            if (m.Request == 0 && m.State == 2 && latest?.State != 2) return; // Establish deadline from a timed request/reply.
+            if (latest is not null && (m.Epoch != latest.Epoch ? !queryReply : m.Serial <= latest.Serial)) return;
+            long transit = queryReply ? now - queryAt : opReply ? now - (nextSend - Stopwatch.Frequency) : 0;
+            long proposedDeadline = now + (long)(m.Remaining / 1000.0 * Stopwatch.Frequency) - Math.Max(0, transit);
+            if (latest?.Epoch == m.Epoch && latest.Transaction == m.Transaction && latest.State == 2 && m.State == 2)
+                deadline = Math.Min(deadline, proposedDeadline);
+            else deadline = proposedDeadline;
+            latest = m; receivedAt = now;
+            if (opReply || queryReply) { operation = null; reconcileTrial = null; uncertain = false; }
+        }
+    }
+}

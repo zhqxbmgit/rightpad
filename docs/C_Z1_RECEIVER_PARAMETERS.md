@@ -1,11 +1,25 @@
-# C-Z1 Receiver parameters — deployed implementation, 2026-10-10
+# C-Z1 Receiver parameters — source implementation, 2026-10-10
 
-The Windows Receiver panel, local M/C selection and exact-default runtime were
-deployed and accepted on 2026-10-10. This formal source commit includes the
-Receiver-owned mode dependency and excludes the separate FIR/Android drafts.
-The deployed package contained inactive FIR research support; normal Runtime
-never enables it, and the committed production paths retain that OFF behavior.
-No runtime parameter adjustment or redeployment accompanies the commit.
+Current status (2026-10-16 source audit): the Receiver-local mode selector and
+C parameter panel were deployed on 2026-10-10. The 2026-10-15 remote-layout
+delivery also deployed the cleaned source without FIR or Tau10. Current Tau
+remains 20–100 ms. The source-only cleanup and original validation stages below
+are historical records. No deployment or parameter change accompanies this Git
+delivery. See [GIT_DELIVERY_20261016.md](GIT_DELIVERY_20261016.md).
+
+Cleanup (2026-10-15): the unused M-R1 FIR experiment and Tau10 range expansion
+have been removed from source at the user's request. Tau accepts **20–100 ms**;
+the default remains 35 ms and the editor step remains 1 ms. M-R1 uses its direct
+reconstructed-position path without an additional FIR. Receiver-local M/C
+selection and the C parameter panel are retained. No deployment, restart or
+saved-settings change accompanies this cleanup.
+
+The Tau10 expansion failed its stationary-output safety gate: with damping .25,
+Amax20000 and Vmax30000, a C12 held-contact reversal still emitted reversing
+motion after 40 seconds. Its implementation and experiment-only tests are
+retired, not reclassified as passing. Historical evidence remains in
+[C_Z1_TAU10_VALIDATION.md](C_Z1_TAU10_VALIDATION.md) and
+[M_R1_FIXED_FIR_EXPERIMENT.md](M_R1_FIXED_FIR_EXPERIMENT.md).
 
 ## Panel and units
 
@@ -35,11 +49,18 @@ the editor, JSON load, RuntimeSettings validation, memory Apply, Motion request
 and dynamics Configure. At fixed DT=.004 and tau>=.020, r=DT/tau<=.2;
 r²+4*damping*r<4 throughout the allowed range for the uncapped semi-implicit
 spring. This linear check alone does not prove nonlinear capped behavior. The
-offline corner test also exercises tau/damping/A/V extremes against a fixed
+historical offline corner test also exercises tau/damping/A/V extremes against a fixed
 1000/-500 count step, verifies convergence and finite integer output, and tests
 glide at maximum speed/minimum deceleration. The initial Amin=1000 corner with
 tau20/damping.25/V30000 did not settle within 40 seconds, so Amin was tightened
 to 20000. That failed exploratory result did not become an accepted range.
+
+The retired lower-bound audit tested Tau10/12/15/20/35/100 and
+all other parameter endpoints, with eight damping levels. The 16,896 sampled
+trajectories are finite, capped and eventually stationary within 120 seconds.
+However, the separate stationary-output deployment gate fails at Tau10. Those
+numerical checks do not establish that the expanded range is safe to deploy or
+that all points of the continuous nonlinear parameter space have been proved.
 
 V<=30000 bounds ordinary integrated displacement to 120 counts per fixed step;
 the test allows two extra counts for fractional output and snap differences.
@@ -114,7 +135,7 @@ Position still integrates using the new velocity. C12, fixed DT=.004,
 skip/no-catch-up, Java-compatible rounding, successful-submit accounting, carry,
 release/glide state machine and hard aborts are unchanged. Static historical
 constants remain reference defaults for existing regression code; Step uses
-Parameters. M-R1's math, M8, Q0-C do not use C tuning values.
+Parameters. M-R1's math, M8 and Q0-C do not use C tuning values.
 
 Active diagnostics no longer print hard-coded caps/Tau for customized C. The
 snapshot Tau observation supports fractional ms. Optional MotionTrace stores the
@@ -134,14 +155,26 @@ field changes mode ownership or the original Saved Tau/Support semantics.
 
 ## Validation and evidence
 
+Source cleanup verification (2026-10-15): isolated managed Release and Debug
+builds passed with zero warnings/errors, reusing an existing native bridge
+without rebuilding or deploying it. Release full suite: **719/719 passed**.
+Debug C parameter suite: **37/37 passed**; Debug M-R1/default-Z1-related suite:
+**159/159 passed**. The fifteen FIR and six Tau10 experiment groups were retired
+with their implementations; the pre-removal Tau10 failure remains archived.
+All 266 unrelated source files matched their pre-cleanup hashes. Nine protected
+installation/settings files matched, and the original Receiver PID/start time
+remained unchanged. Saved Tau30 remains valid and was not rewritten.
+Evidence: ignored `windows/test-results/remove-fir-tau10-20261015/`.
+
+Historical C parameter implementation verification:
+
 Isolated Windows Release build: 0 warnings, 0 errors. Final full test run:
-**719 passed / 719 total / 0 failed**, including **37 new C parameter cases**.
-The full deployed workspace passed 734 tests, including 15 separate FIR research
-groups. This commit excludes those groups and keeps all 37 C parameter cases;
-its isolated 719-case suite is validated from the exact staged source.
+**734 passed / 734 total / 0 failed**, including **37 new C parameter cases**.
 The existing default C binary64/oracle, integer outputs/timestamps, release,
 missed wakes, carry and failure tests pass without changing their math oracle.
-Existing M-R1, historical M12/M-F1, Receiver-local mode regressions pass.
+Existing M-R1, historical M12/M-F1 and Receiver-local mode regressions pass.
+These counts describe the historical C parameter implementation before cleanup;
+the FIR-specific cases have since been retired with the unused experiment.
 
 Each of the seven parameters has both a single-variable dynamics check and a
 real ResampledMotion.Tick injection check. Amax-only synthetic reversal starts
@@ -171,18 +204,30 @@ overrides BuildVirtualHidBridge and reuses the existing DLL read-only; managed
 outputs go to `--artifacts-path`. Task-local APPDATA/DOTNET_CLI_HOME and a cleared
 NuGet config avoid touching the user's tool configuration.
 
-## Deployment status and rollback
+## Historical deployment and rollback plan
 
-The controlled Windows Receiver deployment completed on 2026-10-10, with a
-verified full old-installation/configuration backup and successful runtime/UI
-acceptance. Receiver-owned M/C, sensitivity10/10 and all seven default C values
-were retained. No Broker/driver or Android deployment was required or performed.
-Deployment manifests and machine-specific diagnostic logs remain local evidence,
-not repository files. No new deployment is part of the source commit.
+This plan was recorded before the subsequent 2026-10-15 delivery documented in
+[REMOTE_LAYOUT_DELIVERY_20261015.md](REMOTE_LAYOUT_DELIVERY_20261015.md).
+It is retained for context, not as an instruction to redeploy during Git delivery.
 
-Subsequent C adjustments require neither rebuild nor Receiver restart: edit,
-Apply or Save, then wait for the visible safe boundary. The 80000/160000 shortcuts
-do not auto-apply/save. Restore C defaults changes only the draft until applied
-or saved. Binary rollback uses the verified complete installation backup and
-controlled tray Exit/relaunch; preserve later user settings and resolve conflicts
-before any configuration restore. Never use Git cleanup to recover production.
+Only after separate deployment authorization: back up the current installation,
+settings.json and current worktree; retain Receiver-owned mode behavior and
+verify the candidate excludes the retired experiments; build with the isolated target; verify logs and
+the ordinary M/C launch behavior; then perform the authorized controlled Receiver
+shutdown and install/relaunch using the approved procedure. Native bridge,
+Broker/Driver and Android need no change for this C-only feature. Validate default
+C first, then one fixed parameter at a time in real games.
+
+Once that version is deployed, subsequent C adjustments require neither rebuild
+nor Receiver restart: edit, Apply or Save, and wait for the visible safe boundary.
+80000 and 160000 shortcuts do not auto-apply or auto-save.
+
+For feel rollback on the new version, Restore C defaults and Save, then wait for
+idle. For binary rollback, separately authorize controlled shutdown, restore the
+backed-up complete old installation and its exact settings.json, and relaunch.
+Do not use Git reset/restore/clean/stash to roll back a workspace with unrelated
+uncommitted changes. The old Receiver does not consume the new C object; restoring
+the exact backed-up settings avoids any old-schema rewrite of unknown fields.
+
+The original source-only stage preserved its then-running Receiver. Subsequent
+deployment status is recorded at the top of this document.

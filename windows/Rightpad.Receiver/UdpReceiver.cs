@@ -29,6 +29,7 @@ internal sealed class UdpReceiver : IDisposable
     private readonly FlightRecorder? flightRecorder;
     private readonly GamepadSessionProcessor? gamepad;
     private readonly ControlConfigChannel? controls;
+    public RemoteLayoutClient? Layout { get; }
     private readonly HashSet<ulong> retiredRunIds = new();
     private SenderPresence presence = new();
     private int motionProfile;
@@ -77,6 +78,7 @@ internal sealed class UdpReceiver : IDisposable
         this.flightRecorder = flightRecorder;
         this.gamepad = gamepad;
         if (settings is not null && controlSend is not null) controls = new(settings, () => Presence, controlSend, output);
+        if (controlSend is not null) Layout = new(() => Presence, controlSend);
         logger = new RawSampleLogger(output, detailedLogging);
         flightRecorder?.Event("udp_bound", ("endpoint", LocalEndpoint.ToString()));
     }
@@ -174,6 +176,11 @@ internal sealed class UdpReceiver : IDisposable
     {
         CheckTimeouts(now); // Invalid/old traffic must not postpone expiry, even at the recovery boundary.
         Statistics.RecordReceived();
+        if (RemoteLayoutProtocol.Matches(bytes))
+        {
+            Layout?.Accept(bytes, remote.Address, now);
+            return; // Layout traffic never admits or renews Touch presence or input sequences.
+        }
         if (bytes.Length >= 2 && bytes[1] == 7)
         {
             if (!PacketDecoder.TryDecodeMotionProfile(bytes, out var profile)) Statistics.RecordInvalid();

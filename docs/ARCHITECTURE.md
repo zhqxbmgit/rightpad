@@ -1,14 +1,38 @@
 # rightpad System Architecture
 
-Current Receiver update (2026-10-10; deployed and verified): the normal GUI owns
-independently persisted M_R1/C_Z1 selection and seven C-Z1 parameters. Validated
-complete snapshots apply at the existing safe idle chain boundary. Legacy Android
-type7 is validated telemetry and cannot override Receiver selection. Android is
-unchanged in this commit and deployment; its existing M/C control may still send
-legacy packets. M8/Q0-C/1 ms and default C12/4 ms dynamics remain unchanged.
-See [RECEIVER_TOUCH_MODE.md](RECEIVER_TOUCH_MODE.md) and
-[C_Z1_RECEIVER_PARAMETERS.md](C_Z1_RECEIVER_PARAMETERS.md). Historical baseline
-descriptions below record earlier authority and fixed-constant implementations.
+Current delivery status (2026-10-16 source audit): Receiver-local M/C and the
+C-Z1 panel were deployed on 2026-10-10. The 2026-10-15 delivery deployed the
+Android reserved no-op control and remote layout transactions, followed by the
+dedicated maximized editor and black, aspect-preserving preview. The user has
+accepted the current layout editor appearance. This does not establish new
+human game-feel acceptance. See [GIT_DELIVERY_20261016.md](GIT_DELIVERY_20261016.md)
+for source/evidence correspondence and the Git-only delivery scope.
+
+Receiver Controls can remotely edit the Android-owned screen layout through
+independent RPLY transactions on the existing workers and ports. Drafts remain
+Windows-local; Android owns trial expiry, atomic persistence and recovery.
+See [REMOTE_LAYOUT_PROTOCOL.md](REMOTE_LAYOUT_PROTOCOL.md). Motion, gesture
+behavior settings and all existing packet formats remain independent.
+
+Implemented C-Z1 contract (2026-10-10): Windows owns independently persisted C-Z1
+parameter snapshots and a Motion-page panel. Validated full snapshots apply only
+under the existing motion gate at completely idle chains; busy input/output is
+preserved. No new motion thread, device lifetime, adaptive parameter or Android
+change. Exact defaults and all M-R1 behavior remain. See
+[C_Z1_RECEIVER_PARAMETERS.md](C_Z1_RECEIVER_PARAMETERS.md).
+
+Implemented mode contract (original source stage 2026-10-08): normal GUI
+mode authority is now Receiver-local `RuntimeSettings.TouchMode` (`M_R1`/`C_Z1`).
+Motion-page clicks save through SettingsFileStore before publication. Existing
+ResampledMotion applies the request only at its safe idle boundary; Selected,
+Pending and Active are displayed separately. Android's `rightpad.input.mode`
+remains visible, editable and persisted with its existing geometry, but is a
+reserved no-op with a static M label. Type7 stays validated legacy telemetry and
+cannot select an engine on connection, new run, reconnection or retransmission.
+Fixed unbuffered capture, M-R1/C-Z1 dynamics and all other wire formats remain
+unchanged. See [RECEIVER_TOUCH_MODE.md](RECEIVER_TOUCH_MODE.md) for the source
+contract and validation. Historical stage descriptions below retain their
+original dates; the current delivery status above supersedes old authority notes.
 
 Current selected baseline (2026-10-03): Touchpad R&D is paused. The normal
 Android App uses fixed unbuffered Mouse DOWN acquisition and the restored M/C

@@ -6,6 +6,7 @@ internal enum ReceiverPage { Overview, Motion, Tap, Diagnostics, Controls }
 
 internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel settings, StartupViewModel startup) : ObservableModel
 {
+    public ReceiverRuntime Runtime => runtime;
     private bool CinematicActive => Stats.ActiveMotionProfile == "C";
     private bool DirectReconstruction => runtime.ActiveMotionConfiguration.IsDirectReconstruction;
     public string MotionQuantizerName => CinematicActive ? "quantizer=Java-compatible rounding" : $"quantizer={MotionModes.QuantizerName(runtime.ActiveMotionMode)}";

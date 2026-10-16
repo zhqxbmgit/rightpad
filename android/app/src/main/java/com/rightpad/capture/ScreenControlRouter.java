@@ -11,20 +11,24 @@ final class ScreenControlRouter {
         final String label;
         Profile(String label) { this.label = label; }
     }
-    // UI-thread, Activity-lifetime state only. C1 does not shape or route Mouse differently.
-    private Profile profile = Profile.NORMAL;
     private Owner owner = Owner.NONE;
     private String controlId;
     private int pointerId = -1;
 
     Owner owner() { return owner; }
     String controlId() { return controlId; }
-    Profile profile() { return profile; }
+    // Static retained label/legacy wire identity, not a local or Receiver mode selection.
+    Profile profile() { return Profile.NORMAL; }
     boolean modeUp(int count, int pointer) {
         if (!accepts(count, pointer, false) || owner != Owner.MODE) return false;
-        profile = profile == Profile.NORMAL ? Profile.CINEMATIC : Profile.NORMAL;
+        // Reserved control consumes the matching release without invoking a business action.
         cancel();
         return true;
+    }
+    static String controlAt(float x, float y, Map<String, ControlRect> controls) {
+        for (Map.Entry<String, ControlRect> entry : controls.entrySet())
+            if (entry.getValue().contains(x, y)) return entry.getKey();
+        return null;
     }
     Owner down(float x, float y, int pointer, boolean settings, boolean power,
             boolean mouseAllowed, Map<String, ControlRect> controls) {
@@ -33,12 +37,10 @@ final class ScreenControlRouter {
         if (settings) owner = Owner.SETTINGS;
         else if (power) owner = Owner.POWER;
         else {
-            for (Map.Entry<String, ControlRect> entry : controls.entrySet()) {
-                if (entry.getValue().contains(x, y)) {
-                    owner = MODE_ID.equals(entry.getKey()) ? Owner.MODE : Owner.SCREEN_CONTROL;
-                    controlId = entry.getKey();
-                    return owner;
-                }
+            controlId = controlAt(x, y, controls);
+            if (controlId != null) {
+                owner = MODE_ID.equals(controlId) ? Owner.MODE : Owner.SCREEN_CONTROL;
+                return owner;
             }
             owner = mouseAllowed ? Owner.MOUSE : Owner.NONE;
         }

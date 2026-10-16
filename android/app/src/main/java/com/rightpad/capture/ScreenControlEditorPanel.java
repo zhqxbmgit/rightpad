@@ -60,6 +60,7 @@ final class ScreenControlEditorPanel extends LinearLayout {
         save = button(buttons, "Save", () -> {
             try {
                 controls.layout.save(controls.store);
+                controls.localLayoutRevision++;
                 exit.run();
             } catch (IOException | IllegalArgumentException error) {
                 status.setText("Save failed: " + error.getMessage());

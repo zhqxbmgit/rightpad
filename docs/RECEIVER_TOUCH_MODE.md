@@ -1,7 +1,12 @@
 # Receiver-owned touch mode (2026-10-08)
 
-Receiver implementation deployed and accepted 2026-10-10. This document covers
-Windows mode ownership only; Android drafts and FIR experiments are excluded.
+Current status (2026-10-16 source audit): Receiver-local selection was deployed
+on 2026-10-10; the Android reserved no-op control was deployed with remote layout
+on 2026-10-15. The implementation and deferred-deployment sections below record
+their original 2026-10-08 stage. The historical layout coordinates are test
+fixtures, not the phone's current authoritative layout. No deployment or user
+data change accompanies this Git delivery. See
+[GIT_DELIVERY_20261016.md](GIT_DELIVERY_20261016.md).
 
 ## Audited old control chain
 
@@ -67,14 +72,30 @@ all quantizer/kernel/clock source files are unchanged. M keeps direct M8, Q0-C,
 damping1, Amax80000, Vmax15000, deceleration120000, thresholds0.5/2, Java rounding,
 successful-submit ledger, natural carry and true glide.
 
-## Android compatibility
+## Android reserved control and user layout
 
-Android source is unchanged in this commit. Its existing control and Sender may
-still transmit legacy type7. Windows validates those packets as telemetry only.
-Receiver-local persisted selection remains authoritative on reconnect/new run.
-The independent Android reserved-control draft is not included or deployed.
+The original definition, stable ID `rightpad.input.mode`, static M drawing identity,
+green/white appearance, Mode editor label, rectangular hit area, drag/resize and
+normalized persistence remain. Router has no mutable selected mode. Matching UP
+only clears ownership. DOWN remains consumed, MOVE never transfers it, and
+CANCEL/wrong/second pointer clears it. Orphan events after reserved release/cancel
+are consumed until the next DOWN, avoiding indirect safety packets.
 
-## Offline verification and deferred deployment
+The idle reserved contact emits no type7, Mouse, Xbox, haptic or other control
+action and does not cancel an X/B tap pulse. A malformed replacement of an actually
+live input owner retains existing safety cancellation. X/B definitions, gesture
+engines, mappings, feedback policies and gamepad transport are unchanged. The same
+control hit helper is used for the no-op check and actual router selection,
+preserving overlap order and Settings/Power priority. No mapping framework is added.
+
+Accepted user geometry at View 1200x2670 remains M=(513,772,264,1881),
+X=(0,636,68,2034), B=(1041,506,159,2164). Left-side X is intentional.
+No code migrates, initializes or writes this layout. LayoutStore and Editor are
+unchanged. The complete source/backup SHA256 before work was
+`d133f20e7a2fac6a886028af8f7679c23a25ea0149c4e305f5737c82ed68c522`.
+Backup: `C:\RightpadBackups\rightpad-layout-20261008-172148.properties`.
+
+## Historical offline verification and deferred deployment
 
 ReceiverTouchModeTests covers strict schema/fallback, disk-first failure handling,
 other draft preservation, real fake-backed runtime/GUI selection, restart, old
@@ -82,6 +103,14 @@ type7 in both directions, new-run reconnect, held-contact Pending/Active,
 unchanged device creation counts, shared raw input to native Mouse, X/B full-state
 output, exact old-chain output/timing through M completion or C glide, fresh
 new-mode reconstruction/ledger equality and finite parking without drift.
+
+Android's formal JVM entry includes ReservedControlTests with the exact accepted
+layout fixture in a temporary directory, untouched source bytes, no-op owner and
+pointer cleanup, generic drag/numeric resize/Cancel and unchanged X/B mappings.
+Existing protocol/sender/config/haptic/gesture and fixed unbuffered regressions
+remain. ScreenControlsSmoke now asserts no-op tap/hold/fault cleanup, no actual
+type7/Mouse/Xbox packets or local haptics, and static identity. It is compiled but
+not run on the user's phone in this stage.
 
 Old tests that reset engine selection to M on sender-run change conflict with the
 new local-authority requirement; they now retain local C12 while still asserting
@@ -96,7 +125,9 @@ override that copies the existing native bridge without rebuilding/publishing it
 Default test execution uses fake backends and temporary loopback endpoints.
 Real ADB/instrumentation/input/HID smoke is excluded to preserve current usage.
 
-Windows Receiver was deployed and accepted on 2026-10-10 together with the C-Z1
-parameter panel. Broker/driver and Android were preserved. No input injection or
-human game A/B was performed. M-R1 and sensitivity10/10 remained unchanged.
-The formal commit excludes FIR research, keeping its default OFF behavior.
+Only after explicit deployment authorization: snapshot/re-hash phone layout and
+Receiver settings, safely update Android in place without clear/uninstall, stop
+the Receiver at an agreed idle point, replace its binaries, start normal GUI,
+verify restored Selected/Active, then exercise both modes/no-op button/Xbox and
+confirm exact layout bytes and INPUT/XBOX/CONFIG health. No Broker/driver/license
+change is needed. The current task does not perform any of those steps.

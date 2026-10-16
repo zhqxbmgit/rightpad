@@ -5,6 +5,8 @@ $sourceDirectory = Join-Path $androidRoot 'app/src/main/java/com/rightpad/captur
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 $javacPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/javac.exe' } else { 'javac' }
 $javaPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/java.exe' } else { 'java' }
+& $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $sourceDirectory 'ControlRect.java') (Join-Path $sourceDirectory 'RemoteLayoutProtocol.java') (Join-Path $sourceDirectory 'RemoteLayoutSession.java')
+if ($LASTEXITCODE -ne 0) { throw 'Remote layout test compilation failed.' }
 & $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $androidRoot 'app/src/androidTest/java/com/rightpad/capture/LayoutTestFileGuard.java') (Join-Path $PSScriptRoot 'LayoutTestFileGuardTests.java')
 if ($LASTEXITCODE -ne 0) { throw 'Layout file guard test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.LayoutTestFileGuardTests
@@ -41,6 +43,10 @@ $controlSources = @('ControlRect', 'SlideControlGesture', 'SlideControlLRGesture
 if ($LASTEXITCODE -ne 0) { throw 'Screen controls test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.ScreenControlsTest
 if ($LASTEXITCODE -ne 0) { throw 'Screen controls tests failed.' }
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'RemoteLayoutTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Remote layout test compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.RemoteLayoutTests
+if ($LASTEXITCODE -ne 0) { throw 'Remote layout tests failed.' }
 
 & $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $sourceDirectory 'GamepadAggregator.java') (Join-Path $PSScriptRoot 'GamepadProtocolTests.java') (Join-Path $PSScriptRoot 'GamepadSenderTests.java') (Join-Path $PSScriptRoot 'GamepadAggregatorTests.java')
 if ($LASTEXITCODE -ne 0) { throw 'Gamepad test compilation failed.' }
@@ -84,3 +90,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Motion profile tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Fixed unbuffered test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.FixedUnbufferedAcquisitionTests $androidRoot
 if ($LASTEXITCODE -ne 0) { throw 'Fixed unbuffered tests failed.' }
+
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'ReservedControlTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Reserved control test compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.ReservedControlTests $androidRoot
+if ($LASTEXITCODE -ne 0) { throw 'Reserved control tests failed.' }

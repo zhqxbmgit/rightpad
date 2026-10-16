@@ -26,6 +26,7 @@ final class ScreenControls {
     private final Paint selection = new Paint();
     private final float density;
     ScreenControlLayoutEditor layout;
+    long localLayoutRevision;
     Runnable draftChanged = () -> { };
     Runnable boundsChanged = () -> { };
     private boolean editorContact;
@@ -44,8 +45,8 @@ final class ScreenControls {
                 GamepadState.B, GamepadState.Y, GamepadState.A));
         register(ScreenControlDefinition.lr(SlideControlLRDefinition.phaseSix(), Math.round(64 * density), .15f, .55f,
                 GamepadState.X, GamepadState.DPAD_LEFT, GamepadState.DPAD_RIGHT, GamepadState.DPAD_UP));
-        // Mode keeps the same layout identity; its contact belongs to the router,
-        // never to a gamepad gesture or feedback policy.
+        // Reserved no-op control keeps its label, geometry and editor identity.
+        // Its contact belongs to the router, never to a gamepad gesture or feedback policy.
         register(new ScreenControlDefinition(MODE_ID, "Mode", SlideControlGesture.Config.phaseOne(density),
                 Math.round(64 * density), .42f, .55f));
         store = new ScreenControlLayoutStore(new File(host.getContext().getFilesDir(), "screen-controls.properties"));

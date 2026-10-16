@@ -21,6 +21,9 @@ final class HapticFeedbackListener implements Closeable {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final HapticFeedbackGate validation = new HapticFeedbackGate();
     private final Runnable feedback;
+    java.util.function.Consumer<byte[]> layouts = ignored -> { };
+    private final java.util.concurrent.atomic.AtomicReference<Runnable> pendingLayout = new java.util.concurrent.atomic.AtomicReference<>();
+    private final java.util.concurrent.atomic.AtomicBoolean layoutPosted = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.function.Consumer<ControlConfigProtocol.Snapshot> configs;
     private final java.util.function.BiConsumer<StatusProtocol.Snapshot, Long> statuses;
     private final Object lifecycle = new Object();
@@ -55,6 +58,8 @@ final class HapticFeedbackListener implements Closeable {
         }
         validation.configure(address, runId);
         ui.removeCallbacksAndMessages(null);
+        pendingLayout.set(null);
+        layoutPosted.set(false);
     }
     void expectUp(long runId, long sessionId, long sequence) {
         validation.expectUp(runId, sessionId, sequence, System.nanoTime());
@@ -80,6 +85,19 @@ final class HapticFeedbackListener implements Closeable {
                     while (!closed && current == identity) {
                         DatagramPacket packet = new DatagramPacket(bytes, bytes.length);
                         opened.receive(packet);
+                        if (RemoteLayoutProtocol.matches(bytes, packet.getLength())) {
+                            byte[] layout = java.util.Arrays.copyOf(bytes, packet.getLength());
+                            InetAddress source = packet.getAddress();
+                            pendingLayout.set(() -> {
+                                if (!closed && current == identity && current.address.equals(source)) layouts.accept(layout);
+                            });
+                            if (layoutPosted.compareAndSet(false, true)) ui.post(() -> {
+                                Runnable action = pendingLayout.getAndSet(null);
+                                layoutPosted.set(false);
+                                if (action != null) action.run();
+                            });
+                            continue;
+                        }
                         if (StatusProtocol.isStatus(bytes, packet.getLength())) {
                             var snapshot = StatusProtocol.decode(bytes, packet.getLength());
                             InetAddress source = packet.getAddress();

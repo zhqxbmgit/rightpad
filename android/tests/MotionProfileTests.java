@@ -54,26 +54,31 @@ public final class MotionProfileTests {
             long run = sender.getSenderRunId();
             check(UdpTouchSenderTest.receiveRaw(a)[1] == 4, "heartbeat precedes profile");
             triple(a, run, 0, 0); quiet(a);
-            // Exercise the real C1 owner and its matching-UP commit before publishing its value.
+            // The production button consumes release and does not publish any mode change.
             ScreenControlRouter router = new ScreenControlRouter();
             Map<String, ControlRect> rects = Map.of(ScreenControlRouter.MODE_ID, new ControlRect(0, 0, 20, 20));
             check(router.profile() == ScreenControlRouter.Profile.NORMAL, "fresh UI M");
             router.down(5, 5, 1, false, false, true, rects);
             check(router.modeUp(1, 1), "matching UP commits");
-            sender.publishProfile(router.profile() == ScreenControlRouter.Profile.NORMAL ? 0 : 1);
+            check(router.profile() == ScreenControlRouter.Profile.NORMAL && router.owner() == ScreenControlRouter.Owner.NONE,
+                    "reserved no-op keeps static identity and clears owner");
+            quiet(a);
+            // Synthetic legacy sender API tests retain wire compatibility; no production button calls it.
+            sender.publishProfile(1);
             triple(a, run, 1, 1); quiet(a);
             sender.publishProfile(1); quiet(a);
             sender.setForeground(false); quiet(a, true);
             sender.setForeground(true);
             triple(a, run, 1, 1);
-            check(sender.getSenderRunId() == run && router.profile() == ScreenControlRouter.Profile.CINEMATIC, "same-run pause/resume preserves C");
+            check(sender.getSenderRunId() == run && router.profile() == ScreenControlRouter.Profile.NORMAL, "same-run pause/resume retains static reserved label");
             sender.setTarget(new InetSocketAddress(b.getLocalAddress(), b.getLocalPort()));
             long nextRun = sender.getSenderRunId();
             check(nextRun != run, "new route rotates run");
             check(UdpTouchSenderTest.receiveRaw(b)[1] == 4, "new route heartbeat first");
             triple(b, nextRun, 0, 1); quiet(a, true);
             router.down(5, 5, 1, false, false, true, rects); check(router.modeUp(1, 1), "C to M UP");
-            sender.publishProfile(router.profile() == ScreenControlRouter.Profile.NORMAL ? 0 : 1);
+            quiet(b);
+            sender.publishProfile(0);
             triple(b, nextRun, 1, 0); quiet(b);
             // A no-target change survives until the next ready route; Touch sequence stays zero.
             sender.setTarget(null); sender.publishProfile(1); quiet(a); quiet(b);

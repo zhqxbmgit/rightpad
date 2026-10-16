@@ -1,5 +1,11 @@
 <UserControl x:Class="Rightpad.Receiver.ControlsView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:Rightpad.Receiver">
-  <StackPanel><TextBlock Text="Controls" Style="{StaticResource PageTitle}"/>
+  <StackPanel>
+    <TextBlock Text="Controls" Style="{StaticResource PageTitle}"/>
+    <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel>
+      <TextBlock Text="手机按键布局与大小" Style="{StaticResource SectionTitle}"/>
+      <Button Content="打开大布局编辑器" AutomationProperties.AutomationId="OpenRemoteLayoutEditor" Click="OpenLayoutEditor" HorizontalAlignment="Left" MinHeight="46" MinWidth="210"/>
+      <TextBlock Text="在独立大窗口查看完整布局。编辑仅改变电脑草稿，点击试用后才在手机生效。" Style="{StaticResource Muted}" FontSize="13" Margin="0,10,0,0"/>
+    </StackPanel></Border>
     <ItemsControl ItemsSource="{Binding Settings.Controls}"><ItemsControl.ItemTemplate><DataTemplate>
       <Border Style="{StaticResource Card}"><StackPanel MaxWidth="720" HorizontalAlignment="Left">
         <TextBlock Text="{Binding Name}" Style="{StaticResource SectionTitle}"/>

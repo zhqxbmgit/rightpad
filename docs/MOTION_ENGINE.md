@@ -1,14 +1,26 @@
 # rightpad Motion Engine Design
 
-Current Receiver update (2026-10-10; deployed and verified): the normal GUI owns
-independently persisted M_R1/C_Z1 selection and seven C-Z1 parameters. Validated
-complete snapshots apply at the existing safe idle chain boundary. Legacy Android
-type7 is validated telemetry and cannot override Receiver selection. Android is
-unchanged in this commit and deployment; its existing M/C control may still send
-legacy packets. M8/Q0-C/1 ms and default C12/4 ms dynamics remain unchanged.
-See [RECEIVER_TOUCH_MODE.md](RECEIVER_TOUCH_MODE.md) and
-[C_Z1_RECEIVER_PARAMETERS.md](C_Z1_RECEIVER_PARAMETERS.md). Historical baseline
-descriptions below record earlier authority and fixed-constant implementations.
+Current delivery status (2026-10-16 audit): Receiver-local M/C and C parameters
+were deployed on 2026-10-10; the 2026-10-15 remote-layout delivery also deployed
+the Android reserved no-op control and source cleanup without FIR/Tau10. This
+Git delivery changes no Motion code or running configuration and establishes no
+new human game-feel result. See [GIT_DELIVERY_20261016.md](GIT_DELIVERY_20261016.md).
+
+Implemented C parameter contract (2026-10-10): independent Receiver C-Z1 parameter
+snapshots now expose Amax/Vmax/Tau/damping/glide/stop thresholds. Defaults remain
+exact Z1; explicit Apply or disk-first Save waits for the existing completely idle
+motion-chain boundary. C12, fixed 4 ms, integration/rounding/carry/glide and M-R1
+remain unchanged. Historical fixed-constant descriptions below record their
+original stages. See [C_Z1_RECEIVER_PARAMETERS.md](C_Z1_RECEIVER_PARAMETERS.md).
+
+Implemented control-authority contract (original source stage 2026-10-08): normal GUI uses
+Receiver-local persisted `touchMode` (`M_R1`/`C_Z1`) and the existing safe idle
+RequestProfile boundary. Android type7 is non-authoritative telemetry; its
+existing Mode control is reserved no-op. This changes request ownership and
+GUI/settings, not M-R1 or C-Z1 math, parameters, cadence, reconstruction,
+quantization, glide or completion rules. See
+[RECEIVER_TOUCH_MODE.md](RECEIVER_TOUCH_MODE.md). Deployed/historical notes below
+remain evidence of their original stages.
 
 Current selected baseline (2026-10-03): Touchpad R&D is paused. The deployed
 Receiver is explicitly launched as `M_R1`, paired with the normal Android App's

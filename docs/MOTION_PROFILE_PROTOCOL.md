@@ -1,14 +1,47 @@
 # MOTION_PROFILE_STATE v2
 
-Current Receiver update (2026-10-10; deployed and verified): the normal GUI owns
-independently persisted M_R1/C_Z1 selection and seven C-Z1 parameters. Validated
-complete snapshots apply at the existing safe idle chain boundary. Legacy Android
-type7 is validated telemetry and cannot override Receiver selection. Android is
-unchanged in this commit and deployment; its existing M/C control may still send
-legacy packets. M8/Q0-C/1 ms and default C12/4 ms dynamics remain unchanged.
-See [RECEIVER_TOUCH_MODE.md](RECEIVER_TOUCH_MODE.md) and
-[C_Z1_RECEIVER_PARAMETERS.md](C_Z1_RECEIVER_PARAMETERS.md). Historical baseline
-descriptions below record earlier authority and fixed-constant implementations.
+## Current authority
+
+The Receiver-local authority implemented on 2026-10-08 was deployed on
+2026-10-10. The Android reserved-control behavior below was deployed with remote
+layout on 2026-10-15. Original historical authority notes remain below; the
+2026-10-16 Git delivery does not redeploy either component. See
+[GIT_DELIVERY_20261016.md](GIT_DELIVERY_20261016.md).
+
+Receiver-local committed `RuntimeSettings.TouchMode` selects `M_R1` or `C_Z1`.
+The normal GUI Motion page saves a direct M/C click with SettingsFileStore before
+publishing the immutable setting. Existing RequestProfile applies only at safe
+idle. GUI Selected/Pending/Active distinguish persisted choice from actual motion.
+See [RECEIVER_TOUCH_MODE.md](RECEIVER_TOUCH_MODE.md).
+
+The wire format below is unchanged: v2/type7, 16 bytes, offsets unchanged and
+reserved byte15=0. UdpReceiver retains strict validation, current-run/source
+correlation, wrap ordering, malformed accounting and independent watermark.
+`CurrentMotionProfile` is now Android telemetry only; neither a type7 update nor
+a new run calls RequestProfile. Reconnection/input invalidation may reset old
+motion work, but always retains the Receiver-local selected request.
+RuntimeStatsSnapshot stores Android telemetry separately from local Requested
+and Active, so diagnostics cannot promote an old Android value into authority.
+
+Android's existing `rightpad.input.mode` keeps the same registry, rendering,
+geometry, hit routing, layout editor and persistence. Router has no mutable
+selected profile; its `profile()` returns only the static M drawing identity.
+TouchCaptureView never calls publishProfile. Reserved DOWN/MOVE/UP/CANCEL and
+orphan follow-up events consume/clear contact without Mouse/Xbox/type7/haptics.
+Idle reserved DOWN bypasses lifecycle safety Neutral; replacing an actually live
+input owner still performs necessary existing cancellation. Fixed unbuffered
+capture remains independent of Receiver M/C.
+
+The existing Sender compatibility slot still sends default NORMAL/sequence zero
+after admission, resume or target transition using its worker/socket. The legacy
+synthetic publication API remains wire-tested. These bytes never choose Receiver
+motion; no new reverse mode/status protocol is introduced.
+
+## Deployed baseline and historical authority contract
+
+The following control-authority statements describe the pre-migration deployed
+baseline and historical experiments. They are superseded in new source by the
+section above; the original wire details and historical motion evidence remain.
 
 Current selected baseline (2026-10-03): Touchpad R&D is paused. The deployed
 Receiver uses the explicit `M_R1` identity, and Android uses fixed unbuffered

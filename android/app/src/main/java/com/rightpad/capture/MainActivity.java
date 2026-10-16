@@ -26,6 +26,7 @@ public final class MainActivity extends Activity {
     private UdpTouchSender udpSender;
     private ReceiverDiscoveryClient discovery;
     private HapticFeedbackListener haptics;
+    private RemoteLayoutBridge remoteLayout;
     private final InputHealthTracker health = new InputHealthTracker();
     private final android.os.Handler healthUi = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable expireHealth = this::refreshHealth;
@@ -58,6 +59,7 @@ public final class MainActivity extends Activity {
         root = new android.widget.FrameLayout(this);
         root.addView(captureView);
         setContentView(root);
+        remoteLayout = new RemoteLayoutBridge(captureView, udpSender);
         captureView.controls.boundsChanged = this::closeEditor;
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
         udpSender.enableControlRequests();
@@ -80,6 +82,7 @@ public final class MainActivity extends Activity {
             }
         });
         udpSender.setUpObserver(haptics::expectUp);
+        haptics.layouts = remoteLayout::receive;
         discovery = new ReceiverDiscoveryClient(this, this::receiverChanged);
         updateBattery(registerReceiver(null, batteryFilter));
         applyImmersiveMode();
@@ -131,6 +134,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        remoteLayout.abort();
         if (batteryReceiverRegistered) {
             unregisterReceiver(batteryReceiver);
             batteryReceiverRegistered = false;
@@ -150,6 +154,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        remoteLayout.abort();
         haptics.close();
         discovery.close();
         udpSender.close();
@@ -162,6 +167,7 @@ public final class MainActivity extends Activity {
     private void receiverChanged(java.net.InetSocketAddress target, String id) {
         if (!foreground) return;
         if (!java.util.Objects.equals(receiverTarget, target) || !java.util.Objects.equals(receiverId, id)) {
+            remoteLayout.abort();
             health.configure(false, 0);
             healthUi.removeCallbacks(expireHealth);
             haptics.setActive(null, 0);
@@ -195,6 +201,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showSettings() {
+        remoteLayout.abort();
         captureView.setInputModal(true);
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
                 .setTitle("Settings")
@@ -207,6 +214,7 @@ public final class MainActivity extends Activity {
     }
 
     private void openEditor() {
+        remoteLayout.abort();
         captureView.setInputModal(true);
         captureView.controls.layout.begin();
         editorPanel = new ScreenControlEditorPanel(this, captureView.controls, captureView, this::closeEditor);

@@ -31,6 +31,7 @@ final class ScreenControlLayoutEditor {
         numericValid = true;
     }
     boolean editing() { return draft != null; }
+    Map<String, ControlRect> committedLayout() { return java.util.Collections.unmodifiableMap(committed); }
     Map<String, ControlRect> layout() {
         return java.util.Collections.unmodifiableMap(editing() ? draft : committed);
     }

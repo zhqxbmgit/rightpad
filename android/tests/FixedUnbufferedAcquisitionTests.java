@@ -34,7 +34,7 @@ public final class FixedUnbufferedAcquisitionTests {
             var before = router.profile();
             check(!router.modeUp(1, 9) && router.profile() == before, "wrong pointer cannot toggle");
             router.down(65, 5, 0, false, false, true, controls);
-            check(router.modeUp(1, 0) && router.profile() != before, "matching UP changes actual profile");
+            check(router.modeUp(1, 0) && router.profile() == before, "matching UP releases reserved contact without selecting a mode");
             check(router.down(100, 100, 0, true, false, true, controls) == ScreenControlRouter.Owner.SETTINGS,
                     "Settings is not Mouse");
             check(router.down(100, 100, 0, false, true, true, controls) == ScreenControlRouter.Owner.POWER,

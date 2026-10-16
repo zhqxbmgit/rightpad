@@ -52,6 +52,15 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             Volatile.Read(ref run.Motion) is ResampledMotion motion ? motion.CaptureCz1State() : null;
     }
     public IPEndPoint? LocalEndpoint => Volatile.Read(ref current)?.Receiver?.LocalEndpoint;
+    public RemoteLayoutClient? Layout
+    {
+        get
+        {
+            var run = Volatile.Read(ref current);
+            return run is not null && (ReceiverState)Volatile.Read(ref run.State) == ReceiverState.Running
+                ? run.Receiver?.Layout : null;
+        }
+    }
     public Task Completion => Volatile.Read(ref current)?.Task ?? Task.CompletedTask;
     public IPEndPoint? DiscoveryEndpoint => Volatile.Read(ref current)?.Discovery?.LocalEndpoint;
 

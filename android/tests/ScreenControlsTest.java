@@ -41,12 +41,12 @@ public final class ScreenControlsTest {
         e.endDrag();
     }
     public static void main(String[] args) throws Exception {
-        test("C1 fresh M, MODE ownership, matching UP toggles once, cancellation and Mouse parity", () -> {
+        test("Reserved M identity, MODE ownership, no-op release, cancellation and Mouse parity", () -> {
             var r = new ScreenControlRouter();
             var areas = Map.of(ScreenControlRouter.MODE_ID, new ControlRect(100, 100, 100, 200));
             check(r.profile() == ScreenControlRouter.Profile.NORMAL);
             for (var expected : new ScreenControlRouter.Profile[] {
-                    ScreenControlRouter.Profile.CINEMATIC, ScreenControlRouter.Profile.NORMAL }) {
+                    ScreenControlRouter.Profile.NORMAL, ScreenControlRouter.Profile.NORMAL }) {
                 check(r.down(110, 110, 7, false, false, true, areas) == ScreenControlRouter.Owner.MODE);
                 check(r.accepts(1, 7, false)); // MOVE coordinates cannot transfer ownership.
                 check(r.modeUp(1, 7) && r.profile() == expected);

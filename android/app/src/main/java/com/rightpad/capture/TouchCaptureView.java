@@ -17,6 +17,19 @@ import android.view.View;
 import android.view.WindowInsets;
 
 final class TouchCaptureView extends View {
+    Runnable beforeRemoteDown = () -> { };
+    Runnable remoteGeometryChanged = () -> { };
+    boolean remoteIdle() { return !inputModal && !controls.editing() && router.owner() == ScreenControlRouter.Owner.NONE; }
+    java.util.List<RemoteLayoutProtocol.Item> remoteTools() {
+        return java.util.List.of(remoteTool("settings", "设置", settingsCenterX, settingsCenterY, settingsRadius),
+                remoteTool("power", "电源", powerCenterX, powerCenterY, powerRadius));
+    }
+    private RemoteLayoutProtocol.Item remoteTool(String id, String label, float x, float y, float radius) {
+        int left = Math.max(0, (int)Math.floor(x - radius)), top = Math.max(0, (int)Math.floor(y - radius));
+        return new RemoteLayoutProtocol.Item(id, label, 1, new ControlRect(left, top,
+                Math.min(getWidth(), (int)Math.ceil(x + radius)) - left,
+                Math.min(getHeight(), (int)Math.ceil(y + radius)) - top));
+    }
     void performClickHaptic() {
         boolean performed = clickFeedback.acceptedClick();
         android.util.Log.i("RightpadHaptic", "click_requested effect=CONFIRM performed=" + performed);
@@ -30,6 +43,7 @@ final class TouchCaptureView extends View {
     private final Runnable requestSettings;
     final ScreenControls controls;
     private final ScreenControlRouter router = new ScreenControlRouter();
+    private boolean reservedContact; // Consume orphan MOVE/UP after a reserved release/cancel until the next DOWN.
     private long unbufferedDispatchRequests;
     private int lastUnbufferedEventIdentity;
     long unbufferedDispatchRequestsForDiagnostics() { return unbufferedDispatchRequests; }
@@ -128,6 +142,7 @@ final class TouchCaptureView extends View {
                 safeInsetLeft = cutoutSafe.left;
                 safeInsetRight = cutoutSafe.right;
                 prepareGeometry(getWidth(), getHeight());
+                  remoteGeometryChanged.run();
                 invalidate();
             }
             return windowInsets;
@@ -195,6 +210,7 @@ final class TouchCaptureView extends View {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
         prepareGeometry(width, height);
         controls.resize(width, height);
+        remoteGeometryChanged.run();
     }
 
     private void prepareGeometry(int width, int height) {
@@ -440,6 +456,7 @@ final class TouchCaptureView extends View {
     @SuppressLint("ClickableViewAccessibility")
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) beforeRemoteDown.run();
         int action = event.getActionMasked();
         if (controls.editing()) {
             controls.editTouch(event);
@@ -447,15 +464,27 @@ final class TouchCaptureView extends View {
         }
         if (inputModal) return true;
         if (action == MotionEvent.ACTION_DOWN) {
-            stopCapture("new_down");
-            if (event.getPointerCount() != 1) return true;
+            if (event.getPointerCount() != 1) { stopCapture("new_down"); return true; }
             boolean settings = settingsGesture.onDown(event.getX(), event.getY(), event.getEventTime(),
                     settingsCenterX, settingsCenterY, settingsRadius);
             boolean power = powerGesture.onDown(event.getX(), event.getY(), event.getEventTime(),
                     powerCenterX, powerCenterY, powerRadius);
+            boolean reserved = !settings && !power && ScreenControlRouter.MODE_ID.equals(
+                    ScreenControlRouter.controlAt(event.getX(), event.getY(), controls.rects()));
+            // An idle reserved contact must not emit even a safety Neutral or cancel an X/B tap pulse.
+            // Replacing a live input owner still follows the existing lifecycle cancellation.
+            if (!reserved || (router.owner() != ScreenControlRouter.Owner.NONE && router.owner() != ScreenControlRouter.Owner.MODE)
+                    || activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                stopCapture("new_down");
+                settings = settingsGesture.onDown(event.getX(), event.getY(), event.getEventTime(),
+                        settingsCenterX, settingsCenterY, settingsRadius);
+                power = powerGesture.onDown(event.getX(), event.getY(), event.getEventTime(),
+                        powerCenterX, powerCenterY, powerRadius);
+            }
             ScreenControlRouter.Owner owner = router.down(event.getX(), event.getY(), event.getPointerId(0),
                     settings, power, udpSender.canCapture() && event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER,
                     controls.rects());
+            reservedContact = owner == ScreenControlRouter.Owner.MODE;
             if (owner == ScreenControlRouter.Owner.SCREEN_CONTROL) {
                 controls.down(router.controlId(), event);
             } else if (owner == ScreenControlRouter.Owner.MOUSE) {
@@ -470,6 +499,12 @@ final class TouchCaptureView extends View {
             return true;
         }
 
+        if (reservedContact) {
+            if (action == MotionEvent.ACTION_CANCEL) router.cancel();
+            else if (router.accepts(event.getPointerCount(), event.getPointerId(0), action == MotionEvent.ACTION_POINTER_DOWN)
+                    && action == MotionEvent.ACTION_UP) router.modeUp(event.getPointerCount(), event.getPointerId(0));
+            return true;
+        }
         if (action == MotionEvent.ACTION_CANCEL) {
             if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
                 int index = event.findPointerIndex(activePointerId);
@@ -484,14 +519,6 @@ final class TouchCaptureView extends View {
             return true;
         }
         ScreenControlRouter.Owner owner = router.owner();
-        if (owner == ScreenControlRouter.Owner.MODE) {
-            if (action == MotionEvent.ACTION_UP && router.modeUp(event.getPointerCount(), event.getPointerId(0))) {
-                udpSender.publishProfile(router.profile() == ScreenControlRouter.Profile.NORMAL ? 0 : 1);
-                android.util.Log.i("RightpadMode", "profile=" + router.profile());
-                invalidate();
-            }
-            return true;
-        }
         if (owner == ScreenControlRouter.Owner.SETTINGS || owner == ScreenControlRouter.Owner.POWER) {
             boolean settings = owner == ScreenControlRouter.Owner.SETTINGS;
             PowerGestureTracker tracker = settings ? settingsGesture : powerGesture;
@@ -532,6 +559,7 @@ final class TouchCaptureView extends View {
     }
 
     void stopCapture(String reason) {
+        reservedContact = false;
         controls.cancel();
         router.cancel();
         powerGesture.onCancel();

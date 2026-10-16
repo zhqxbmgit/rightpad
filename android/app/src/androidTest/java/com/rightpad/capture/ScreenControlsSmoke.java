@@ -304,9 +304,15 @@ public final class ScreenControlsSmoke extends Instrumentation {
                 check(route[0].owner() == ScreenControlRouter.Owner.MODE, "C1 MOVE outside retains MODE");
                 profileEvent(view[0], time + 2, MotionEvent.ACTION_UP, 300, 500, 0, 1);
                 profileEvent(view[0], time + 3, MotionEvent.ACTION_UP, 300, 500, 0, 1);
-                check(route[0].profile() == ScreenControlRouter.Profile.CINEMATIC, "matching UP switches once to C");
+                check(route[0].profile() == ScreenControlRouter.Profile.NORMAL && route[0].owner() == ScreenControlRouter.Owner.NONE,
+                        "reserved matching UP is no-op and releases owner");
+                profileEvent(view[0], time + 4, MotionEvent.ACTION_DOWN, 600, 900, 0, 1);
+                profileEvent(view[0], time + 500, MotionEvent.ACTION_MOVE, 600, 900, 0, 1);
+                profileEvent(view[0], time + 600, MotionEvent.ACTION_UP, 600, 900, 0, 1);
+                check(route[0].owner() == ScreenControlRouter.Owner.NONE && route[0].profile() == ScreenControlRouter.Profile.NORMAL,
+                        "reserved long hold is no-op and cleans owner");
             });
-            profileTriple(socket, sender, 1, 1);
+            noOpQuiet(socket, false);
             byte[][] cinematic = profileMousePackets(view[0], socket, time);
             for (int i = 0; i < normal.length; i++) {
                 check(java.util.Arrays.equals(normal[i], cinematic[i]), "M/C encoded Touch packet equal index=" + i);
@@ -318,7 +324,8 @@ public final class ScreenControlsSmoke extends Instrumentation {
                     if (fault == 1) profileEvent(view[0], time + 1, MotionEvent.ACTION_POINTER_DOWN | (1 << 8), 600, 900, 0, 2);
                     if (fault == 2) profileEvent(view[0], time + 1, MotionEvent.ACTION_MOVE, 600, 900, 9, 1);
                     profileEvent(view[0], time + 2, MotionEvent.ACTION_UP, 600, 900, 0, 1);
-                    check(route[0].profile() == ScreenControlRouter.Profile.CINEMATIC, "cancelled Mode preserves C fault=" + fault);
+                    check(route[0].profile() == ScreenControlRouter.Profile.NORMAL && route[0].owner() == ScreenControlRouter.Owner.NONE,
+                            "reserved fault clears owner without changing identity fault=" + fault);
                 }
                 profileEvent(view[0], time, MotionEvent.ACTION_DOWN, 600, 900, 0, 1);
                 profileEvent(view[0], time + 1, MotionEvent.ACTION_UP, 600, 900, 0, 1);
@@ -327,7 +334,7 @@ public final class ScreenControlsSmoke extends Instrumentation {
                 try {
                     Field latest = UdpTouchSender.class.getDeclaredField("latestProfile"); latest.setAccessible(true);
                     Field profileSequence = UdpTouchSender.class.getDeclaredField("profileSequence"); profileSequence.setAccessible(true);
-                    check(latest.getInt(sender) == 0 && profileSequence.getLong(sender) == 2, "M/C publishes type7 sequence 0/1/2");
+                    check(latest.getInt(sender) == 0 && profileSequence.getLong(sender) == 0, "reserved contact never publishes or advances type7");
                 } catch (Exception e) { throw new AssertionError(e); }
                 check(haptics[0] == 0, "C1 Mode and Mouse produce zero local Screen Control haptics");
                 try {
@@ -338,13 +345,28 @@ public final class ScreenControlsSmoke extends Instrumentation {
                     check(((java.util.Map<?, ?>) contributions.get(aggregate.get(view[0].controls))).isEmpty(),
                             "C1 Mode has zero gamepad contributions");
                 } catch (Exception e) { throw new AssertionError(e); }
-                view[0].stopCapture("c1_complete");
             });
-            profileTriple(socket, sender, 2, 0);
+            noOpQuiet(socket, false);
+            main(() -> view[0].stopCapture("reserved_complete"));
+            // stopCapture above is an explicit lifecycle abort and may send safety Neutral.
+            noOpQuiet(socket, true);
             byte[][] restored = profileMousePackets(view[0], socket, time);
             for (int i = 0; i < normal.length; i++) check(java.util.Arrays.equals(normal[i], restored[i]), "restored M exact Mouse bytes index=" + i);
             main(() -> fixedUnbufferedBoundaries(view[0], route[0], time));
         }
+    }
+    private void noOpQuiet(java.net.DatagramSocket socket, boolean lifecycle) throws Exception {
+        socket.setSoTimeout(80);
+        try {
+            while (true) {
+                var packet = new java.net.DatagramPacket(new byte[4096], 4096);
+                socket.receive(packet);
+                byte[] bytes = java.util.Arrays.copyOf(packet.getData(), packet.getLength());
+                check(bytes[1] == 4 || lifecycle && bytes[1] == 5 && bytes[14] == 0 && bytes[15] == 0,
+                        "reserved no-op emits no Touch, Xbox or type7; heartbeat alone allowed");
+            }
+        } catch (java.net.SocketTimeoutException expected) { }
+        finally { socket.setSoTimeout(3000); }
     }
     private void profileTriple(java.net.DatagramSocket socket, UdpTouchSender sender, long seq, int profile) throws Exception {
         byte[] expected = MotionProfileProtocol.encode(sender.getSenderRunId(), seq, profile);

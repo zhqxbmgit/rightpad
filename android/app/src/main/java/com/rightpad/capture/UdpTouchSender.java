@@ -48,6 +48,15 @@ final class UdpTouchSender implements Closeable {
     private long activeSession = -1;
     private boolean controlRequests;
     private long configEpoch, configRevision, requestAt;
+    private Pending layoutResponse;
+    void submitLayout(byte[] bytes) {
+        synchronized (sendGate) {
+            if (!closed && !closing && foreground && route.endpoint != null && bytes.length >= 16 &&
+                    ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).getLong(8) == route.runId)
+                layoutResponse = new Pending(route, bytes);
+        }
+        thread.interrupt();
+    }
     void enableControlRequests() { synchronized (sendGate) { controlRequests = true; requestAt = 0; } thread.interrupt(); }
     void knownControlConfig(long epoch, long revision) {
         synchronized (sendGate) { configEpoch = epoch; configRevision = revision; }
@@ -82,6 +91,7 @@ final class UdpTouchSender implements Closeable {
             gamepad = new GamepadSendState();
             pending.clear();
             activeSession = -1;
+            layoutResponse = null;
             nextSequence = 0;
             route = new Route(target);
             profileSequence = 0;
@@ -127,7 +137,7 @@ final class UdpTouchSender implements Closeable {
             foreground = enabled;
             if (enabled) { requestAt = 0; profilePending = true; }
             heartbeat.setEnabled(enabled && route.endpoint != null, System.nanoTime());
-            if (!enabled) { pending.clear(); activeSession = -1; }
+            if (!enabled) { pending.clear(); activeSession = -1; layoutResponse = null; }
         }
         thread.interrupt();
         Log.i(TAG, "foreground=" + enabled + " senderRunId=" + Long.toUnsignedString(route.runId, 16));
@@ -182,6 +192,13 @@ final class UdpTouchSender implements Closeable {
                                 GamepadProtocol.encode(route.runId, state.sequence(), state.submission())), state.copies(), state);
                     }
                     long now = System.nanoTime();
+                    if (admitted && layoutResponse != null) {
+                        Pending response = layoutResponse; layoutResponse = null;
+                        if (response.route == route) {
+                            try { senderSocket.send(new DatagramPacket(response.bytes, response.bytes.length, route.endpoint)); }
+                            catch (IOException exception) { Log.e(TAG, "layout_response_failed", exception); }
+                        }
+                    }
                     if (admitted && controlRequests && now >= requestAt) {
                         requestAt = now + (configEpoch == 0 ? 1_000_000_000L : 5_000_000_000L);
                         byte[] request = ControlConfigProtocol.request(route.runId, configEpoch, configRevision);

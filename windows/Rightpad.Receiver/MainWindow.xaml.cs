@@ -18,6 +18,7 @@ public partial class MainWindow : Window
     private readonly UserControl[] pages;
     private readonly Forms.NotifyIcon trayIcon;
     private readonly System.Drawing.Icon? trayIconImage;
+    private RemoteLayoutEditorWindow? layoutEditor;
 
     internal MainWindow(ReceiverRuntime runtime, SettingsViewModel settings, StartupViewModel startup,
         SettingsFileStore settingsFile)
@@ -61,6 +62,11 @@ public partial class MainWindow : Window
             PageContent.Content = pages[(int)page];
     }
     private async void SaveSettings(object sender, RoutedEventArgs e) => await model.Settings.SaveAsync();
+    internal void OpenLayoutEditor()
+    {
+        layoutEditor ??= new(() => runtime.Layout, RestoreWindow) { Owner = this };
+        layoutEditor.Open();
+    }
     private void WindowClosing(object? sender, CancelEventArgs e)
     {
         e.Cancel = trayBehavior.HandleClosing(Hide);
@@ -91,6 +97,7 @@ public partial class MainWindow : Window
         if (trayBehavior.IsExitRequested) return;
         IsEnabled = false;
         timer.Stop();
+        layoutEditor?.CloseForShutdown();
         await trayBehavior.ExitAsync(
             runtime.StopAsync,
             settingsFile.FlushAsync,

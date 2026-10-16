@@ -1,14 +1,42 @@
 # rightpad Receiver UI v1
 
-Current Receiver update (2026-10-10; deployed and verified): the normal GUI owns
-independently persisted M_R1/C_Z1 selection and seven C-Z1 parameters. Validated
-complete snapshots apply at the existing safe idle chain boundary. Legacy Android
-type7 is validated telemetry and cannot override Receiver selection. Android is
-unchanged in this commit and deployment; its existing M/C control may still send
-legacy packets. M8/Q0-C/1 ms and default C12/4 ms dynamics remain unchanged.
-See [RECEIVER_TOUCH_MODE.md](RECEIVER_TOUCH_MODE.md) and
-[C_Z1_RECEIVER_PARAMETERS.md](C_Z1_RECEIVER_PARAMETERS.md). Historical baseline
-descriptions below record earlier authority and fixed-constant implementations.
+Current delivery status (2026-10-16 audit): Receiver-local M/C and the C-Z1 card
+were deployed on 2026-10-10. The remote layout feature, black preview and final
+dedicated maximized editor were deployed on 2026-10-15. The user has accepted the
+current layout editor appearance. Automated/device checks and human game-feel
+acceptance remain distinct. See [GIT_DELIVERY_20261016.md](GIT_DELIVERY_20261016.md).
+
+Controls now begins with **打开大布局编辑器**, opening one owned, normally maximized
+Windows editor in the existing Receiver process. It contains no navigation or ordinary
+settings Save. A visible **返回 Receiver** button and window close both hide the editor;
+the single draft is retained. Hidden/minimized editors stop their sole UI polling timer.
+Reopen queries actual phone state without reloading a dirty draft or restarting a trial.
+The finite Grid viewport fits the complete phone preview by both width and height,
+with the compact parameter panel directly beside it. The editor reads actual phone geometry,
+select B/X/Mode, adjust X/Y/Width/Height using click-only 1/10/50 px steps, then
+explicitly Try. Android confirms application and owns a 60-second trial. Keep
+requires phone persistence acknowledgement; timeout/Restore discards the draft
+and reloads the preceding formal layout. Ordinary Save only edits behavior.
+See [REMOTE_LAYOUT_PROTOCOL.md](REMOTE_LAYOUT_PROTOCOL.md).
+
+Implemented UI contract (2026-10-10): Motion adds an independent `C-Z1 模式参数`
+card with precise numeric input, Amax 80000/160000 draft shortcuts, advanced stop
+thresholds, Apply/Save/Restore C defaults and saved/active/pending status. It stays
+editable in M and retains the existing sensitivity and local M/C controls. See
+[C_Z1_RECEIVER_PARAMETERS.md](C_Z1_RECEIVER_PARAMETERS.md) for units, ranges,
+persistence, actual formula use and offline validation. Historical UI notes below
+remain records of their original stages.
+
+Implemented UI contract (original source stage 2026-10-08): Motion settings now begin with
+`触控模式`, direct-click `M — 直接模式` and `C — 重量模式` buttons. A click saves
+only local touchMode through SettingsFileStore, then publishes it to the existing
+runtime. Other unsaved numeric/Controls drafts remain drafts. Separate
+Selected/Active/Pending lines show the committed choice, actual engine and any
+deferred safe-idle switch. Save failure keeps the previous selection and shows
+the existing Settings notice. Explicit development motion overrides disable this
+production selector with a visible explanation. This supersedes old no-selector
+descriptions below; sensitivity and all other existing UI behavior is retained.
+See [RECEIVER_TOUCH_MODE.md](RECEIVER_TOUCH_MODE.md).
 
 Implemented 2026-09-09. WPF visual/feel acceptance by the user remains separate
 from automated verification. AGENTS.md remains authoritative.

@@ -34,6 +34,8 @@ internal static class Program
         if (args.Length != 0 && !cz1Only && !motionOnly && !mr1Only && !uiSettingsOnly && !gamepadOnly && !guiStartupOnly && !receiverModeOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--cz1-parameters | --receiver-touch-mode | --normal-gui-startup | --gamepad | --ui-settings | --mr1 | --motion-profile | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            .. RemoteLayoutWindowTests.Cases,
+            .. RemoteLayoutTests.Cases,
             .. Cz1ParameterTests.Cases,
             .. ReceiverTouchModeTests.Cases,
             .. MotionUiCleanupTests.Cases,
