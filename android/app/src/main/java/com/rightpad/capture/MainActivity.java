@@ -83,6 +83,7 @@ public final class MainActivity extends Activity {
         });
         udpSender.setUpObserver(haptics::expectUp);
         haptics.layouts = remoteLayout::receive;
+        haptics.modes = udpSender::modeReply;
         discovery = new ReceiverDiscoveryClient(this, this::receiverChanged);
         updateBattery(registerReceiver(null, batteryFilter));
         applyImmersiveMode();

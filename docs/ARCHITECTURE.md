@@ -1,5 +1,17 @@
 # rightpad System Architecture
 
+Current Mode button contract (2026-10-17): `rightpad.input.mode` now reports
+contact facts for a Receiver-owned single keyboard/gamepad binding, with
+Momentary or Toggle behavior. It retains its saved geometry and no Mode haptic.
+The same settings Save transaction persists `modeControl`; a separate bounded
+type8/RPMD contact stream on existing workers/ports handles acknowledgements,
+lease and lifecycle generations. An additive driver-backed keyboard extension
+preserves mouse/gamepad ABI2, and Mode contributes independently to the existing
+single Xbox360 output. Receiver-local M/C and all Motion behavior remain unchanged.
+See [MODE_CONTROL.md](MODE_CONTROL.md), [MODE_CONTACT_PROTOCOL.md](MODE_CONTACT_PROTOCOL.md)
+and [the delivery report](MODE_CONTROL_DELIVERY_20261017.md). This current contract
+supersedes the historical reserved-no-op and Android M/C descriptions below.
+
 Current delivery status (2026-10-16 source audit): Receiver-local M/C and the
 C-Z1 panel were deployed on 2026-10-10. The 2026-10-15 delivery deployed the
 Android reserved no-op control and remote layout transactions, followed by the

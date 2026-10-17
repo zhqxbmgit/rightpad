@@ -4,6 +4,7 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if(args.Length==2 && args[0]=="--mode-observer") return ModeInputObserver.Run(args[1]);
         if (args.Length == 3 && args[0] == "--remote-layout-java")
         {
             try { RemoteLayoutJavaTests.Run(args[1], args[2]); return 0; }
@@ -39,6 +40,7 @@ internal static class Program
         if (args.Length != 0 && !cz1Only && !motionOnly && !mr1Only && !uiSettingsOnly && !gamepadOnly && !guiStartupOnly && !receiverModeOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--cz1-parameters | --receiver-touch-mode | --normal-gui-startup | --gamepad | --ui-settings | --mr1 | --motion-profile | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            .. ModeBindingTests.Cases,
             .. RemoteLayoutWindowTests.Cases,
             .. RemoteLayoutTests.Cases,
             .. Cz1ParameterTests.Cases,

@@ -2,6 +2,23 @@
   <StackPanel>
     <TextBlock Text="Controls" Style="{StaticResource PageTitle}"/>
     <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel>
+      <TextBlock Text="Mode · 单键绑定" Style="{StaticResource SectionTitle}"/>
+      <TextBlock Text="{Binding Settings.Mode.SavedSummary}" FontSize="18" Margin="0,8" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding Settings.Mode.Summary}" FontSize="18" Margin="0,8" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding ModeStatus}" FontSize="16" Margin="0,8" TextWrapping="Wrap" AutomationProperties.AutomationId="ModeRuntimeStatus"/>
+      <WrapPanel>
+        <Button Content="选择键盘键" MinHeight="52" MinWidth="150" Margin="0,4,12,4" Click="ChooseKeyboard" AutomationProperties.AutomationId="ModeKeyboardPicker"/>
+        <Button Content="选择手柄键" MinHeight="52" MinWidth="150" Margin="0,4,12,4" Click="ChooseGamepad" AutomationProperties.AutomationId="ModeGamepadPicker"/>
+        <Button Content="未绑定" MinHeight="52" MinWidth="120" Margin="0,4,12,4" Click="Unbind"/>
+      </WrapPanel>
+      <WrapPanel Margin="0,8">
+        <Button x:Name="MomentaryButton" Content="普通按钮" MinHeight="52" MinWidth="150" Margin="0,4,12,4" Click="Momentary" AutomationProperties.AutomationId="ModeMomentary"/>
+        <Button x:Name="ToggleButton" Content="切换按住" MinHeight="52" MinWidth="150" Margin="0,4,12,4" Click="Toggle" AutomationProperties.AutomationId="ModeToggle"/>
+      </WrapPanel>
+      <TextBlock Text="只编辑草稿；点击窗口底部统一 Save 后写盘并应用。切换按住在正常抬起后保持，安全中断会释放。不增加 Mode 触觉反馈。" Style="{StaticResource Muted}" FontSize="14" TextWrapping="Wrap"/>
+      <TextBlock Text="键盘按物理键输出，字符受 Windows 布局、Shift 与锁定键影响。Fn、消费控制/媒体键、Guide 不在本轮可选范围；Pause、Print Screen 等按 Windows 特殊语义工作。" Style="{StaticResource Muted}" FontSize="14" TextWrapping="Wrap" Margin="0,8,0,0"/>
+    </StackPanel></Border>
+    <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel>
       <TextBlock Text="手机按键布局与大小" Style="{StaticResource SectionTitle}"/>
       <Button Content="打开大布局编辑器" AutomationProperties.AutomationId="OpenRemoteLayoutEditor" Click="OpenLayoutEditor" HorizontalAlignment="Left" MinHeight="46" MinWidth="210"/>
       <TextBlock Text="在独立大窗口查看完整布局。编辑仅改变电脑草稿，点击试用后才在手机生效。" Style="{StaticResource Muted}" FontSize="13" Margin="0,10,0,0"/>

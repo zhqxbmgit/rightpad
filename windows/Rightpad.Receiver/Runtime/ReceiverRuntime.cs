@@ -52,6 +52,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             Volatile.Read(ref run.Motion) is ResampledMotion motion ? motion.CaptureCz1State() : null;
     }
     public IPEndPoint? LocalEndpoint => Volatile.Read(ref current)?.Receiver?.LocalEndpoint;
+    public string ModeStatus => Volatile.Read(ref current)?.Receiver?.Mode?.Status ?? settings.Current.ModeControl.Summary + " · 已停止";
     public RemoteLayoutClient? Layout
     {
         get
@@ -78,6 +79,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
         public IMouseOutput? Mouse;
         public readonly object GamepadGate = new();
         public IVirtualGamepad? Gamepad;
+        public XboxGamepadState ScreenGamepad, ModeGamepad;
+        public ModeSession? Mode;
         public GamepadSessionProcessor? GamepadSession;
         public bool GamepadClosed;
         public string? GamepadError;
@@ -96,6 +99,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
 
     // The session processor submits each accepted full state through the independent gamepad backend.
     public bool SetGamepadState(XboxGamepadState state)
+        => SetMergedGamepadState(state, false);
+    private bool SetMergedGamepadState(XboxGamepadState state, bool mode)
     {
         var run = Volatile.Read(ref current);
         if (run is null) return false;
@@ -104,7 +109,9 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             var runtimeState = (ReceiverState)Volatile.Read(ref run.State);
             if ((runtimeState != ReceiverState.Running && !(runtimeState == ReceiverState.Stopping && state == XboxGamepadState.Neutral))
                 || run.Gamepad is null || run.GamepadClosed || run.GamepadError is not null) return false;
-            try { return run.Gamepad.SetState(state); }
+            if(mode) run.ModeGamepad=state;else run.ScreenGamepad=state;
+            var merged=ModeKeys.Merge(run.ScreenGamepad,run.ModeGamepad);
+            try { return run.Gamepad.SetState(merged); }
             catch (Exception e)
             {
                 GamepadFailed(run, "set_state", e);
@@ -435,10 +442,13 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             output.WriteLine(FormattableString.Invariant($"startup: runId={run.Id} mode={(rawMouse ? "raw_mouse" : "diagnostic")} sensitivityX={initial.SensitivityX} sensitivityY={initial.SensitivityY} timeoutAction=diagnostic_only"));
             if (gesture is not null)
                 output.WriteLine(FormattableString.Invariant($"gesture: singleTap=enabled doubleTapDrag=enabled tapMaxDurationMs={initial.TapMaxDurationMs} tapMovementThresholdPx={initial.TapMovementThresholdPx} clickHoldMs={initial.ClickHoldMs} doubleTapIntervalMs={initial.DoubleTapIntervalMs}"));
+            if(rawMouse && mouseFactory is null) run.Mode=new ModeSession(settings,
+                state=>SetMergedGamepadState(state,true),haptics.TryEnqueueConfig,log:output.WriteLine,
+                gamepadReady:()=> {lock(run.GamepadGate) return run.Gamepad?.Available==true && !run.GamepadClosed && run.GamepadError is null;});
             receiver = new UdpReceiver(endpoint ?? new(IPAddress.Any, UdpReceiver.Port), output,
                 motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings,
                 controlSend: haptics.TryEnqueueConfig,
-                hitchTrace: HitchTrace, runtimeRun: run.Id,
+                hitchTrace: HitchTrace, runtimeRun: run.Id, mode:run.Mode,
                 cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder, motionTrace: motionTrace,
                 gamepad: run.GamepadSession = rawMouse ? new GamepadSessionProcessor(SetGamepadState, message =>
                 {
@@ -512,6 +522,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             gesture?.Reset();
             motion?.Reset();
             run.Receiver?.Dispose();
+            run.Mode?.Dispose();
             if (haptics is not null) await haptics.DisposeAsync().ConfigureAwait(false);
             CloseGamepad(run); // Independent cleanup must finish before disposing the mouse, including failed starts.
             try { mouse?.Dispose(); }

@@ -20,6 +20,7 @@ final class RemoteLayoutBridge {
         session = new RemoteLayoutSession(random,
                 layout -> view.controls.store.save(layout, view.getWidth(), view.getHeight()),
                 layout -> {
+                    view.stopCapture("remote_layout_changed");
                     view.controls.layout = new ScreenControlLayoutEditor(view.controls.definitions,
                             layout, view.getWidth(), view.getHeight());
                     view.invalidate();

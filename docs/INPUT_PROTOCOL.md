@@ -2,6 +2,13 @@
 
 ## Protocol v2 — CURRENT (2026-09-09)
 
+2026-10-17 adds independent type8 MODE_CONTACT (32 bytes), with 32-byte RPMD
+acknowledgement/generation snapshots on existing reverse UDP 50002. It reports
+only contact facts for the Receiver-owned Mode binding; it cannot admit or renew
+Touch presence or change Touch/Motion sequencing. See
+[MODE_CONTACT_PROTOCOL.md](MODE_CONTACT_PROTOCOL.md). Existing types1..7 keep
+their formats and authority, including legacy type7 not selecting M/C.
+
 C2A adds independent type7 MOTION_PROFILE_STATE (16 bytes). It observes the manual
 Android M/C selection without changing Motion. It cannot admit or renew presence;
 see [MOTION_PROFILE_PROTOCOL.md](MOTION_PROFILE_PROTOCOL.md).

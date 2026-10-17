@@ -1,5 +1,13 @@
 # GAMEPAD_STATE v2 (current Phases 3–6B contract)
 
+2026-10-17 addition: Receiver-local Mode contributes independently to the same
+single Xbox360 device. Android type5 remains the original complete Screen
+Controls state; Mode contact facts arrive in independent type8. Runtime unions
+buttons and takes the maximum LT/RT values from the two contributions before
+submitting. Releasing Mode does not remove B/X contributions and vice versa.
+Type5 ordering, minimum dwell, FORCE_NEUTRAL and lease are unchanged; Mode has
+its own lease and safety generation. See [MODE_CONTROL.md](MODE_CONTROL.md).
+
 This approved extension carries generic full Xbox logical state on the existing
 Android -> Windows UDP 50000 socket. Touch types 1/2/3 and heartbeat type 4 retain
 every existing byte and all their admission/sequence semantics. There is no ACK,

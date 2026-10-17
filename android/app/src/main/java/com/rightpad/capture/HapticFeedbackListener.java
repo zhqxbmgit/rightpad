@@ -22,6 +22,7 @@ final class HapticFeedbackListener implements Closeable {
     private final HapticFeedbackGate validation = new HapticFeedbackGate();
     private final Runnable feedback;
     java.util.function.Consumer<byte[]> layouts = ignored -> { };
+    java.util.function.Consumer<ModeContactStream.Reply> modes = ignored -> { };
     private final java.util.concurrent.atomic.AtomicReference<Runnable> pendingLayout = new java.util.concurrent.atomic.AtomicReference<>();
     private final java.util.concurrent.atomic.AtomicBoolean layoutPosted = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.function.Consumer<ControlConfigProtocol.Snapshot> configs;
@@ -85,6 +86,14 @@ final class HapticFeedbackListener implements Closeable {
                     while (!closed && current == identity) {
                         DatagramPacket packet = new DatagramPacket(bytes, bytes.length);
                         opened.receive(packet);
+                        if(ModeContactStream.matches(bytes,packet.getLength())) {
+                            var reply=ModeContactStream.decode(bytes,packet.getLength());
+                            InetAddress source=packet.getAddress();
+                            ui.post(()-> {
+                                if(!closed && current==identity && current.address.equals(source) && reply!=null && reply.run()==current.runId) modes.accept(reply);
+                            });
+                            continue;
+                        }
                         if (RemoteLayoutProtocol.matches(bytes, packet.getLength())) {
                             byte[] layout = java.util.Arrays.copyOf(bytes, packet.getLength());
                             InetAddress source = packet.getAddress();

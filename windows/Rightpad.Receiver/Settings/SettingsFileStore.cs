@@ -104,7 +104,14 @@ internal sealed class SettingsFileStore(string path)
                     CField("positionThreshold", .5, Cz1Parameters.PositionRange),
                     CField("velocityThreshold", 2, Cz1Parameters.StopVelocityRange));
             }
-            settings = settings with { Controls = controls, TouchMode = touchMode, Cz1 = cz1 };
+            var modeControl = new ModeBinding();
+            if(root.TryGetProperty("modeControl",out var mc)) {
+                try {
+                    var loaded=mc.Deserialize<ModeBinding>(new JsonSerializerOptions { PropertyNameCaseInsensitive=true });
+                    if(loaded?.IsValid==true) modeControl=loaded; else fallback=true;
+                } catch(JsonException) { fallback=true; }
+            }
+            settings = settings with { Controls = controls, TouchMode = touchMode, Cz1 = cz1, ModeControl = modeControl };
             string? warning = fallback ? "Some settings were invalid or missing. Defaults were used for those fields." : null;
             if (cz1Fallback) warning = (warning is null ? "" : warning + " ") + "C-Z1 settings were invalid or incomplete; invalid fields use production defaults.";
             return (settings, warning);

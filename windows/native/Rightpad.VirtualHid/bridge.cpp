@@ -1,6 +1,7 @@
 #include "bridge.h"
 #include "mouse_session.hpp"
 #include "gamepad_session.hpp"
+#include "keyboard_session.hpp"
 #include <cstdio>
 #include <cstring>
 #include <exception>
@@ -27,9 +28,49 @@ template<class F> int boundary(char* error, int size, F&& operation) noexcept {
 auto failure(const char* message) { return lvh::OperationStatus::failure(lvh::ErrorCode::backend_unavailable, message); }
 std::mutex gamepad_gate;
 std::unordered_map<void*, std::unique_ptr<rightpad::GamepadSession>> gamepads;
+std::mutex keyboard_gate;
+std::unordered_map<void*, std::unique_ptr<rightpad::KeyboardSession>> keyboards;
 }
 
 int rightpad_vhid_abi_version() { return 2; }
+int rightpad_vhid_keyboard_api_version() { return 1; }
+int rightpad_vhid_keyboard_create(void** handle, char* identity, int identity_size, char* error, int error_size) {
+    if(handle) *handle=nullptr;
+    copy(identity,identity_size,"");
+    return boundary(error,error_size,[&] {
+        if(!handle || !identity || identity_size<2) return failure("invalid keyboard create argument");
+        auto license=lvh::get_license_status();
+        if(!license.status.ok() || !license.license.service_available || !license.license.licensed()) return failure("licensed keyboard broker unavailable");
+        auto session=std::make_unique<rightpad::KeyboardSession>();
+        session->runtime=lvh::Runtime::create({.backend=lvh::BackendKind::platform_default});
+        auto result=session->runtime->create_keyboard({.profile=lvh::profiles::keyboard(),.stable_id="rightpad.mode.keyboard"});
+        if(!result.status.ok()) return result.status;
+        session->keyboard=std::move(result.keyboard);
+        if(!session->keyboard || session->keyboard->device_nodes().empty() || session->keyboard->device_nodes().front().path.empty())
+            return failure("driver-backed keyboard absent; SendInput fallback rejected");
+        auto node=session->keyboard->device_nodes().front().path;
+        if(node.size()>=static_cast<size_t>(identity_size)) return failure("keyboard identity buffer too small");
+        copy(identity,identity_size,node.c_str());
+        std::lock_guard lock(keyboard_gate);
+        void* key=session.get();keyboards.emplace(key,std::move(session));*handle=key;
+        return lvh::OperationStatus::success();
+    });
+}
+int rightpad_vhid_keyboard_set(void* handle,uint16_t key,uint16_t scan,int down,char* error,int error_size) {
+    return boundary(error,error_size,[&] {
+        std::lock_guard lock(keyboard_gate);auto found=keyboards.find(handle);
+        if(found==keyboards.end() || (down!=0 && down!=1)) return failure("invalid keyboard handle/state");
+        return found->second->set(key,scan,down!=0);
+    });
+}
+int rightpad_vhid_keyboard_destroy(void* handle,char* error,int error_size) {
+    return boundary(error,error_size,[&] {
+        if(!handle) return lvh::OperationStatus::success();
+        std::lock_guard lock(keyboard_gate);auto found=keyboards.find(handle);
+        if(found==keyboards.end()) return failure("invalid keyboard handle");
+        auto session=std::move(found->second);keyboards.erase(found);return session->close();
+    });
+}
 int rightpad_vhid_create(void** handle, char* identity, int identity_size, char* error, int error_size) {
     if (handle) *handle = nullptr;
     copy(identity, identity_size, "");

@@ -1,6 +1,21 @@
 # rightpad Project State
 
-Updated: 2026-10-01
+Updated: 2026-10-17
+
+## Mode 单键绑定交付（2026-10-17）
+
+已实现并受控部署：现有 `rightpad.input.mode` 可通过 Receiver Controls 大按钮选择
+单个键盘或手柄键，选择普通按钮或切换按住，统一 Save 后生效。正式交付保持
+未绑定/普通按钮；无 Mode 触觉反馈。117 个键盘目录项、16 个手柄目录项，原有
+单个 Xbox360、布局、设置及 Motion/B/X 参数保留。Receiver PID 6120 的真实 HID
+键盘、XInput、鼠标移动/单击/双击拖动已取得功能证据；未进行真人游戏验收。
+临时恢复保护与观察器已退出，原独立启动任务仍运行。实现与部署阶段未执行
+commit/push；后续源码交付以 Git 历史为准。
+详见 [功能契约](MODE_CONTROL.md)、[接触协议](MODE_CONTACT_PROTOCOL.md) 和
+[交付报告](MODE_CONTROL_DELIVERY_20261017.md)。
+
+以下保留 2026-10-01 的历史状态正文。当前 Motion 与布局契约以 AGENTS.md、
+ARCHITECTURE.md 及其后续功能文档为准，不把下面旧基线当作本轮部署配置。
 
 ## Current product
 

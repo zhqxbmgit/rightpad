@@ -1,4 +1,13 @@
-# Screen Controls — current contract through Phase 6C
+# Screen Controls — current contract
+
+2026-10-17 update: the existing `rightpad.input.mode` is now a Receiver-configured
+single keyboard/gamepad button with Momentary or Toggle behavior. It retains
+the exact layout/stable ID and emits no haptic or mouse Touch packets. Binding,
+output state, lifecycle and the full supported key list are specified in
+[MODE_CONTROL.md](MODE_CONTROL.md); reliable contact facts use
+[type8/RPMD](MODE_CONTACT_PROTOCOL.md). B/X gesture engines and accepted feedback
+remain unchanged. The dated Phase 6C/C1 sections below are historical; their
+Mode-as-M/C or no-gamepad descriptions do not describe the new Mode binding.
 
 Updated: 2026-09-20. Phases 1–6C are implemented. Automated functional verification
 and final real-person acceptance are complete. The user explicitly reported

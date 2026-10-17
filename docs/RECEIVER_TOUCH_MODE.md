@@ -1,5 +1,10 @@
 # Receiver-owned touch mode (2026-10-08)
 
+2026-10-17 update: the screen region `rightpad.input.mode` now has an independent
+single-key binding; it still cannot select Motion. Receiver-local M/C authority
+and persistence described here are unchanged. Historical reserved-no-op wording
+below records the earlier stage. See [MODE_CONTROL.md](MODE_CONTROL.md).
+
 Current status (2026-10-16 source audit): Receiver-local selection was deployed
 on 2026-10-10; the Android reserved no-op control was deployed with remote layout
 on 2026-10-15. The implementation and deferred-deployment sections below record

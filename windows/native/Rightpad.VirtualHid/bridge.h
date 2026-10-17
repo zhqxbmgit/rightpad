@@ -35,6 +35,11 @@ typedef struct rightpad_gamepad_state {
 RP_API int rightpad_vhid_gamepad_create(void** handle, char* identity, int identity_size, char* error, int error_size);
 RP_API int rightpad_vhid_gamepad_set_state(void* handle, const rightpad_gamepad_state* state, char* error, int error_size);
 RP_API int rightpad_vhid_gamepad_destroy(void* handle, char* error, int error_size);
+// Additive keyboard extension 1; ABI-2 mouse/gamepad exports are unchanged.
+RP_API int rightpad_vhid_keyboard_api_version(void);
+RP_API int rightpad_vhid_keyboard_create(void** handle, char* identity, int identity_size, char* error, int error_size);
+RP_API int rightpad_vhid_keyboard_set(void* handle, uint16_t key, uint16_t scan, int down, char* error, int error_size);
+RP_API int rightpad_vhid_keyboard_destroy(void* handle, char* error, int error_size);
 #ifdef __cplusplus
 }
 #endif

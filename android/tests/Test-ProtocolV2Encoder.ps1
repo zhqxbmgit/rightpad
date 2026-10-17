@@ -5,6 +5,10 @@ $sourceDirectory = Join-Path $androidRoot 'app/src/main/java/com/rightpad/captur
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 $javacPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/javac.exe' } else { 'javac' }
 $javaPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/java.exe' } else { 'java' }
+& $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $sourceDirectory 'ModeContactStream.java') (Join-Path $PSScriptRoot 'ModeContactTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Mode contact compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.ModeContactTests
+if ($LASTEXITCODE -ne 0) { throw 'Mode contact tests failed.' }
 & $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $sourceDirectory 'ControlRect.java') (Join-Path $sourceDirectory 'RemoteLayoutProtocol.java') (Join-Path $sourceDirectory 'RemoteLayoutSession.java')
 if ($LASTEXITCODE -ne 0) { throw 'Remote layout test compilation failed.' }
 & $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $androidRoot 'app/src/androidTest/java/com/rightpad/capture/LayoutTestFileGuard.java') (Join-Path $PSScriptRoot 'LayoutTestFileGuardTests.java')

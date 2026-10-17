@@ -1,6 +1,7 @@
 #include "bridge.h"
 #include "mouse_session.hpp"
 #include "gamepad_session.hpp"
+#include "keyboard_session.hpp"
 #include <climits>
 #include <iostream>
 #include <stdexcept>
@@ -27,6 +28,21 @@ int main() {
         check(session.close().ok() && !session.held && !session.mouse && !session.runtime);
         check(session.close().ok());
         char error[128]{};
+        rightpad::KeyboardSession keyboard;
+        keyboard.runtime=lvh::Runtime::create({.backend=lvh::BackendKind::fake});
+        auto created_keyboard=keyboard.runtime->create_keyboard();check(created_keyboard.status.ok());
+        keyboard.keyboard=std::move(created_keyboard.keyboard);
+        for(uint16_t key=0;key<256;key++) {
+            if(!rightpad::keyboard_key_supported(key,0)) continue;
+            check(keyboard.set(key,0,true).ok());
+            auto last=keyboard.keyboard->last_submitted_event();check(last.key_code==key && last.pressed && last.scan_code==0);
+            check(keyboard.set(key,0,false).ok());check(!keyboard.keyboard->last_submitted_event().pressed);
+        }
+        check(keyboard.set(0x0D,0xE01C,true).ok());check(keyboard.keyboard->last_submitted_event().scan_code==0xE01C);
+        check(!keyboard.set(0xB0,0,true).ok());check(!keyboard.set(0x0D,0xE035,true).ok());
+        check(keyboard.close().ok());check(rightpad_vhid_keyboard_api_version()==1);
+        check(rightpad_vhid_keyboard_set(nullptr,0x41,0,1,error,sizeof(error))!=0);
+        check(rightpad_vhid_keyboard_destroy(nullptr,error,sizeof(error))==0);
         check(rightpad_vhid_abi_version() == 2);
         check(rightpad_vhid_move(nullptr, 1, 2, error, sizeof(error)) != 0 && error[0]);
         check(rightpad_vhid_left_down(nullptr, error, sizeof(error)) != 0);

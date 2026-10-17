@@ -127,11 +127,13 @@ internal sealed class SettingsViewModel : ObservableModel
     public NumericField DoubleTapInterval { get; }
     public IReadOnlyList<ControlSettingsViewModel> Controls { get; }
     public Cz1SettingsViewModel Cz1 { get; }
+    public ModeSettingsViewModel Mode { get; }
 
     public SettingsViewModel(RuntimeSettingsStore store, SettingsFileStore file, string? warning = null)
     {
         this.store = store; this.file = file; loadWarning = warning;
         committedSettings = draftSettings = store.Current;
+        Mode = new(()=>draftSettings.ModeControl, value=>UpdateDraft(draftSettings with {ModeControl=value}));
         SensitivityX = new("Sensitivity X", "", draftSettings.SensitivityX, .1, 30, .5, "F1", false,
             x => UpdateDraft(draftSettings with { SensitivityX = x }), Recalculate, 1);
         SensitivityY = new("Sensitivity Y", "", draftSettings.SensitivityY, .1, 30, .5, "F1", false,
@@ -213,6 +215,7 @@ internal sealed class SettingsViewModel : ObservableModel
             ClickHold.SetCommitted(snapshot.ClickHoldMs);
             DoubleTapInterval.SetCommitted(snapshot.DoubleTapIntervalMs);
             foreach (var control in Controls) control.SetCommitted(control.Definition.Get(snapshot.Controls));
+            Mode.Committed(snapshot.ModeControl);
             loadWarning = null;
             Notice = "";
             return true;

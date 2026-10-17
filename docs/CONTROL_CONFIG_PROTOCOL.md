@@ -1,5 +1,13 @@
 # Virtual Controls Config v2 (Phase 6C)
 
+2026-10-17 Mode addition: Mode uses the same Receiver draft/disk-first Save but
+stores its complete binding separately as top-level `modeControl`. Binding and
+toggle state stay on Windows, so RPCT remains the same 62-byte complete B+X
+snapshot and registry IDs 1/2 do not change. A Mode-only Save does not advance
+RPCT revision or retime an active B/X gesture. Mode contact facts and lifecycle
+generations use [MODE_CONTACT_PROTOCOL.md](MODE_CONTACT_PROTOCOL.md); see
+[MODE_CONTROL.md](MODE_CONTROL.md) for persistence and behavior.
+
 Receiver committed settings are the only behavior configuration source. Android
 keeps an immutable runtime cache and snapshots it at ACTION_DOWN. Behavior is
 never persisted on Android; layout remains Android-local under independent stable

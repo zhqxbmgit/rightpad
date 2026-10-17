@@ -9,6 +9,7 @@ internal sealed record RuntimeSettings(double SensitivityX, double SensitivityY,
     public TouchMode TouchMode { get; init; } = TouchMode.M_R1;
     public Cz1Parameters Cz1 { get; init; } = Cz1Parameters.Default;
     public VirtualControlsSettings Controls { get; init; } = VirtualControlsSettings.Default;
+    public ModeBinding ModeControl { get; init; } = new();
     public const int DefaultDoubleTapIntervalMs = 130;
     public const int DefaultSmoothingTauMs = 24;
     public const int DefaultSmoothingSupportMs = 120;
@@ -20,7 +21,7 @@ internal sealed record RuntimeSettings(double SensitivityX, double SensitivityY,
     public bool IsProductValid => InRange(SensitivityX, .1, 30) && InRange(SensitivityY, .1, 30) &&
         InRange(TapMaxDurationMs, 50, 1500) && InRange(TapMovementThresholdPx, .5, 100) &&
         InRange(ClickHoldMs, 1, 200) && InRange(DoubleTapIntervalMs, 50, 1000) &&
-        InRange(SmoothingTauMs, 8, 60) && InRange(SmoothingSupportMs, 40, 300) && Controls?.IsValid == true && TouchModes.IsValid(TouchMode) && Cz1?.IsValid == true;
+        InRange(SmoothingTauMs, 8, 60) && InRange(SmoothingSupportMs, 40, 300) && Controls?.IsValid == true && ModeControl?.IsValid == true && TouchModes.IsValid(TouchMode) && Cz1?.IsValid == true;
 
     public void ValidateCore()
     {
@@ -28,7 +29,7 @@ internal sealed record RuntimeSettings(double SensitivityX, double SensitivityY,
             !double.IsFinite(SensitivityY) || SensitivityY <= 0 || TapMaxDurationMs <= 0 ||
             !double.IsFinite(TapMovementThresholdPx) || TapMovementThresholdPx <= 0 || ClickHoldMs <= 0 ||
             !InRange(DoubleTapIntervalMs, 50, 1000) || !InRange(SmoothingTauMs, 8, 60) ||
-            !InRange(SmoothingSupportMs, 40, 300) || Controls?.IsValid != true || !TouchModes.IsValid(TouchMode) || Cz1?.IsValid != true)
+            !InRange(SmoothingSupportMs, 40, 300) || Controls?.IsValid != true || ModeControl?.IsValid != true || !TouchModes.IsValid(TouchMode) || Cz1?.IsValid != true)
             throw new ArgumentOutOfRangeException(nameof(RuntimeSettings));
     }
 }

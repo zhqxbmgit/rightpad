@@ -85,7 +85,7 @@ public final class ReservedControlTests {
             int start = view.indexOf("if (reservedContact)");
             String branch = view.substring(start, view.indexOf("if (action == MotionEvent.ACTION_CANCEL)", start + 80));
             check(!branch.contains("captureEvent(") && !branch.contains("controls.touch(") && !branch.contains("feedback")
-                    && !branch.contains("udpSender") && branch.contains("return true;"), "reserved lifecycle branch cannot generate input or haptics");
+                    && branch.contains("modeUp()") && branch.contains("modeCancel()") && branch.contains("return true;"), "Mode lifecycle reports only contact facts, no Mouse/gamepad/haptics");
             String controls = Files.readString(source.resolve("ScreenControls.java"));
             check(controls.contains("register(new ScreenControlDefinition(MODE_ID") && controls.contains("profile.label"), "production definition and visible M label preserved");
             check(controls.contains("if (MODE_ID.equals(id)) return;"), "reserved definition avoids gesture/haptic execution");

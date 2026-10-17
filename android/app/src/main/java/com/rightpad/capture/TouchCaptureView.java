@@ -44,6 +44,7 @@ final class TouchCaptureView extends View {
     final ScreenControls controls;
     private final ScreenControlRouter router = new ScreenControlRouter();
     private boolean reservedContact; // Consume orphan MOVE/UP after a reserved release/cancel until the next DOWN.
+    private long modeDownTime = Long.MIN_VALUE;
     private long unbufferedDispatchRequests;
     private int lastUnbufferedEventIdentity;
     long unbufferedDispatchRequestsForDiagnostics() { return unbufferedDispatchRequests; }
@@ -464,6 +465,7 @@ final class TouchCaptureView extends View {
         }
         if (inputModal) return true;
         if (action == MotionEvent.ACTION_DOWN) {
+            if(reservedContact && event.getDownTime()<=modeDownTime) return true;
             if (event.getPointerCount() != 1) { stopCapture("new_down"); return true; }
             boolean settings = settingsGesture.onDown(event.getX(), event.getY(), event.getEventTime(),
                     settingsCenterX, settingsCenterY, settingsRadius);
@@ -485,6 +487,7 @@ final class TouchCaptureView extends View {
                     settings, power, udpSender.canCapture() && event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER,
                     controls.rects());
             reservedContact = owner == ScreenControlRouter.Owner.MODE;
+            if(reservedContact) {modeDownTime=event.getDownTime();udpSender.modeDown();}
             if (owner == ScreenControlRouter.Owner.SCREEN_CONTROL) {
                 controls.down(router.controlId(), event);
             } else if (owner == ScreenControlRouter.Owner.MOUSE) {
@@ -500,9 +503,10 @@ final class TouchCaptureView extends View {
         }
 
         if (reservedContact) {
-            if (action == MotionEvent.ACTION_CANCEL) router.cancel();
-            else if (router.accepts(event.getPointerCount(), event.getPointerId(0), action == MotionEvent.ACTION_POINTER_DOWN)
-                    && action == MotionEvent.ACTION_UP) router.modeUp(event.getPointerCount(), event.getPointerId(0));
+            if (action == MotionEvent.ACTION_CANCEL) {udpSender.modeCancel();router.cancel();}
+            else if (router.owner()!=ScreenControlRouter.Owner.MODE) return true; // Completed contact: orphan UP/MOVE cannot cancel a toggle.
+            else if (!router.accepts(event.getPointerCount(), event.getPointerId(0), action == MotionEvent.ACTION_POINTER_DOWN)) udpSender.modeCancel();
+            else if(action == MotionEvent.ACTION_UP && router.modeUp(event.getPointerCount(), event.getPointerId(0))) udpSender.modeUp();
             return true;
         }
         if (action == MotionEvent.ACTION_CANCEL) {
@@ -559,6 +563,7 @@ final class TouchCaptureView extends View {
     }
 
     void stopCapture(String reason) {
+        if(!"new_down".equals(reason) || router.owner()==ScreenControlRouter.Owner.MODE) udpSender.modeCancel();
         reservedContact = false;
         controls.cancel();
         router.cancel();

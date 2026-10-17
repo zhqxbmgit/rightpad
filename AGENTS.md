@@ -2,6 +2,19 @@
 
 # rightpad Project Instructions
 
+Approved Mode binding exception (2026-10-17): the existing `rightpad.input.mode`
+screen region now supports one Receiver-owned keyboard/gamepad binding with
+Momentary or Toggle behavior. Android reports contact facts through independent
+type8/RPMD on the existing workers/ports; Receiver owns binding, held state,
+acknowledgements, lease and lifecycle generations. Reuse the original stable ID
+and saved layout, default to unbound/Momentary, use the common disk-first Save,
+and emit no Mode haptic or mouse Touch input. The additive driver-backed keyboard
+extension preserves mouse/gamepad ABI2 and the existing single Xbox360 device.
+Receiver-local M/C remains independent; no Motion or accepted B/X parameter
+change is authorized by this exception. See docs/MODE_CONTROL.md and
+docs/MODE_CONTACT_PROTOCOL.md. This supersedes historical Mode M/C/no-op wording
+below while preserving those stages and their evidence.
+
 Current selected baseline (2026-10-03): Touchpad R&D is paused. Android uses
 fixed unbuffered acquisition for each admitted single-finger Mouse DOWN and the
 normal `rightpad.input.mode` M/C control. The selected deployed Receiver uses

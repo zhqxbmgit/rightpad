@@ -80,6 +80,7 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
     public bool CanRestart => RestartRequired && !Settings.IsSaving && !busy && !IsRestarting;
     public ReceiverPage CurrentPage { get => currentPage; set => Set(ref currentPage, value); }
     public SettingsViewModel Settings { get; } = settings;
+    public string ModeStatus => runtime.ModeStatus;
     public StartupViewModel Startup { get; } = startup;
     public RuntimeStatsViewModel Stats { get; } = new();
     public string ActionText => running ? "Stop Receiver" : "Start Receiver";
@@ -112,6 +113,7 @@ internal sealed class MainViewModel(ReceiverRuntime runtime, SettingsViewModel s
         if (running != wasRunning) { Changed(nameof(ActionText)); Changed(nameof(IsStopped)); }
         Set(ref canToggle, !busy && Stats.RuntimeState is not ("Starting" or "Stopping"), nameof(CanToggle));
         Settings.RefreshNotice();
+        Changed(nameof(ModeStatus));
         Settings.Cz1.Refresh(runtime.CaptureCz1State());
         foreach (string name in new[] { nameof(ActiveTauMs), nameof(ActiveSupportMs), nameof(ActiveMotionText),
             nameof(RestartRequired), nameof(CanRestart),

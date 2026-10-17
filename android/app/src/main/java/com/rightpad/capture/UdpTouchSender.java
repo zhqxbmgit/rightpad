@@ -39,6 +39,19 @@ final class UdpTouchSender implements Closeable {
     private volatile Route route = new Route(null);
     private final HeartbeatSchedule heartbeat = new HeartbeatSchedule();
     private GamepadSendState gamepad = new GamepadSendState();
+    private ModeContactStream mode = new ModeContactStream();
+    private Pending retiredModeCancel;
+    void modeReply(ModeContactStream.Reply reply) {
+        synchronized(sendGate) { if(!closed && !closing && foreground && reply!=null && reply.run()==route.runId) mode.reply(reply,System.nanoTime()); }
+        thread.interrupt();
+    }
+    boolean modeDown() {
+        boolean accepted;
+        synchronized(sendGate) { accepted=canCapture() && mode.down(System.nanoTime()); }
+        thread.interrupt();return accepted;
+    }
+    void modeUp() { synchronized(sendGate) {mode.up();} thread.interrupt(); }
+    void modeCancel() { synchronized(sendGate) {mode.cancel();} thread.interrupt(); }
     // Transport mirror of ScreenControlRouter's authoritative UI state, guarded by sendGate.
     private int latestProfile;
     private long profileSequence;
@@ -89,6 +102,10 @@ final class UdpTouchSender implements Closeable {
                 retiredGamepadNeutral = new Pending(route, GamepadProtocol.encode(route.runId, neutral.sequence(), neutral.submission()));
             }
             gamepad = new GamepadSendState();
+            mode.cancel();
+            byte[] cancel=mode.claim(route.runId,System.nanoTime());
+            if(route.endpoint!=null && cancel!=null) retiredModeCancel=new Pending(route,cancel);
+            mode=new ModeContactStream();
             pending.clear();
             activeSession = -1;
             layoutResponse = null;
@@ -134,6 +151,7 @@ final class UdpTouchSender implements Closeable {
             if (closed || closing) return;
             // A targetless route cannot drain gamepad work; keep its wait deadline idle.
             if (!enabled && route.endpoint != null) gamepad.change(GamepadStateSubmission.safety(), System.nanoTime());
+            if(!enabled) mode.cancel();
             foreground = enabled;
             if (enabled) { requestAt = 0; profilePending = true; }
             heartbeat.setEnabled(enabled && route.endpoint != null, System.nanoTime());
@@ -172,6 +190,11 @@ final class UdpTouchSender implements Closeable {
                         sendGamepad(senderSocket, retiredGamepadNeutral, 3);
                         retiredGamepadNeutral = null;
                     }
+                    if(retiredModeCancel!=null) {
+                        try {senderSocket.send(new DatagramPacket(retiredModeCancel.bytes,retiredModeCancel.bytes.length,retiredModeCancel.route.endpoint));}
+                        catch(IOException exception) {Log.e(TAG,"mode_cancel_failed",exception);}
+                        retiredModeCancel=null;
+                    }
                     if (closing) { closed = true; continue; }
                     boolean admitted = sendHeartbeat(senderSocket, route);
                     if (admitted && profilePending) {
@@ -192,6 +215,13 @@ final class UdpTouchSender implements Closeable {
                                 GamepadProtocol.encode(route.runId, state.sequence(), state.submission())), state.copies(), state);
                     }
                     long now = System.nanoTime();
+                    if(route.endpoint!=null && (admitted || !foreground)) {
+                        byte[] modePacket=mode.claim(route.runId,now);
+                        if(modePacket!=null) {
+                            try {senderSocket.send(new DatagramPacket(modePacket,modePacket.length,route.endpoint));}
+                            catch(IOException exception) {Log.e(TAG,"mode_send_failed",exception);}
+                        }
+                    }
                     if (admitted && layoutResponse != null) {
                         Pending response = layoutResponse; layoutResponse = null;
                         if (response.route == route) {
@@ -206,6 +236,7 @@ final class UdpTouchSender implements Closeable {
                         catch (IOException exception) { Log.e(TAG, "control_request_failed", exception); }
                     }
                     wait = Math.min(heartbeat.waitNanos(now), gamepad.waitNanos(now, foreground));
+                    if(route.endpoint!=null) wait=Math.min(wait,mode.waitNanos(now));
                     if (controlRequests && foreground && route.endpoint != null) wait = Math.min(wait, Math.max(0, requestAt - now));
                     if (!admitted && foreground) wait = Math.max(wait, TimeUnit.MILLISECONDS.toNanos(10));
                 }
@@ -280,6 +311,8 @@ final class UdpTouchSender implements Closeable {
                 retiredGamepadNeutral = new Pending(route, GamepadProtocol.encode(route.runId, neutral.sequence(), neutral.submission()));
             }
             closing = true; foreground = false; pending.clear(); heartbeat.setEnabled(false, System.nanoTime());
+            mode.cancel();byte[] cancel=mode.claim(route.runId,System.nanoTime());
+            if(route.endpoint!=null && cancel!=null) retiredModeCancel=new Pending(route,cancel);
         }
         thread.interrupt();
     }

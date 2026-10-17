@@ -28,6 +28,7 @@ internal sealed class UdpReceiver : IDisposable
     private readonly TextWriter output;
     private readonly FlightRecorder? flightRecorder;
     private readonly GamepadSessionProcessor? gamepad;
+    public ModeSession? Mode { get; }
     private readonly ControlConfigChannel? controls;
     public RemoteLayoutClient? Layout { get; }
     private readonly HashSet<ulong> retiredRunIds = new();
@@ -60,7 +61,7 @@ internal sealed class UdpReceiver : IDisposable
         ITouchMotion? motion = null, bool detailedLogging = true, GestureProcessor? gesture = null,
         RuntimeSettingsStore? settings = null, Action? cancelButtons = null, FlightRecorder? flightRecorder = null,
         MotionTrace? motionTrace = null, GamepadSessionProcessor? gamepad = null,
-        Action<IPAddress, byte[]>? controlSend = null, HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0)
+        Action<IPAddress, byte[]>? controlSend = null, HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0, ModeSession? mode = null)
     {
         inputTimeout = timeout ?? InputTimeout;
         if (inputTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
@@ -77,6 +78,7 @@ internal sealed class UdpReceiver : IDisposable
         this.output = output;
         this.flightRecorder = flightRecorder;
         this.gamepad = gamepad;
+        Mode = mode;
         if (settings is not null && controlSend is not null) controls = new(settings, () => Presence, controlSend, output);
         if (controlSend is not null) Layout = new(() => Presence, controlSend);
         logger = new RawSampleLogger(output, detailedLogging);
@@ -97,8 +99,9 @@ internal sealed class UdpReceiver : IDisposable
             {
                 long now = Stopwatch.GetTimestamp();
                 CheckTimeouts(now);
+                Mode?.Tick(now);
                 using var receiveCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                long? deadline = touchDeadline;
+                long? deadline = Mode is null ? touchDeadline : Math.Min(touchDeadline ?? long.MaxValue, now + Stopwatch.Frequency / 100);
                 var p = Presence;
                 if (p.Connected)
                 {
@@ -134,6 +137,7 @@ internal sealed class UdpReceiver : IDisposable
             // Return cleanup to the pool before ReceiverRuntime joins that dedicated writer.
             await Task.Yield();
             gamepad?.Stop();
+            Mode?.Dispose();
             controls?.Dispose();
             ClearInput("receiver_stop");
             Interlocked.Exchange(ref activeSession, -1);
@@ -165,6 +169,7 @@ internal sealed class UdpReceiver : IDisposable
         {
             Volatile.Write(ref presence, p with { Connected = false });
             gamepad?.UpdatePresence(Presence);
+            Mode?.UpdatePresence(Presence);
             Interlocked.Increment(ref presenceTimeouts);
             flightRecorder?.Event("presence_timeout", ("senderRunId", $"{p.RunId:X16}"));
             ClearInput("presence_timeout");
@@ -174,6 +179,11 @@ internal sealed class UdpReceiver : IDisposable
 
     internal void ProcessDatagram(byte[] bytes, IPEndPoint remote, long now, double elapsedMs = 0)
     {
+        if(bytes.Length>=2 && bytes[0]==2 && bytes[1]==8) {
+            if(ModeProtocol.TryDecode(bytes,out var modePacket)) Mode?.Process(modePacket,remote.Address,now);
+            else Statistics.RecordInvalid();
+            return;
+        }
         CheckTimeouts(now); // Invalid/old traffic must not postpone expiry, even at the recovery boundary.
         Statistics.RecordReceived();
         if (RemoteLayoutProtocol.Matches(bytes))
@@ -256,6 +266,7 @@ internal sealed class UdpReceiver : IDisposable
             Interlocked.Exchange(ref lastAcceptedAtTicks, 0);
             Volatile.Write(ref presence, new(h.SenderRunId));
             gamepad?.UpdatePresence(Presence);
+            Mode?.UpdatePresence(Presence);
             output.WriteLine($"sender_run: senderRunId={h.SenderRunId:X16} trigger={h.EventType}");
         }
         if (h.EventType == TouchEventType.Heartbeat)
@@ -305,7 +316,7 @@ internal sealed class UdpReceiver : IDisposable
         if (!remote.Address.Equals(lastRemoteIp)) Volatile.Write(ref lastRemoteIp, remote.Address);
         string ip = LastRemoteIp!;
         Volatile.Write(ref presence, new(p.RunId, now, true, ip));
-        if (!p.Connected || p.RemoteIp != ip) gamepad?.UpdatePresence(Presence);
+        if (!p.Connected || p.RemoteIp != ip) { gamepad?.UpdatePresence(Presence); Mode?.UpdatePresence(Presence); }
         if (!p.Connected)
         {
             output.WriteLine($"presence: status=connected senderRunId={p.RunId:X16} remote={ip}");
@@ -330,6 +341,7 @@ internal sealed class UdpReceiver : IDisposable
         controls?.Dispose();
         socket.Dispose();
         gamepad?.Stop();
+        Mode?.Dispose();
         ClearInput("dispose");
     }
 }
