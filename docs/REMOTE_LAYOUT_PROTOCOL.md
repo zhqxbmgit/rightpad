@@ -16,7 +16,11 @@ only behavior. Focus, page close and reconnect never apply a draft.
 The Receiver process keeps one editor/view/draft instance. Its normal Windows window
 defaults to maximized and has a click-only Return button. Close/Return hide the host;
 hidden/minimized hosts stop the existing view timer, without disposing Runtime or input
-devices. Reopen resumes that same timer and queries the existing client. Only explicit
+devices. Before stopping polling, the client moves any unconfirmed operation to
+reconciliation, preserving its original run/route, epoch, base revision, geometry and
+token. It sends a reconciliation Query, never another mutation. Repeated inactive
+notifications do not create another operation. Reopen resumes that same timer and
+queries the existing client. Only explicit
 Refresh/Discard reloads a dirty draft; phone terminal state and conflict reconciliation
 continue through RemoteLayoutDraft.Observe. Closing does not Keep, Revert, extend or
 restart a trial; Android still restores independently at its original deadline.
@@ -102,15 +106,30 @@ leave some mouse surface; no overlap rule, hit-priority change or arbitrary
 reserved corner is introduced. Existing reserved Mode meaning remains unchanged.
 
 There is one pending coalesced layout dispatch slot in the listener and one
-current-route Sender response slot. Windows holds one operation, tries it at
-most three times at one-second intervals, then queries actual state; query IDs
-are bounded to eight. Reconnect is read-only. Nonzero replies must match a
+current-route Sender response slot. Windows holds one operation, with a monotonic
+start and a fixed three-second expiry (the expiry instant is ineligible for sending).
+It tries at most three times at one-second intervals within that lifetime, then
+queries actual state. Force polling cannot bypass the lifetime or mutation cadence.
+Capture, Begin, Accept, Poll and inactive-window entry all check expiry; no additional
+thread or timer is needed. Query IDs are bounded to eight. A lost Query/result can
+be retried on the existing one-second polling cadence, preserving one reconciliation
+identity rather than accumulating transactions. Hidden hosts do not poll. Reconnect
+is read-only: temporary absence retains reconciliation for the same route/run;
+a changed route/run clears the old capability and queries the new authority.
+Nonzero replies must match a
 request; source/run and epoch/serial checks reject old snapshots. Windows
 subtracts observed round-trip time and never extends an observed trial deadline.
 Lost Keep/result packets reconcile from Android state rather than guess.
-After three unanswered Try attempts, the reconciliation Query also carries that
+After an unanswered Try expires, exhausts its attempts, or its editor becomes
+hidden/closed/minimized/unloaded, the reconciliation Query also carries that
 Try's base identities and token. If Android never saw it, the Query consumes the
 unused token before reporting Restored. Late first copies cannot then apply.
+Queries sent before the operation are fenced; an unconsumed Ready reply on the
+same base cannot confirm sealing. Until an authoritative result arrives the UI
+reports an uncertain result and a new Try is refused. A Query finding Waiting or
+Trial reports that actual state without restarting its phone deadline. Unconfirmed
+Keep also switches to querying on inactivity/expiry; Saved, Restored and Failed are
+reported from the phone without an automatic Revert or guessed persistence result.
 
 ## Tests
 

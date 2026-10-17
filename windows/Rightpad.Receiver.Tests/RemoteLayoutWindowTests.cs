@@ -13,11 +13,49 @@ namespace Rightpad.Receiver.Tests;
 internal static class RemoteLayoutWindowTests
 {
     public static IEnumerable<(string Name, Func<Task> Run)> Cases => [
+        ("layout unconfirmed Try is reconciled before hide/close/minimize polling stops", () => Sta(LostTryLifecycle)),
         ("layout window reuses draft and stops hidden/minimized polling", () => Sta(Lifecycle)),
         ("layout window reopen observes trial deadline and phone conflict", () => Sta(Reconcile)),
         ("layout window Keep requires phone acknowledgement across reopen", () => Sta(Keep)),
         ("layout window finite viewport keeps controls and callouts in bounds", () => Sta(Layout))
     ];
+    private static void LostTryLifecycle()
+    {
+        foreach (string transition in new[] { "hide", "close", "minimize", "unload" }) {
+            using var f = new Fixture(true);
+            Click(f.View,"LayoutXMinus"); Click(f.View,"Layout试用布局");
+            var first = f.Sends.Last();
+            Equal(RemoteLayoutProtocol.Try,first.Kind,"first Try intentionally lost");
+            switch (transition) {
+                case "hide": f.Window.Hide(); break;
+                case "close": f.Window.Close(); break;
+                case "minimize": f.Window.WindowState=WindowState.Minimized; break;
+                default: f.View.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent)); break;
+            }
+            var query = f.Sends.Last();
+            Equal(RemoteLayoutProtocol.Query,query.Kind,"inactive host first changes to reconciliation");
+            Equal(first.Transaction,query.Transaction,"query retains unused token");
+            Equal(first.Epoch,query.Epoch,"query retains base epoch");
+            Equal(first.Revision,query.Revision,"query retains base revision");
+            Equal(first.Geometry,query.Geometry,"query retains geometry");
+            f.Now += 120 * Stopwatch.Frequency; // sole view timer is stopped for two minutes
+            // Exercise the same host repeatedly; no timer/subscription or operation multiplication.
+            for (int i=0;i<12;i++) {
+                f.Window.Show(); f.Window.WindowState=WindowState.Normal; f.View.SetPollingActive(true);
+                f.Window.Hide(); f.View.SetPollingActive(false);
+            }
+            Equal(1,f.Sends.Count(m=>m.Kind==RemoteLayoutProtocol.Try),"lifecycle never replays lost Try");
+            Check(f.Client.Capture(f.Now).Uncertain,"no response is not proof of restoration");
+            f.Window.Show(); f.View.SetPollingActive(true);
+            f.Snapshot=f.Snapshot with {State=4,Transaction=first.Transaction,Next=first.Transaction+1,Serial=2}; f.Reply();
+            f.View.SetPollingActive(false); f.View.SetPollingActive(true);
+            Check(!f.Client.Capture(f.Now).Uncertain,"phone confirms sealing");
+            // A new explicit click remains possible after the old transaction resolves.
+            Click(f.View,"LayoutXMinus"); Click(f.View,"Layout试用布局");
+            Equal(2,f.Sends.Count(m=>m.Kind==RemoteLayoutProtocol.Try),"new explicit Try admitted");
+            Equal(first.Transaction+1,f.Sends.Last().Transaction,"new offered token");
+        }
+    }
     private static Task Sta(Action test)
     {
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -36,13 +74,17 @@ internal static class RemoteLayoutWindowTests
         public readonly RemoteLayoutView View;
         public readonly RemoteLayoutDraft Draft;
         public int Returns;
+        public long Now = Stopwatch.Frequency;
+        private readonly bool controlled;
+        private long Time => controlled ? Now : Stopwatch.GetTimestamp();
         public LayoutMessage Snapshot = new(128,0,0,99,123,5,1,0,0,1,1,0,1200,2670,[
             new("xbox.b.slide","B",0,new(1045,506,155,2164)),new("xbox.x.slide_lr","X",0,new(0,636,68,2034)),
             new("rightpad.input.mode","Mode",0,new(509,772,264,1881)),new("settings","设置",1,new(1010,42,70,70)),new("power","电源",1,new(1120,42,70,70))]);
-        public Fixture()
+        public Fixture(bool controlled = false)
         {
+            this.controlled = controlled;
             Client=new(()=>new(99,Stopwatch.GetTimestamp(),true,"127.0.0.1"),(_,bytes)=>Sends.Add(RemoteLayoutProtocol.Decode(bytes)!));
-            Window=new(()=>Client,()=>Returns++);
+            Window=new(()=>Client,()=>Returns++,()=>Time);
             Window.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/Rightpad.Receiver;component/Resources/DarkTheme.xaml",UriKind.Relative) });
             Check(Window.WindowState==WindowState.Maximized,"normal editor defaults maximized");
             // Off-screen native WPF host exercises Show/Hide/StateChanged without taking input focus.
@@ -53,7 +95,8 @@ internal static class RemoteLayoutWindowTests
         }
         public void Reply()
         {
-            Client.Accept(RemoteLayoutProtocol.Encode(Snapshot with {Request=Sends.Last().Request}),IPAddress.Loopback,Stopwatch.GetTimestamp());
+            if (controlled) Now++; // each received snapshot is observable even at a frozen test time
+            Client.Accept(RemoteLayoutProtocol.Encode(Snapshot with {Request=Sends.Last().Request}),IPAddress.Loopback,Time);
         }
         public void Dispose() => Window.CloseForShutdown();
     }

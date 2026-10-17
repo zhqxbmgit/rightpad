@@ -14,6 +14,7 @@ public sealed class RemoteLayoutView : UserControl
     private readonly RemoteLayoutDraft draft = new();
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(200) };
     private readonly Func<RemoteLayoutClient?> getClient;
+    private readonly Func<long> timestamp;
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Width = 260, FontSize = 13, Margin = new(10, 2, 12, 2) };
     private readonly TextBlock geometry = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(2, 12, 0, 0) };
     private readonly Canvas preview = new() { Background = Brushes.Black, Height = 0, Width = 0 };
@@ -33,9 +34,10 @@ public sealed class RemoteLayoutView : UserControl
     private byte pendingKind;
     private RemoteLayoutClient? Client => getClient();
 
-    internal RemoteLayoutView(Func<RemoteLayoutClient?> getClient, Action returnToReceiver)
+    internal RemoteLayoutView(Func<RemoteLayoutClient?> getClient, Action returnToReceiver, Func<long>? timestamp = null)
     {
         this.getClient = getClient;
+        this.timestamp = timestamp ?? Stopwatch.GetTimestamp;
         var root = new Grid { Margin = new(12, 8, 12, 8) }; Content = root;
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.RowDefinitions.Add(new());
@@ -44,9 +46,9 @@ public sealed class RemoteLayoutView : UserControl
         var actions = new WrapPanel(); root.Children.Add(actions);
         actions.Children.Add(Button("返回 Receiver", returnToReceiver));
         actions.Children.Add(status);
-        actions.Children.Add(Button("刷新手机现状", () => { refreshRequested = true; Client?.Poll(Stopwatch.GetTimestamp(), true); }));
+        actions.Children.Add(Button("刷新手机现状", () => { refreshRequested = true; Client?.Poll(this.timestamp(), true); }));
         discardButton = Button("放弃修改", () => {
-            var s = Client?.Capture(Stopwatch.GetTimestamp()).Snapshot;
+            var s = Client?.Capture(this.timestamp()).Snapshot;
             if (s is not null) draft.Load(s);
             else if (draft.Basis is not null) draft.Load(draft.Basis);
             notice = "已放弃电脑草稿"; Render();
@@ -88,10 +90,16 @@ public sealed class RemoteLayoutView : UserControl
     }
     internal void SetPollingActive(bool active)
     {
+        if (!active) {
+            long now = timestamp();
+            var client = Client;
+            client?.Suspend(now);
+            if (timer.IsEnabled) { timer.Stop(); client?.Poll(now, true); }
+            return;
+        }
         if (active == timer.IsEnabled) return;
-        if (!active) { timer.Stop(); return; }
         // Reopening queries actual state without discarding a draft or creating a new trial.
-        Client?.Poll(Stopwatch.GetTimestamp(), true);
+        Client?.Poll(timestamp(), true);
         Tick(); timer.Start();
     }
     private static Button Button(string label, Action action)
@@ -107,8 +115,8 @@ public sealed class RemoteLayoutView : UserControl
     }
     private void Begin(byte kind)
     {
-        var basis = kind == RemoteLayoutProtocol.Try ? draft.Basis : Client?.Capture(Stopwatch.GetTimestamp()).Snapshot;
-        if (basis is null || Client?.Begin(kind, basis, draft.Items, Stopwatch.GetTimestamp()) != true)
+        var basis = kind == RemoteLayoutProtocol.Try ? draft.Basis : Client?.Capture(timestamp()).Snapshot;
+        if (basis is null || Client?.Begin(kind, basis, draft.Items, timestamp()) != true)
         { notice = "操作未开始：请刷新手机现状后重试"; Render(); return; }
         pendingKind = kind;
         notice = kind == RemoteLayoutProtocol.Try ? "等待手机实际应用" : kind == RemoteLayoutProtocol.Keep ? "正在保存：等待手机写盘结果" : "等待手机恢复原布局";
@@ -116,8 +124,8 @@ public sealed class RemoteLayoutView : UserControl
     }
     private void Tick()
     {
-        Client?.Poll(Stopwatch.GetTimestamp());
-        var captured = Client?.Capture(Stopwatch.GetTimestamp());
+        Client?.Poll(timestamp());
+        var captured = Client?.Capture(timestamp());
         if (captured is { Snapshot: { } s } && captured.Value.At != lastAt)
         {
             lastAt = captured.Value.At;
@@ -129,7 +137,7 @@ public sealed class RemoteLayoutView : UserControl
     }
     private void Render()
     {
-        var captured = Client?.Capture(Stopwatch.GetTimestamp()); var s = captured?.Snapshot;
+        var captured = Client?.Capture(timestamp()); var s = captured?.Snapshot;
         bool active = s?.State is 1 or 2;
         bool editable = s is not null && !active && pendingKind == 0 && !draft.Conflict;
         tryButton.IsEnabled = editable && draft.Dirty && draft.Basis is not null;

@@ -11,6 +11,9 @@ internal static class RemoteLayoutTests
         ("RPLY Windows draft isolated and stale basis fenced", Draft),
         ("RPLY bounded retry, lost save result reconciliation and no replay", Loss),
         ("RPLY deadline never extends, stale snapshot and run fences", Ordering),
+        ("RPLY operation lifetime survives sparse/paused/forced polling", Lifetime),
+        ("RPLY suspended Try retains token until authoritative reconciliation", Suspended),
+        ("RPLY reconciliation bounded across disconnect, route/run/epoch changes", ReconciliationIdentity),
         ("RPLY layout packets cannot establish or renew input presence", Presence),
     }.Select(c => (c.Item1, (Func<Task>)(() => { c.Item2(); return Task.CompletedTask; })))
         .Append(("RPLY real UDP multiplex on existing sender/receiver workers", Loopback))
@@ -109,6 +112,92 @@ internal static class RemoteLayoutTests
         public Fixture() { Client = new(() => P, (_, bytes) => Sends.Add(RemoteLayoutProtocol.Decode(bytes)!)); }
         public void Reply(LayoutMessage m, long now) => Client.Accept(RemoteLayoutProtocol.Encode(m),IPAddress.Loopback,now);
         public void Connect(long now=0) { Client.Poll(now); Reply(Snapshot(Sends.Last().Request),now); }
+    }
+    public static void Lifetime()
+    {
+        foreach (var schedule in new[] { new[] { 0.2, 1, 2, 3 }, new[] { 2.9, 3 }, new[] { 120.0 } }) {
+            var f=new Fixture(); f.Connect(); var s=f.Client.Capture(0).Snapshot!;
+            Check(f.Client.Begin(2,s,Items.Where(i=>i.Flags==0).ToArray(),0),"explicit Try");
+            var first=f.Sends.Last();
+            foreach(double t in schedule) f.Client.Poll(Seconds(t),true);
+            Equal((byte)1,f.Sends.Last().Kind,"deadline checked before force/next-send/count");
+            Equal(first.Transaction,f.Sends.Last().Transaction,"expiry query seals original token");
+            Check(f.Sends.Count(m=>m.Kind==2)<=3,"at most three attempts");
+            Check(f.Client.Capture(Seconds(schedule.Last())).Uncertain,"expired is still unknown");
+        }
+        var b=new Fixture(); b.Connect(); var basis=b.Client.Capture(0).Snapshot!;
+        b.Client.Begin(2,basis,Items.Where(i=>i.Flags==0).ToArray(),0);
+        b.Client.Poll(Seconds(1),true);
+        b.Client.Poll(Seconds(3)-1,true); Equal((byte)2,b.Sends.Last().Kind,"last instant before deadline eligible");
+        b.Client.Poll(Seconds(3),true); Equal((byte)1,b.Sends.Last().Kind,"deadline inclusive even before retry cadence");
+        Equal(3,b.Sends.Count(m=>m.Kind==2),"bounded attempts at 0,1,3-minus-one-tick");
+        b=new Fixture(); b.Connect(); b.Client.Begin(2,basis,Items.Where(i=>i.Flags==0).ToArray(),0);
+        var old=b.Sends.Last();
+        b.Client.Accept(RemoteLayoutProtocol.Encode(basis with {State=2,Transaction=1,Next=2,Serial=2,Remaining=60000,Request=old.Request}),IPAddress.Loopback,Seconds(3));
+        Check(b.Client.Capture(Seconds(3)).Uncertain,"late operation result cannot re-enable mutation retry");
+        Check(!b.Client.Begin(2,basis,Items.Where(i=>i.Flags==0).ToArray(),Seconds(3)),"new Try blocked until reconciliation");
+        b.Client.Poll(Seconds(3),true); Equal((byte)1,b.Sends.Last().Kind,"Accept/Begin also expire");
+    }
+    public static void Suspended()
+    {
+        var f=new Fixture(); f.Connect(); var s=f.Client.Capture(0).Snapshot!;
+        f.Client.Poll(0,true); var before=f.Sends.Last();
+        f.Client.Begin(2,s,Items.Where(i=>i.Flags==0).ToArray(),0); var first=f.Sends.Last();
+        for(int i=0;i<12;i++) f.Client.Suspend(0);
+        f.Reply(s with {Request=before.Request,Serial=2},0);
+        Check(f.Client.Capture(0).Uncertain,"pre-operation Query cannot reconcile");
+        f.Client.Poll(Seconds(120),true); var q=f.Sends.Last();
+        Equal((byte)1,q.Kind,"reopen after 120 seconds is Query");
+        Equal((first.Run,first.Epoch,first.Revision,first.Geometry,first.Transaction),
+            (q.Run,q.Epoch,q.Revision,q.Geometry,q.Transaction),"full original identity retained");
+        Equal(1,f.Sends.Count(m=>m.Kind==2),"lost first Try never replayed");
+        f.Reply(s with {Request=q.Request,Serial=3},Seconds(120));
+        Check(f.Client.Capture(Seconds(120)).Uncertain,"unconsumed Ready is not proof of token sealing");
+        f.Client.Poll(Seconds(121)); q=f.Sends.Last();
+        var sealedState=s with {State=4,Transaction=1,Next=2,Request=q.Request,Serial=4};
+        f.Reply(sealedState,Seconds(121)); f.Reply(sealedState,Seconds(121));
+        Check(!f.Client.Capture(Seconds(121)).Uncertain,"confirmed terminal state reconciles idempotently");
+        Check(f.Client.Begin(2,sealedState,Items.Where(i=>i.Flags==0).ToArray(),Seconds(121)),"fresh explicit Try permitted");
+        Equal(2UL,f.Sends.Last().Transaction,"uses new token");
+    }
+    public static void ReconciliationIdentity()
+    {
+        foreach (string identity in new[] { "disconnect", "route", "run", "epoch" }) {
+            var f=new Fixture(); f.Connect(); var s=f.Client.Capture(0).Snapshot!;
+            f.Client.Begin(2,s,Items.Where(i=>i.Flags==0).ToArray(),0); var old=f.Sends.Last();
+            if(identity=="disconnect") {
+                f.P=f.P with {Connected=false}; f.Client.Poll(Seconds(1));
+                f.P=f.P with {Connected=true};
+            } else if(identity=="route") f.P=f.P with {RemoteIp="127.0.0.2"};
+            else if(identity=="run") f.P=f.P with {RunId=100};
+            else f.Client.Suspend(Seconds(1));
+            f.Client.Poll(Seconds(2),true); var q=f.Sends.Last();
+            Equal((byte)1,q.Kind,"identity recovery is Query");
+            Equal(identity is "disconnect" or "epoch" ? old.Transaction : 0UL,q.Transaction,"token only retained on original route/run");
+            f.Reply(s with {Request=old.Request,State=2,Transaction=1,Serial=2,Remaining=60000},Seconds(2));
+            Check(f.Client.Capture(Seconds(2)).Snapshot?.State!=2,"old mutation response fenced");
+            var current=s with {Run=f.P.RunId!.Value,Epoch=identity=="epoch"?124UL:123UL,
+                State=4,Transaction=1,Next=2,Request=q.Request,Serial=3};
+            f.Client.Accept(RemoteLayoutProtocol.Encode(current),IPAddress.Parse(f.P.RemoteIp!),Seconds(2));
+            Check(!f.Client.Capture(Seconds(2)).Uncertain,"current identity reply reconciles");
+        }
+        var b=new Fixture(); b.Connect(); var initial=b.Client.Capture(0).Snapshot!;
+        b.Client.Begin(2,initial,Items.Where(i=>i.Flags==0).ToArray(),0); b.Client.Suspend(0);
+        for(int i=0;i<100;i++) { b.Client.Suspend(Seconds(i)); b.Client.Poll(Seconds(i),true); }
+        var last=b.Sends.Last(); var evicted=b.Sends.First(m=>m.Kind==1&&m.Transaction==1);
+        b.Reply(initial with {State=4,Transaction=1,Next=2,Serial=99,Request=evicted.Request},Seconds(100));
+        Check(b.Client.Capture(Seconds(100)).Uncertain,"old evicted query ignored");
+        var queries=(System.Collections.IDictionary)typeof(RemoteLayoutClient).GetField("queries",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(b.Client)!;
+        Equal(8,queries.Count,"bounded eight correlations after repeated open/loss");
+        b.Reply(initial with {State=4,Transaction=1,Next=2,Serial=100,Request=last.Request},Seconds(100));
+        Check(!b.Client.Capture(Seconds(100)).Uncertain,"latest repeated reconciliation completes");
+        Equal(1,b.Sends.Count(m=>m.Kind==2),"no mutation resurrection or transaction accumulation");
+        b=new Fixture(); b.Connect(); b.Client.Begin(2,initial,Items.Where(i=>i.Flags==0).ToArray(),0); b.Client.Suspend(0);
+        b.Client.Poll(Seconds(1),true); var oldEpochQuery=b.Sends.Last();
+        b.Client.Poll(Seconds(2),true); var newEpochQuery=b.Sends.Last();
+        b.Reply(initial with {Epoch=124,Serial=1,Request=newEpochQuery.Request},Seconds(2));
+        b.Reply(initial with {Serial=999,Request=oldEpochQuery.Request},Seconds(2));
+        Equal(124UL,b.Client.Capture(Seconds(2)).Snapshot!.Epoch,"new epoch fences other outstanding old-epoch responses");
     }
     public static void Loss()
     {

@@ -9,7 +9,7 @@ internal sealed class RemoteLayoutEditorWindow : Window
     private readonly Action returnToReceiver;
     private bool shuttingDown;
 
-    internal RemoteLayoutEditorWindow(Func<RemoteLayoutClient?> getClient, Action returnToReceiver)
+    internal RemoteLayoutEditorWindow(Func<RemoteLayoutClient?> getClient, Action returnToReceiver, Func<long>? timestamp = null)
     {
         this.returnToReceiver = returnToReceiver;
         SetResourceReference(StyleProperty, typeof(Window));
@@ -20,7 +20,7 @@ internal sealed class RemoteLayoutEditorWindow : Window
         Height = Math.Min(800, SystemParameters.WorkArea.Height);
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         WindowState = WindowState.Maximized;
-        editor = new(getClient, ReturnToReceiver);
+        editor = new(getClient, ReturnToReceiver, timestamp);
         Content = editor;
         IsVisibleChanged += (_, _) => UpdatePolling();
         StateChanged += (_, _) => UpdatePolling();

@@ -4,6 +4,11 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args.Length == 3 && args[0] == "--remote-layout-java")
+        {
+            try { RemoteLayoutJavaTests.Run(args[1], args[2]); return 0; }
+            catch (Exception exception) { Console.WriteLine($"FAIL remote layout Java reconciliation: {exception}"); return 1; }
+        }
         if (args.SequenceEqual(new[] { "--gui-android-smoke" }))
         {
             try { await ButtonSmokeTests.GuiAndroid(); return 0; }
