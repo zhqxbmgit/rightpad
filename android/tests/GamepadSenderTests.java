@@ -46,11 +46,14 @@ public final class GamepadSenderTests {
             byte[] refreshed = next(socket, 5);
             check(seq(refreshed) > 0 && refreshed[14] == GamepadState.B, "worker held refresh");
             sender.setForeground(false);
+            byte[] cancel=next(socket,9);
+            var cb=ByteBuffer.wrap(cancel).order(ByteOrder.LITTLE_ENDIAN);
+            sender.cancelReply(new TouchCancellation.Ack(cb.getLong(2),Integer.toUnsignedLong(cb.getInt(10)),Integer.toUnsignedLong(cb.getInt(14)),Integer.toUnsignedLong(cb.getInt(18))));
             do { p = next(socket, 5); } while (p[14] != 0);
             check(p[14] == 0 && p[28] == 1, "foreground false sends FORCE_NEUTRAL");
             sender.setForeground(true); next(socket, 4);
             sender.submit(UdpTouchSenderTest.touch(TouchSample.Action.DOWN));
-            check(UdpTouchSenderTest.sequence(next(socket, 1)) == 1, "pause/GP preserves Touch sequence");
+            check(UdpTouchSenderTest.sequence(next(socket, 1)) == 2, "pause cancellation advances Touch fence; GP independent");
             sender.submitGamepad(new GamepadState(GamepadState.Y));
             do { p = next(socket, 5); } while (p[14] != GamepadState.Y);
             sender.setTarget(new InetSocketAddress("127.0.0.1", target.getLocalPort()));

@@ -1,8 +1,21 @@
 # Haptic Feedback v1
 
+2026-10-24 independent local exception: Mode 新增 Android 本地、接纳后的一次 PRESS
+振动，复用 B 的 10 ms／255 策略；不代表 Receiver 执行成功。The View uses the
+existing ScreenControlFeedback only after `modeDown()` accepts a new contact.
+This local best-effort attempt has no RPHF identity, UDP request, ACK or retry,
+and adds no UP/cancel/Toggle-state/automatic-close feedback. Mode remains outside
+ordinary Touch and B/X gestures. All RPHF bytes, Touchpad CONFIRM and bound/unbound
+Ring-slot confirmation/dedupe rules below are unchanged; manual Mode close has
+local PRESS admission feedback but still no RPHF completion confirmation.
+See [delivery](MODE_LOCAL_PRESS_DELIVERY_20261024.md).
+
 Windows is the sole gesture authority. Android provides one short semantic
 confirmation for a normal click that Windows has accepted and started outputting.
-It does not classify taps, moves or drags, and receives no gesture settings.
+Since 2026-10-21 (extended 2026-10-22) the same channel and confirmation have one
+additional, restricted purpose: a completed bound Mode Ring slot press+release,
+or one valid tap on an unbound Ring slot (see "Limited second purpose" below). It
+does not classify taps, moves or drags, and receives no gesture settings.
 
 ## Design choice
 
@@ -65,6 +78,48 @@ UI dispatch. A separate task encodes/sends, drops pending entries aged >=1 secon
 and isolates socket/ICMP/startup failures from mouse output. Full/closed queues
 drop feedback. Runtime cleanup first releases buttons, then cancels/awaits the
 feedback worker and closes its socket. No reliable-UDP machinery is present.
+
+## Limited second purpose: Mode slot completion (2026-10-21, unbound 2026-10-22)
+
+A valid tap on a bound or unbound Ring shortcut-menu slot is the only additional
+event that may request this same confirmation. The wire contract, encoder, sender
+worker, Android decoder, source/run/session/UP correlation, dedupe and CONFIRM
+execution are unchanged; no field, port, packet, service, setting or waveform is
+added.
+
+- The Receiver submits the feedback once, and only after the slot's one
+  keyboard/gamepad press **and** its release both completed successfully. This is
+  stricter than the normal-click trigger, which fires when LEFT DOWN succeeded and
+  the release was scheduled. A failed press, a failed release, a closed or
+  superseded menu, a center tap, navigation, a Mode button event or any
+  lifecycle abort submits nothing.
+- **Unbound Ring slot (2026-10-22):** a valid tap on a direction whose slot is
+  unbound now also submits this same confirmation once and then closes the menu.
+  It has no key or gamepad action, so there is no press/release to complete and
+  no 25 ms hold: the Receiver enqueues the feedback on the accepted tap and
+  closes immediately. It emits no keyboard key, gamepad button or ordinary mouse
+  click. The identity is still that tap's raw qualifying UP, so the same Android
+  UP registration, one-second lifetime and one-shot dedupe apply. Failure is
+  logged only and cannot replay anything or keep the menu open. Center taps,
+  navigation, Mode button events and manual close submit nothing, and a bound or
+  unbound selection shares the one-accepted-selection-per-open-cycle gate.
+- The identity is still the raw Android UP that qualified the tap
+  `(senderRunId, sessionId, upSequence)`. That UP is a genuine Sender submission, so
+  the existing Android UP registration, one-second lifetime and one-shot removal
+  apply; duplicate datagrams or repeated/late taps cannot vibrate twice. For a
+  bound slot feedback is sent after the release, within the same one-second window
+  at LAN latency; for an unbound slot it is sent immediately on the accepted tap.
+- It is still best effort and never awaited: the bounded non-blocking enqueue runs
+  inside the ModeSession gate, and the menu closes immediately afterwards without
+  waiting for phone confirmation or actual vibration. A send or Android execution
+  failure is logged only; it cannot replay the key/gamepad action or unbound
+  selection, cannot keep the menu open, and cannot block ordinary input. No retry,
+  fallback or Android-local DOWN-triggered vibration is added.
+- Android still performs `View.performHapticFeedback(HapticFeedbackConstants.CONFIRM)`
+  exactly once per accepted identity. ADB/functional evidence can prove delivery and
+  API execution, not that a human felt the vibration.
+
+See docs/MODE_SHORTCUT_MENU.md and docs/MODE_MENU_ACTION_DELIVERY_20261021.md.
 
 ## Android validation and dedupe
 
@@ -179,3 +234,14 @@ after comparing the installed 6 ms / 120 effect with Screen Control 10 ms / 255.
 Do not infer a satisfied blind comparison or a specific amplitude diagnosis from
 that answer. No further parameter changes were made; wait for the user's next
 candidate. Evidence: ignored `windows/test-results/gamepad-phase5a3/`.
+# 2026-10-23 共享监听恢复补充
+
+原 Android 反馈 worker 在 bind/receive 的 IOException 或 SecurityException 后，
+使用 100、200、400、800、1600、2000 ms（封顶）等待，同目标／同 run 自动重建 socket。
+不启用 SO_REUSEADDR。暂停、目标／run 替换和 close 关闭 socket 并唤醒等待。
+每个 socket 使用独立接收代号，接收及 UI 执行都重新验证身份；失败 socket 已排队的
+旧 UI 工作作废。重建不重新 configure 点击 gate，保留期望 UP 与已消费去重。
+现有 RPHF、RPCT、RPST、RPLY、RPMD 分支保持各自校验和去重；不重放历史请求。
+本轮新增独立 RPTC 取消 ACK 也复用该监听，见
+[普通取消协议](TOUCH_CANCELLATION_PROTOCOL.md)。错误日志只记录首项及每 32 项，
+不会为每次重试刷屏。成功接收后清除该轮退避计数，不增加通道健康设置界面。

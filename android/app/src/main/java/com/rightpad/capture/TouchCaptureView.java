@@ -36,7 +36,7 @@ final class TouchCaptureView extends View {
     }
     private final TouchpadClickFeedback clickFeedback;
     private final TouchSampleLogger logger = new TouchSampleLogger();
-    private final TouchRecordWriter recordWriter;
+    private final TouchDiagnostics diagnostics;
     private final UdpTouchSender udpSender;
     private String receiverAddress;
     private final Runnable requestExit;
@@ -119,11 +119,11 @@ final class TouchCaptureView extends View {
     private int batteryPercent = BatteryDisplay.UNKNOWN_PERCENT;
     private String batteryText = BatteryDisplay.text(BatteryDisplay.UNKNOWN_PERCENT);
 
-    TouchCaptureView(Context context, TouchRecordWriter recordWriter, UdpTouchSender udpSender,
+    TouchCaptureView(Context context, TouchDiagnostics diagnostics, UdpTouchSender udpSender,
             Runnable requestExit, Runnable requestSettings) {
         super(context);
         clickFeedback = new TouchpadClickFeedback(new TouchpadClickHapticFeedback(this));
-        this.recordWriter = recordWriter;
+        this.diagnostics = diagnostics;
         this.udpSender = udpSender;
         this.requestExit = requestExit;
         this.requestSettings = requestSettings;
@@ -487,7 +487,11 @@ final class TouchCaptureView extends View {
                     settings, power, udpSender.canCapture() && event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER,
                     controls.rects());
             reservedContact = owner == ScreenControlRouter.Owner.MODE;
-            if(reservedContact) {modeDownTime=event.getDownTime();udpSender.modeDown();}
+            if (reservedContact) {
+                modeDownTime = event.getDownTime();
+                if (udpSender.modeDown())
+                    controls.feedback.emit(ScreenControlFeedback.Event.PRESS, ScreenControlFeedback.Style.STRONG_ONE_SHOT);
+            }
             if (owner == ScreenControlRouter.Owner.SCREEN_CONTROL) {
                 controls.down(router.controlId(), event);
             } else if (owner == ScreenControlRouter.Owner.MOUSE) {
@@ -554,7 +558,6 @@ final class TouchCaptureView extends View {
                 captureEvent(event, pointerIndex, TouchSample.Action.UP);
                 activePointerId = MotionEvent.INVALID_POINTER_ID;
                 router.cancel();
-                flushRecording();
                 break;
             default:
                 break;
@@ -570,10 +573,12 @@ final class TouchCaptureView extends View {
         powerGesture.onCancel();
         settingsGesture.onCancel();
         if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
+            udpSender.cancelTouch();
             logger.logInterruption(sessionId, activePointerId, reason);
             activePointerId = MotionEvent.INVALID_POINTER_ID;
         }
-        flushRecording();
+        if (diagnostics != null && ("view_detached".equals(reason) || "input_mode_changed".equals(reason)))
+            diagnostics.stop(reason);
     }
 
     @Override
@@ -592,23 +597,8 @@ final class TouchCaptureView extends View {
         }
         samples[historySize] = new TouchSample(event.getX(pointerIndex), event.getY(pointerIndex),
                 event.getEventTimeNanos(), action, activePointerId, sessionId, false);
-        for (TouchSample sample : samples) {
-            recordSample(sample, event.getHistorySize());
-        }
-        // CANCEL remains a local fact; Protocol v2 has no CANCEL or synthetic UP.
+        // Raw CANCEL is diagnostic only; stopCapture submits the distinct reliable barrier.
         if (action != TouchSample.Action.CANCEL) udpSender.submit(samples);
-    }
-
-    private void recordSample(TouchSample sample, int historySize) {
-        if (recordWriter != null) {
-            recordWriter.write(sample);
-        }
-        logger.log(sample, historySize);
-    }
-
-    private void flushRecording() {
-        if (recordWriter != null) {
-            recordWriter.flush();
-        }
+        if (diagnostics != null && diagnostics.active()) diagnostics.samples(samples, event.getHistorySize());
     }
 }

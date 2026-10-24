@@ -1,11 +1,13 @@
 # rightpad Android Touch Capture and Screen Controls
 
+当前产物默认规则见 [DEVELOPMENT_ARTIFACTS.md](../docs/DEVELOPMENT_ARTIFACTS.md)。Windows Wrapper 将新项目缓存写入外部根目录；APK 默认在 `C:\rightpad-artifacts\builds\android\local\app\build\outputs\apk`。新轮次推荐 `-PRightpadArtifactScope=<日期-任务名>`；构建不自动授予安装或重启权限，历史交付按当时路径保留。
+
 验证原始触摸采集、记录与 Protocol v2 UDP 传输：
 
 ```text
 Android Touch Digitizer → MotionEvent → Historical + Current Samples
-                       → TouchSample → Logcat / CSV
-                                     → Protocol v2 Encoder → UDP → Windows Receiver
+                       → TouchSample → Protocol v2 Encoder → UDP → Windows Receiver
+                                     → 可选有界诊断队列 → 专用诊断线程 → CSV / Logcat
 ```
 
 应用使用 Java 和 Android 原生 Activity/View。UI v1 由同一个全屏
@@ -13,7 +15,8 @@ Android Touch Digitizer → MotionEvent → Historical + Current Samples
 顶栏显示系统真实电量；电源按钮短按后通过正常 Activity 生命周期退出并移除任务。
 Settings 齿轮打开 `Settings → Edit Controls Layout`，编辑面板使用原生 View。
 rightpad 在前台运行时会保持屏幕唤醒，离开前台后恢复系统默认超时行为。
-每条原始样本同时输出到 Logcat，并按原始顺序记录到应用私有目录中的 CSV。
+正常启动不创建触摸 CSV，不输出逐样本或逐包成功日志。开发者可通过下述一次性
+启动参数开启有界诊断；采集先提交真实输入，诊断文件与详细日志只在独立诊断线程处理。
 没有第三方运行时依赖、测试框架、服务、鼠标运动处理或 Android 鼠标输出。
 Screen Controls 使用 Android 本地 SlideControl 逻辑和通用 full-state gamepad
 transport；Mouse 手势仍由 Windows 识别。
@@ -84,9 +87,9 @@ control/router/layout 场景。真机测试使用独立 APK，无第三方测试
 
 ```powershell
 .\gradlew.bat assembleDebug assembleDebugAndroidTest lintDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r C:/rightpad-artifacts/builds/android/local/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -S -n com.rightpad.capture/.MainActivity
-adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb install -r C:/rightpad-artifacts/builds/android/local/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w com.rightpad.capture.test/com.rightpad.capture.ScreenControlsSmoke
 adb shell am start -S -n com.rightpad.capture/.MainActivity
 ```
@@ -145,6 +148,7 @@ Screen Control 仍为 10 ms / 255，没有共享强度参数，VIBRATE permissio
 | `TouchSample.java` | 不可变原始采样数据 |
 | `TouchSampleLogger.java` | 输出采样日志及会话内相邻采样间隔 |
 | `TouchRecordWriter.java` | 按采集顺序将原始样本写入应用私有目录中的 CSV |
+| `TouchDiagnostics.java` | 仅显式开启时创建的有界队列／线程，负责录制、详细日志、上限和失败隔离 |
 | `ProtocolV2Encoder.java` | 精确的 v2 Touch / 10-byte heartbeat Little Endian 编码 |
 | `UdpTouchSender.java` | 单线程、有界 FIFO、单 socket 发送，DOWN/UP 各发送三份相同数据 |
 | `HeartbeatSchedule.java` | 500 ms deadline 算术；暂停禁用，超期不 burst |
@@ -194,7 +198,7 @@ sdk.dir=C\:/Users/zhq/AppData/Local/Android/Sdk
 APK 输出：
 
 ```text
-C:\rightpad\android\app\build\outputs\apk\debug\app-debug.apk
+C:\rightpad-artifacts\builds\android\local\app\build\outputs\apk\debug\app-debug.apk
 ```
 
 开发阶段每次成功重新构建 APK 后，默认完成以下整个流程：
@@ -233,7 +237,7 @@ Build
 Set-Location C:\rightpad\android
 $adbPath = 'C:\Users\zhq\AppData\Local\Android\Sdk\platform-tools\adb.exe'
 & $adbPath devices -l
-& $adbPath install -r .\app\build\outputs\apk\debug\app-debug.apk
+& $adbPath install -r C:\rightpad-artifacts\builds\android\local\app\build\outputs\apk\debug\app-debug.apk
 & $adbPath shell am start -S -n com.rightpad.capture/.MainActivity
 & $adbPath logcat -v brief -s 'RightpadTouch:I' '*:S'
 ```
@@ -248,6 +252,9 @@ Logcat 会先显示缓冲区内该标签的旧记录，再持续显示新记录�
 在应用空白区域内用一根手指触摸、移动、抬起；系统状态栏和导航区域不属于采集区域。
 
 ## 日志含义
+
+以下逐样本日志只在显式诊断运行且未达到边界时输出；正常启动仅保留生命周期、
+连接、错误及低频诊断。开发入口和不完整诊断的限制见下节。
 
 以下是格式示例，不是真机测量结果：
 
@@ -271,7 +278,8 @@ session=1 pointer=0 action=UP source=current x=123.25 y=363.0 eventTimeNs=102000
 
 每个 MOVE 先按 Android 提供的顺序记录全部历史样本，再记录当前样本。
 一次 MOVE 若 `historySize=N`，应有 N 条 historical 和一条 current。
-不会请求非批处理输入，不主动丢弃历史采样，也不使用墙上时钟。
+当前固定策略在每个被接纳的单指 Mouse DOWN 请求 unbuffered dispatch；仍保留系统
+提供的全部历史样本，不主动合并或丢弃真实输入，也不使用墙上时钟。
 
 ## 人工验收
 
@@ -301,7 +309,15 @@ session=1 pointer=0 action=UP source=current x=123.25 y=363.0 eventTimeNs=102000
 
 ## CSV 记录
 
-应用每次创建 Activity 时在私有 `files` 目录创建一个新文件：
+正常启动不创建录制。开发执行者可使用一次性启动参数（不要求用户手输命令）：
+
+```powershell
+adb shell am start -S -n com.rightpad.capture/.MainActivity --ez rightpad.diagnostic.touch true
+```
+
+此操作会重启 Sender；执行前遵守唯一控制设备的独立恢复保护规则。普通重新启动
+不带此参数即关闭详细诊断；该参数不保存到设置，Activity 系统重建也不会重新开启。
+诊断启用时才在私有 `files` 目录创建一个新文件：
 
 ```text
 /data/user/0/com.rightpad.capture/files/touch-recording-YYYYMMDD-HHMMSS.csv
@@ -316,8 +332,25 @@ session=1 pointer=0 action=UP source=current x=123.25 y=363.0 eventTimeNs=102000
 sessionId,sampleIndex,action,source,x,y,eventTimeNs
 ```
 
-每个文件的 `sampleIndex` 从 0 开始连续递增。CSV 不合并、不删除、不排序样本，
-也不修改坐标或时间戳。收到 UP、CANCEL 或采集中断时刷新缓冲；Activity 销毁时关闭文件。
+固定上限为从启动请求起 60 秒或 10,000 条诊断事件，先到者停止。样本记录及
+Touch/gamepad 发送成功记录共同计数，队列满的尝试也计入上限，因此 CSV 最多
+10,000 行样本。队列容量 256，使用非等待 offer；满时只丢诊断并计数，真实 Touch
+队列、编码、身份、顺序及发送份数保持原样。
+
+`sampleIndex` 表示本次诊断观察的原始样本序号，从 0 开始；队列满时可能有缺口。
+保留下来的样本仍按原顺序记录，坐标和时间戳不改。诊断 CSV 不能被当作无损录制。
+详细 Logcat 与 CSV 使用同一边界及诊断 worker；Sender 不做文件 I/O，也不构造
+逐包日志字符串。诊断停止后不自动重启。
+
+文件创建、表头 write/flush、样本 write、最终 close/flush 全在诊断 worker；UP
+不再 flush。时间上限、Pause、目标丢失／切换、输入模态切换、detach、Power、Sender
+close 和 Activity destroy 终止诊断，丢弃待处理诊断，UI 不 join 或等待排空。已开始
+的文件操作可能完成，之后仅由同一 worker 关闭文件；不处理后续排队样本。条数上限
+允许处理已接纳队列，但仍受 60 秒边界约束。创建、写入或关闭失败仅输出有界警告和
+结束摘要（reason/samples/attempted/dropped），不重试输入，不影响后续采集／发送。
+`dropped` 只统计队列满，不包含生命周期或时间结束时被丢弃的尾部记录。
+
+不会覆盖、删除或轮转旧文件；重新显式启动会创建新文件，旧证据仍需另行授权管理。
 
 文件实际路径通过 `RightpadRecord` 标签输出：
 
@@ -349,11 +382,13 @@ IPv4 + 50000 作为 Touch 目标。两台 PC 预期不同时出现在一个 LAN�
 sequence 从 0 开始，每个逻辑包递增一次，跨 session 延续；不处理 uint32 回绕。
 DOWN/UP 各发送三份完全相同的字节（同一 sequence），MOVE 只发送一次。
 
-触摸回调创建样本、记录及编码；仅编码后的字节进入容量为 8 的 FIFO。
+触摸 UI 回调创建原始样本并提交编码；仅编码后的字节进入容量为 8 的原 FIFO。
+真实输入提交完成后，显式诊断才尝试把不可变样本引用放入独立有界队列。
 一个专用 Thread 使用一个 DatagramSocket 顺序发送，UI 不执行网络调用。
 队列满时丢弃最旧的待发送逻辑包并记录 queue_overflow droppedSequence。
 这包括可能丢弃 DOWN/UP；三份冗余不保证交付，也不恢复队列已丢弃的包。
-CSV/Logcat 仍保留全部原始样本。发送错误记录日志，无 ACK 或重传协议。
+显式诊断可能因自身上限或拥塞不完整，不能用于推断真实 Touch 丢样。
+发送错误仍记录日志，无 ACK 或重传协议。
 Activity.onCreate 创建无目标 Sender，使用 ThreadLocalRandom.nextLong 生成完整 64-bit
 senderRunId，不持久化。目标变化先停止 capture，清空队列和 session gate，换 runId，
 sequence 归零，先发 heartbeat 再接受新 DOWN。无目标时不发送、不积累 Touch。
@@ -392,11 +427,16 @@ adb shell input swipe 500 1500 650 700 1500 自动验证链路。
 ADB 注入可以验证真机上的采集/传输链路，不能替代真实手指 Motion Dataset。
 真实硬件采样精度、Wi-Fi 长时间稳定性和最终延迟仍需后续测量。
 
-采集同一次 Sender 运行的 CSV、Logcat 和正式 Receiver 日志后，可运行：
+显式诊断中采集同一次 Sender 运行的完整 CSV、Logcat 和正式 Receiver 日志后，可运行：
 
 ```powershell
 .\tests\Verify-SenderE2e.ps1 -CsvPath <CSV路径> -LogcatPath <Logcat路径> -ReceiverLogPath <Receiver日志路径>
 ```
+
+该既有严格比对器要求没有诊断丢失、没有截断历史批次，且包含序列 0 开始的完整
+输入；诊断 `dropped>0` 或尾部截断时不能套用，也不能把比对失败等同于输入丢失。
+本轮不注入 ADB 手势；主机自动验证见 `tests/TouchDiagnosticsTests.java`，交付与
+真机只读检查见 [Android 诊断交付报告](../docs/ANDROID_TOUCH_DIAGNOSTICS_DELIVERY_20261022.md)。
 
 该验证要求从 sequence=0 开始的完整无丢包实验，并实际观察到 historical 样本。
 它逐条检查 float32 位模式、纳秒时间、包内顺序，以及重复包不增加 acceptedSamples。

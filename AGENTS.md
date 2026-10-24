@@ -2,6 +2,122 @@
 
 # rightpad Project Instructions
 
+Approved Mode Android-local PRESS feedback exception (2026-10-24): only after
+`UdpTouchSender.modeDown()` accepts a new Mode DOWN, Android immediately attempts
+one local PRESS through the existing ScreenControlFeedback instance and B's
+STRONG_ONE_SHOT policy (API 26+: 10 ms / 255; older policy branch: legacy 10 ms;
+production minSdk unchanged). This means phone contact admission, never Receiver
+execution success. It applies independently of Receiver binding/use/Toggle state,
+including unbound single binding and menu open/manual close. No local feedback is
+added for MOVE, hold, UP, CANCEL, pointer faults, lifecycle, retries, ACK or sync;
+failure is isolated with no retry. This supersedes only historical statements
+prohibiting Mode local haptics. Static M, stable ID/layout, type8/RPMD, Touch/RPHF,
+B/X, Touchpad CONFIRM, Ring confirmations, Motion and output devices stay intact.
+Computer sound remains removed. See docs/MODE_LOCAL_PRESS_DELIVERY_20261024.md.
+
+Current development artifact paths (2026-10-22): source stays in `C:\rightpad`;
+`artifact-root.txt` defines the default `C:\rightpad-artifacts`. Use
+`tools/Invoke-Development.ps1` and [docs/DEVELOPMENT_ARTIFACTS.md](docs/DEVELOPMENT_ARTIFACTS.md)
+for current build/test/task/candidate/recovery commands. .NET defaults also apply
+to direct dotnet commands; Android Windows Wrapper redirects its project cache
+and Gradle build directories. Use a fresh task identity for independent rounds.
+Formal deployed Receiver stays in its existing source-tree Release directory;
+build success is not deployment. New launcher runs use external `receiver-runtime`;
+Status resolves a still-live legacy run from its original record/log directory.
+Historical task scripts/reports under old test-results remain archives, not current
+default entry points. Do not bulk rewrite, move, compress or delete them.
+Output relocation never grants deployment, restart, device, cleanup or Git authority;
+the user's current task limits override the general deployment rules below.
+
+Approved Mode Ring availability and unbound-confirmation exception (2026-10-22,
+fourth round): a valid tap on an **unbound** Ring short-menu slot now submits
+exactly one confirmation identical to an ordinary touchpad click through the
+existing Haptic Feedback v1 channel (same RPHF bytes, sender run, raw UP identity,
+Android CONFIRM and dedupe; no new protocol, field, waveform, service or setting),
+then closes the menu. It emits no keyboard key, gamepad button or ordinary mouse
+click, does not fabricate a press and does not wait 25 ms; a feedback failure is
+logged only and still closes without replay. One open cycle accepts at most one
+valid slot selection, counting bound and unbound slots. This supersedes the
+unbound part of "center and unbound directions emit nothing" and the third-round
+sentence that a confirmation is never emitted for an unbound direction. The
+center/neutral zone still emits nothing and stays open. Cursor visibility is no
+longer an availability veto: a hidden/suppressed cursor still has a real position,
+and a ClipCursor constraint does not make coordinates unreadable, so while the
+real GetCursorPos read succeeds the menu must open and keep running. This
+supersedes the availability part of "Hidden/restricted/failed cursor or display
+changes exit". Real GetCursorPos/GetMonitorInfo/GetDpiForMonitor failures, changed
+monitor/DPI, the 2 s presentation timeout, lease/presence/disconnect,
+configuration changes, output failures and manual Mode close still close the menu
+and fence old input. The read-only adapter uses GetCursorPos only, never calls
+SetCursorPos/ShowCursor/ClipCursor/SetCapture and no longer P/Invokes
+GetCursorInfo/GetClipCursor. See docs/MODE_SHORTCUT_MENU.md,
+docs/HAPTIC_FEEDBACK_PROTOCOL.md and
+docs/MODE_MENU_COMPAT_DELIVERY_20261022.md.
+
+Approved Mode motion-route exception (2026-10-20, second round): while the
+Receiver-owned Ring menu is open, accepted Touch packets use the existing
+Motion/HID mouse movement path exactly once with the selected engine, committed
+Sensitivity, reconstruction, quantization and output device. Ordinary
+Gesture single-click/double-tap-drag output is withheld before mouse buttons are
+produced, so a menu tap executes only its slot binding (one press and release);
+center and unbound directions emit nothing. The menu observes
+the actual Windows cursor for highlight and taps, keeps the opening anchor fixed,
+and no longer submits SetCursorPos or menu-specific displacement
+accumulation/compensation. This supersedes the 2026-10-19 sentence prohibiting
+normal Motion/HID routing for menu navigation; the rest of that exception (12 DIP
+neutral radius, six directions, Ring only, environment faults, output latches,
+lifecycle, protocols/devices/Motion parameters/Save unchanged) continues. See
+docs/MODE_SHORTCUT_MENU.md and docs/MODE_MOTION_ROUTE_DELIVERY_20261020.md.
+
+Approved Mode slot-completion exception (2026-10-21, third round): a valid tap on
+a bound Ring slot completes its one keyboard/gamepad press **and** release, then
+submits exactly one phone confirmation through the existing Haptic Feedback v1
+channel (same RPHF bytes, sender run, raw UP identity and Android CONFIRM/dedupe;
+no new protocol, service, setting, gesture, waveform or Android receiver change)
+and only afterwards closes the menu automatically. The confirmation is a
+best-effort side effect sent only after both edges completed: it is never emitted
+for center, unbound, navigation, Mode-button or manual-close events, it never
+waits for or proves phone execution, and its failure cannot replay the action,
+block the close or block ordinary input. One open cycle executes at most one slot
+action, so repeated, duplicated or late taps cannot enqueue more work. The
+previous serial pulse queue and the "slot tap keeps the menu open" rule are
+removed; a second Mode DOWN still closes the menu manually. Older slot/UI wording
+that says a successful slot action keeps the menu open is superseded. Manual
+close, lease and generation rules, bindings, Save, layout, Motion/M/C, B/X,
+devices and all wire formats stay unchanged. See docs/MODE_SHORTCUT_MENU.md,
+docs/HAPTIC_FEEDBACK_PROTOCOL.md and
+docs/MODE_MENU_ACTION_DELIVERY_20261021.md.
+
+Approved Mode system-cursor direction-selection exception (2026-10-19): the
+Receiver-owned shortcut menu uses the original Windows cursor via a separate
+absolute-position adapter, with actual readback, a fixed opening anchor and
+12 DIP neutral radius. The fixed complete Ring uses six equal directions to
+select the same ordered slots, including gaps and beyond the decorative outer edge. Do not draw
+or accumulate a private operating pointer, warp the cursor on open, or move the anchor to
+fit the screen. The 2026-10-20 exception above supersedes only the menu-movement part of
+the old normal-Motion/HID prohibition; ordinary Gesture button output stays withheld.
+Clip edge decoration and keep a visible selection caption.
+Hidden/restricted/failed cursor or display changes exit and fence old input;
+explicit fresh Mode contact can retry environment faults after sync. Preserve
+output failure latches, original single bindings, settings/layout, B/X and all
+existing protocols/devices. No game injection, Hook, persistent cursor constraint,
+Android/driver/Broker/license or Git delivery change is authorized. See
+docs/MODE_SHORTCUT_MENU.md and docs/MODE_SYSTEM_CURSOR_DELIVERY_20261019.md.
+
+Approved Mode shortcut-menu exception (2026-10-18; appearance scope 2026-10-20):
+Receiver may select the existing single-binding use or one six-slot shortcut
+menu using only the fixed complete Ring. Old `appearance` value 1 is read as Ring
+and normalized in memory; it is not exposed in the settings UI or renderer.
+Menu actions are independent
+single pulses, never Toggle/hold/macro actions. Reuse type8/RPMD, the original
+Android stable ID/static M/formal layout, existing output devices, ports and
+workers. Receiver-local modal ownership consumes menu navigation and taps before
+normal Motion/Gesture/HID mouse output, cancels old chains and fences exit work.
+Keep the original single binding and behavior, default old files to that use and
+new slots to unbound. Drafts publish only after common disk-first Save. No Android,
+Motion, M/C, accepted B/X parameter, haptic, native ABI, driver/broker/license or
+Git delivery change is authorized by this exception. See docs/MODE_SHORTCUT_MENU.md.
+
 Approved Mode binding exception (2026-10-17): the existing `rightpad.input.mode`
 screen region now supports one Receiver-owned keyboard/gamepad binding with
 Momentary or Toggle behavior. Android reports contact facts through independent
@@ -911,7 +1027,9 @@ Use the project-approved independent interactive Windows task launcher:
 Scheduled Task, current-user InteractiveToken, Limited / LUA run level, and no
 triggers. Do not fall back to plain Start-Process from the Codex shell for a
 Receiver that must remain alive after the tool command returns. Runtime logs stay
-under ignored `windows/test-results/receiver-runtime/`. This is a development
+under `C:\rightpad-artifacts\receiver-runtime\` for future new runs. Existing
+instances keep their original `windows/test-results/receiver-runtime/` logs;
+Status checks both record locations without moving files. This is a development
 launch mechanism, not a product service, watchdog, or automatic startup feature.
 
 For this project, Android deployment normally includes commands equivalent to:

@@ -1,8 +1,22 @@
 # Screen Controls — current contract
 
+2026-10-24 approved exception: Mode 新增 Android 本地、接纳后的一次 PRESS 振动，
+复用 B 的 10 ms／255 策略；不代表 Receiver 执行成功。
+`TouchCaptureView` calls the existing `controls.feedback.emit(PRESS, STRONG_ONE_SHOT)`
+only when `udpSender.modeDown()` returns true. API 26+ requests oneShot(10,255);
+the existing pre-26 policy requests legacy(10), with minSdk still 34. This applies
+to every admitted fresh contact without mirroring binding, Toggle or menu state.
+Rejection, MOVE/hold, UP/CANCEL, pointer faults, editor/tools, lifecycle, retry,
+ACK and resync add no feedback. Failures never replay or alter transport. Mode
+retains MODE ownership and never enters B/X gesture/gamepad or ordinary Touch.
+This replaces only the older Mode-local-haptic prohibition below. B/X feedback,
+Touchpad CONFIRM and bound/unbound Ring-slot confirmations remain independent.
+See [delivery evidence](MODE_LOCAL_PRESS_DELIVERY_20261024.md).
+
 2026-10-17 update: the existing `rightpad.input.mode` is now a Receiver-configured
 single keyboard/gamepad button with Momentary or Toggle behavior. It retains
-the exact layout/stable ID and emits no haptic or mouse Touch packets. Binding,
+the exact layout/stable ID and emits no mouse Touch packets. Its local PRESS
+feedback now follows the 2026-10-24 exception above. Binding,
 output state, lifecycle and the full supported key list are specified in
 [MODE_CONTROL.md](MODE_CONTROL.md); reliable contact facts use
 [type8/RPMD](MODE_CONTACT_PROTOCOL.md). B/X gesture engines and accepted feedback

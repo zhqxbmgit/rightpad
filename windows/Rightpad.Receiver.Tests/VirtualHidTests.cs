@@ -11,11 +11,19 @@ internal static class VirtualHidTests
     internal sealed class FakeNative : IVirtualHidMouse
     {
         public string DeviceIdentity => "fake-owned-node";
+        public string ButtonSupport { get; set; } = "left,right,middle";
         public readonly ConcurrentQueue<(string Kind, int X, int Y)> Events = new();
-        public bool FailMove, FailDown, FailUp, FailDispose;
+        public bool FailMove, FailDown, FailUp, FailDispose, FailRight;
         public void Move(int dx, int dy) { Events.Enqueue(("move", dx, dy)); if (FailMove) throw new IOException("report submission failed"); }
-        public void LeftDown() { Events.Enqueue(("down", 0, 0)); if (FailDown) throw new IOException("DOWN failed"); }
-        public void LeftUp() { Events.Enqueue(("up", 0, 0)); if (FailUp) throw new IOException("UP failed"); }
+        public void SetButton(ModeMouseButton button, bool down)
+        {
+            Events.Enqueue((button switch { ModeMouseButton.Right => down ? "right-down" : "right-up",
+                ModeMouseButton.Middle => down ? "middle-down" : "middle-up", _ => down ? "down" : "up" }, 0, 0));
+            if (button == ModeMouseButton.Left && (down ? FailDown : FailUp)) throw new IOException(down ? "DOWN failed" : "UP failed");
+            if (button != ModeMouseButton.Left && FailRight) throw new IOException("RIGHT failed");
+        }
+        public void LeftDown() => SetButton(ModeMouseButton.Left, true);
+        public void LeftUp() => SetButton(ModeMouseButton.Left, false);
         public void Dispose() { Events.Enqueue(("dispose", 0, 0)); if (FailDispose) throw new IOException("destroy failed"); }
     }
     public static void Arguments()

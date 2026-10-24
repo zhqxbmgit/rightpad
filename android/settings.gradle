@@ -16,3 +16,13 @@ dependencyResolutionManagement {
 
 rootProject.name = 'rightpad-touch-capture'
 include ':app'
+
+// No user-level Gradle/SDK cache changes. Variants stay isolated by AGP as before.
+def artifactRoot = System.getenv('RightpadArtifactsRoot') ?: new File(settingsDir.parentFile, 'artifact-root.txt').text.trim()
+def scope = providers.gradleProperty('RightpadArtifactScope').getOrElse('local')
+if (!new File(artifactRoot).isAbsolute()) throw new GradleException('RightpadArtifactsRoot must be absolute')
+if (!(scope ==~ /[a-zA-Z0-9._-]+/) || scope in ['.', '..']) throw new GradleException('Invalid RightpadArtifactScope')
+gradle.beforeProject { p ->
+    def identity = p.path == ':' ? '_root' : p.path.substring(1).replace(':', '/')
+    p.layout.buildDirectory.set(new File(artifactRoot, "builds/android/${scope}/${identity}/build"))
+}

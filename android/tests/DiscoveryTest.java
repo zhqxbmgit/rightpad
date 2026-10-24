@@ -142,6 +142,8 @@ public final class DiscoveryTest {
                 sender.setTarget(new InetSocketAddress(b.getLocalAddress(), b.getLocalPort()));
                 check(sender.queuedForTest() == 0, "A -> B queue clear");
                 release.countDown();
+                byte[] retiredCancel=receive(a);
+                check(retiredCancel[1]==9 && UdpTouchSenderTest.run(retiredCancel)==runA,"old route gets only final cancel");
                 byte[] hbB = receive(b);
                 check(hbB.length == 10 && hbB[1] == 4, "B first heartbeat / schedule reset");
                 long runB = UdpTouchSenderTest.run(hbB);
@@ -155,6 +157,7 @@ public final class DiscoveryTest {
                         "B starts only with fresh DOWN sequence zero");
                 receive(b); receive(b);
                 sender.setTarget(null);
+                check(receive(b)[1]==9,"retired B gets final cancel");
                 check(sender.runIdForTest() != runB && sender.queuedForTest() == 0, "B -> none rotates / clears");
                 sender.submit(UdpTouchSenderTest.touch(TouchSample.Action.DOWN));
                 noPacket(a); noPacket(b);

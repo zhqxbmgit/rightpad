@@ -33,15 +33,18 @@ public final class HapticListenerTest {
             }
         });
         InetAddress address = InetAddress.getLoopbackAddress();
-        try (DatagramSocket sender = new DatagramSocket(); HapticFeedbackListener listener = new HapticFeedbackListener(() -> {
+        int port;
+        try (DatagramSocket reserve = new DatagramSocket(0, address); DatagramSocket sender = new DatagramSocket()) {
+            port=reserve.getLocalPort(); reserve.close();
+            try (HapticFeedbackListener listener = new HapticFeedbackListener(() -> {
             check(Thread.currentThread() == uiThread, "callback must run on UI thread"); clickFeedback.acceptedClick();
-        })) {
+        }, ignored -> {}, (ignored,at) -> {}, port, () -> new DatagramSocket(null))) {
             listener.setActive(address, 7);
             listener.expectUp(7, 1, 1);
             // Allow initial worker bind, then send repeatedly until receive posts; dedupe remains required.
             long deadline = System.nanoTime() + 2_000_000_000L;
             while (!Handler.hasPending()) {
-                sender.send(new DatagramPacket(packet(7,1,1),24,address,50002));
+                sender.send(new DatagramPacket(packet(7,1,1),24,address,port));
                 Thread.sleep(10);
                 check(System.nanoTime() < deadline, "listener bind and receive");
             }
@@ -50,35 +53,35 @@ public final class HapticListenerTest {
             check(count[0] == 1, "valid real UDP callback once");
             // All rejected identities and duplicate packets pass through the actual listener/gate.
             for (byte[] rejected : new byte[][] {packet(7,1,1), packet(6,1,1), packet(7,9,1), packet(7,1,9), new byte[24]}) {
-                sender.send(new DatagramPacket(rejected,24,address,50002));
+                sender.send(new DatagramPacket(rejected,24,address,port));
                 until(Handler::hasPending); Handler.drain();
                 check(count[0] == 1, "duplicate/stale/session/unissued/invalid feedback cannot vibrate");
             }
             fail[0] = true;
             listener.expectUp(7, 2, 2);
-            sender.send(new DatagramPacket(packet(7,2,2),24,address,50002));
+            sender.send(new DatagramPacket(packet(7,2,2),24,address,port));
             until(Handler::hasPending); Handler.drain();
             check(count[0] == 2, "backend failure attempted once and did not escape UI callback");
-            sender.send(new DatagramPacket(packet(7,2,2),24,address,50002));
+            sender.send(new DatagramPacket(packet(7,2,2),24,address,port));
             until(Handler::hasPending); Handler.drain();
             check(count[0] == 2, "failed vibration does not rearm dedupe");
             fail[0] = false;
             listener.expectUp(7, 2, 4);
-            sender.send(new DatagramPacket(packet(7,2,4),24,address,50002));
+            sender.send(new DatagramPacket(packet(7,2,4),24,address,port));
             until(Handler::hasPending); Handler.drain();
             check(count[0] == 3, "next valid feedback still works after backend failure");
             listener.expectUp(7, 2, 3);
-            sender.send(new DatagramPacket(packet(7,2,3),24,address,50002));
+            sender.send(new DatagramPacket(packet(7,2,3),24,address,port));
             until(Handler::hasPending);
             listener.setActive(null, 0); // pending callback is deliberately held behind pause.
             Handler.drain();
             check(count[0] == 3, "pause clears pending UI feedback");
-            try (DatagramSocket rebound = new DatagramSocket(50002)) { check(rebound.isBound(), "pause releases port synchronously"); }
+            try (DatagramSocket rebound = new DatagramSocket(port)) { check(rebound.isBound(), "pause releases port synchronously"); }
             listener.setActive(address, 7);
             listener.expectUp(7, 3, 5);
             deadline = System.nanoTime() + 2_000_000_000L;
             while (!Handler.hasPending()) {
-                sender.send(new DatagramPacket(packet(7,3,5),24,address,50002));
+                sender.send(new DatagramPacket(packet(7,3,5),24,address,port));
                 Thread.sleep(10);
                 check(System.nanoTime() < deadline, "resume bind");
             }
@@ -86,9 +89,10 @@ public final class HapticListenerTest {
             Handler.drain();
             check(count[0] == 3, "run/target transition invalidates old posted event");
         }
+        }
         until(() -> Thread.getAllStackTraces().keySet().stream().noneMatch(t -> t.getName().equals("RightpadHaptic") && t.isAlive()));
         Handler.drain();
-        try (DatagramSocket rebound = new DatagramSocket(50002)) { check(rebound.isBound(), "destroy releases port"); }
+        try (DatagramSocket rebound = new DatagramSocket(port)) { check(rebound.isBound(), "destroy releases port"); }
         check(error.get() == null, "worker exception: " + error.get());
         check(count[0] == 3, "destroy has no late callback");
         System.out.println("PASS haptic listener real UDP / UI dispatch / pause / resume / transition / close / thread exit");

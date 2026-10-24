@@ -8,6 +8,7 @@ import static com.rightpad.capture.InputHealthStatus.Health.*;
 
 public final class InputHealthTests {
     static int checks;
+    static int port;
     static void check(boolean ok, String message) { checks++; if (!ok) throw new AssertionError(message); }
     static byte[] golden() { return HexFormat.of().parseHex("525053540101000001020304050607081112131415161718212223242526272802030000"); }
     static byte[] packet(long run) {
@@ -81,21 +82,22 @@ public final class InputHealthTests {
         check(tracker.display(cache,60).input() == PENDING, "resume same sender does not reuse green");
     }
     static void receive(DatagramSocket sender, InetAddress destination, byte[] bytes) throws Exception {
-        sender.send(new DatagramPacket(bytes,bytes.length,destination,50002));
+        sender.send(new DatagramPacket(bytes,bytes.length,destination,port));
         long deadline = System.nanoTime()+2_000_000_000L;
         while (!Handler.hasPending()) { Thread.sleep(5); check(System.nanoTime()<deadline,"listener callback"); }
     }
     static void listener() throws Exception {
         InetAddress local = InetAddress.getByName("127.0.0.1"); int[] status = {0}, configs = {0}, clicks = {0};
         Thread ui = Thread.currentThread();
+        try(var reserve=new DatagramSocket(0)){port=reserve.getLocalPort();}
         try (var sender = new DatagramSocket(); var other = new DatagramSocket(new InetSocketAddress("127.0.0.2",0));
              var listener = new HapticFeedbackListener(() -> clicks[0]++, ignored -> configs[0]++, (s, at) -> {
                  check(Thread.currentThread() == ui && at <= System.nanoTime(), "UI dispatch and receive timestamp"); status[0]++;
-             })) {
+             },port,()->new DatagramSocket(null))) {
             listener.setActive(local,7);
             long deadline = System.nanoTime()+2_000_000_000L;
             while (!Handler.hasPending()) {
-                sender.send(new DatagramPacket(packet(7),36,local,50002)); Thread.sleep(10);
+                sender.send(new DatagramPacket(packet(7),36,local,port)); Thread.sleep(10);
                 check(System.nanoTime()<deadline,"bind");
             }
             Handler.drain(); check(status[0]>0,"actual UDP RPST"); int accepted = status[0];

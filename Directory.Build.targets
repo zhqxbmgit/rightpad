@@ -1,0 +1,6 @@
+<Project>
+  <Target Name="ValidateRightpadArtifactPaths" BeforeTargets="Restore;PrepareForBuild">
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(RightpadArtifactsRoot)', '^([A-Za-z]:[\\/]|\\\\[^\\]+\\[^\\]+)'))" Text="RightpadArtifactsRoot must be absolute." />
+    <Error Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(RightpadArtifactScope)', '[^a-zA-Z0-9._-]')) Or '$(RightpadArtifactScope)' == '..' Or '$(RightpadArtifactScope)' == '.'" Text="Invalid RightpadArtifactScope." />
+  </Target>
+</Project>

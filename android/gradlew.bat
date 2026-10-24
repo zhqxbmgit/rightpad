@@ -73,8 +73,17 @@ goto fail
 set CLASSPATH=%APP_HOME%\gradle\wrapper\gradle-wrapper.jar
 
 
+@rem Project-local default only; an explicit --project-cache-dir in %* takes precedence.
+if not defined RightpadArtifactsRoot set /p RightpadArtifactsRoot=<"%APP_HOME%\..\artifact-root.txt"
+if not defined RightpadArtifactsRoot exit /b 1
+if not "%RightpadArtifactsRoot:~1,2%"==":\" if not "%RightpadArtifactsRoot:~1,2%"==":/" if not "%RightpadArtifactsRoot:~0,2%"=="\\" (
+    echo RightpadArtifactsRoot must be absolute. 1>&2
+    exit /b 1
+)
+set "RIGHTPAD_PROJECT_CACHE_OPTION=--project-cache-dir "%RightpadArtifactsRoot%\builds\android\gradle-cache""
+for %%A in (%*) do for /f "tokens=1 delims==" %%B in ("%%~A") do if "%%B"=="--project-cache-dir" set "RIGHTPAD_PROJECT_CACHE_OPTION="
 @rem Execute Gradle
-"%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
+"%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %RIGHTPAD_PROJECT_CACHE_OPTION% %*
 
 :end
 @rem End local scope for the variables with windows NT shell

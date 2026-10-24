@@ -139,16 +139,17 @@ public final class ControlConfigTests {
     }
     static void listener() throws Exception {
         List<ControlConfigProtocol.Snapshot> received=new ArrayList<>();
-        try(var socket=new DatagramSocket(); var listener=new HapticFeedbackListener(()->{},received::add)) {
+        int port; try(var reserve=new DatagramSocket(0)){port=reserve.getLocalPort();}
+        try(var socket=new DatagramSocket(); var listener=new HapticFeedbackListener(()->{},received::add,(ignored,at)->{},port,()->new DatagramSocket(null))) {
             listener.setActive(InetAddress.getLoopbackAddress(),7);
             long until=System.nanoTime()+2_000_000_000L;
             while(received.isEmpty()) {
-                byte[] b=packet(7,1,1,15); socket.send(new DatagramPacket(b,b.length,InetAddress.getLoopbackAddress(),50002));
+                byte[] b=packet(7,1,1,15); socket.send(new DatagramPacket(b,b.length,InetAddress.getLoopbackAddress(),port));
                 Thread.sleep(10); Handler.drain(); check(System.nanoTime()<until,"shared listener receive");
             }
             check(received.get(0).records().get(1).upTenthsDp()==15,"same50002 config dispatch");
             Thread.sleep(20); Handler.drain(); int count=received.size();
-            byte[] wrong=packet(8,1,2,7); socket.send(new DatagramPacket(wrong,wrong.length,InetAddress.getLoopbackAddress(),50002));
+            byte[] wrong=packet(8,1,2,7); socket.send(new DatagramPacket(wrong,wrong.length,InetAddress.getLoopbackAddress(),port));
             Thread.sleep(30); Handler.drain(); check(received.size()==count,"wrong senderRun rejected");
             listener.setActive(null,0);
         }

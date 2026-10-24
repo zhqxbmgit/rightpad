@@ -1,16 +1,72 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace Rightpad.Receiver;
 
-internal enum ModeBindingKind { Unbound, Keyboard, Gamepad }
+// Append-only: existing numeric values are persisted, so a new kind must never
+// be inserted before Unbound/Keyboard/Gamepad.
+internal enum ModeBindingKind { Unbound, Keyboard, Gamepad, Mouse }
 internal enum ModePressBehavior { Momentary, Toggle }
+internal enum ModePurpose { SingleBinding, ShortcutMenu }
+// Stable identifiers are the catalog Id strings "left"/"right"/"middle"; this
+// enum is the in-process identity shared by binding, session and mouse output.
+internal enum ModeMouseButton { Left, Right, Middle }
+[JsonConverter(typeof(ModeMenuAppearanceConverter))]
+internal enum ModeMenuAppearance { Ring }
+
+// Only the complete ring remains. Value 1 and the historical name are accepted
+// when reading an old settings file, normalized in memory to Ring and written
+// back as 0; they never select another runtime appearance.
+internal sealed class ModeMenuAppearanceConverter : JsonConverter<ModeMenuAppearance>
+{
+    public override ModeMenuAppearance Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int value) && value is 0 or 1)
+            return ModeMenuAppearance.Ring;
+        if (reader.TokenType == JsonTokenType.String && reader.GetString() is string name &&
+            (name.Equals("Ring", StringComparison.OrdinalIgnoreCase) || name.Equals("Islands", StringComparison.OrdinalIgnoreCase)))
+            return ModeMenuAppearance.Ring;
+        throw new JsonException("Invalid mode menu appearance.");
+    }
+    public override void Write(Utf8JsonWriter writer, ModeMenuAppearance value, JsonSerializerOptions options) =>
+        writer.WriteNumberValue((int)ModeMenuAppearance.Ring);
+}
+internal sealed record ModeMenuAction(ModeBindingKind Kind = ModeBindingKind.Unbound, string Key = "")
+{
+    public ModeKey? Selected => ModeKeys.All.FirstOrDefault(k => k.Kind == Kind && k.Id == Key);
+    // Ring slots keep the original keyboard/gamepad/unbound contract. Mouse
+    // buttons are a single-binding use only, so a hand-edited slot is invalid.
+    public bool IsValid => ModeKeys.IsMenuKind(Kind) && (Kind == ModeBindingKind.Unbound ? Key == "" : Selected is not null);
+    public string Name => Selected?.Name ?? "未绑定";
+}
+// Six named immutable values keep equality, disk merging and slot order explicit.
+internal sealed record ModeMenuSlots
+{
+    public ModeMenuAction Top { get; init; } = new();
+    public ModeMenuAction UpperRight { get; init; } = new();
+    public ModeMenuAction LowerRight { get; init; } = new();
+    public ModeMenuAction Bottom { get; init; } = new();
+    public ModeMenuAction LowerLeft { get; init; } = new();
+    public ModeMenuAction UpperLeft { get; init; } = new();
+    public ModeMenuAction this[int i] => i switch { 0=>Top,1=>UpperRight,2=>LowerRight,3=>Bottom,4=>LowerLeft,5=>UpperLeft,_=>throw new ArgumentOutOfRangeException(nameof(i)) };
+    public bool IsValid => Enumerable.Range(0,6).All(i=>this[i]?.IsValid == true);
+    public ModeMenuSlots With(int i,ModeMenuAction action) => i switch {
+        0=>this with {Top=action},1=>this with {UpperRight=action},2=>this with {LowerRight=action},
+        3=>this with {Bottom=action},4=>this with {LowerLeft=action},5=>this with {UpperLeft=action},_=>throw new ArgumentOutOfRangeException(nameof(i)) };
+    public static readonly string[] Directions = ["上", "右上", "右下", "下", "左下", "左上"];
+}
 internal sealed record ModeBinding(ModeBindingKind Kind = ModeBindingKind.Unbound, string Key = "", ModePressBehavior Behavior = ModePressBehavior.Momentary)
 {
-    public bool IsValid => Enum.IsDefined(Kind) && Enum.IsDefined(Behavior) &&
+    public ModePurpose Purpose { get; init; }
+    public ModeMenuAppearance Appearance { get; init; }
+    public ModeMenuSlots Slots { get; init; } = new();
+    public bool IsValid => Enum.IsDefined(Purpose) && Enum.IsDefined(Appearance) && Slots?.IsValid == true && Enum.IsDefined(Kind) && Enum.IsDefined(Behavior) &&
         (Kind == ModeBindingKind.Unbound ? Key == "" : ModeKeys.All.Any(k => k.Kind == Kind && k.Id == Key));
     public ModeKey? Selected => ModeKeys.All.FirstOrDefault(k => k.Kind == Kind && k.Id == Key);
-    public string Summary => (Selected?.Name ?? "未绑定") + " · " + (Behavior == ModePressBehavior.Toggle ? "切换按住" : "普通按钮");
+    public string Summary => Purpose == ModePurpose.ShortcutMenu ? "电脑快捷菜单 · 六个按钮" : (Selected?.Name ?? "未绑定") + " · " + (Behavior == ModePressBehavior.Toggle ? "切换按住" : "普通按钮");
 }
 internal sealed record ModeKey(ModeBindingKind Kind, string Id, string Name, string Group, ushort VirtualKey = 0, ushort ScanCode = 0,
-    XboxGamepadState Gamepad = default);
+    XboxGamepadState Gamepad = default, ModeMouseButton Mouse = default);
 
 internal static class ModeKeys
 {
@@ -39,8 +95,15 @@ internal static class ModeKeys
             keys.Add(new(ModeBindingKind.Gamepad,k.Item1,k.Item2,"手柄",Gamepad:new(k.Item3)));
         keys.Add(new(ModeBindingKind.Gamepad,"LT","LT（全按 / 零）","手柄",Gamepad:new(LeftTrigger:255)));
         keys.Add(new(ModeBindingKind.Gamepad,"RT","RT（全按 / 零）","手柄",Gamepad:new(RightTrigger:255)));
+        // Single-binding mouse buttons: stable Ids, one physical button per binding.
+        foreach (var (id,name,button) in new[] {
+            ("left","鼠标左键",ModeMouseButton.Left),("right","鼠标右键",ModeMouseButton.Right),("middle","鼠标中键（滚轮按下）",ModeMouseButton.Middle) })
+            keys.Add(new(ModeBindingKind.Mouse,id,name,"鼠标",Mouse:button));
         return keys;
     }
+    // Ring slots intentionally never accept the single-binding mouse kind.
+    internal static bool IsMenuKind(ModeBindingKind kind) =>
+        kind is ModeBindingKind.Unbound or ModeBindingKind.Keyboard or ModeBindingKind.Gamepad;
     public static XboxGamepadState Merge(XboxGamepadState a, XboxGamepadState b) => a with {
         Buttons = a.Buttons | b.Buttons, LeftTrigger = Math.Max(a.LeftTrigger,b.LeftTrigger), RightTrigger = Math.Max(a.RightTrigger,b.RightTrigger) };
 }

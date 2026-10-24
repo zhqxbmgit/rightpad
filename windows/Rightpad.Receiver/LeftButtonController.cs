@@ -126,17 +126,27 @@ internal sealed class LeftButtonController : IDisposable
         onFailure(); // Wake the receiving loop even when no new packet arrives.
     }
 
-    public void CancelPendingAndRelease()
+    public void CancelPendingAndRelease(string? reason = null)
     {
         lock (gate)
         {
             if (disposed) return;
+            bool wasHeld = held, wasDragging = dragging;
+            int queued = pendingClicks.Count;
             dragging = false;
             pendingClicks.Clear();
             timer.Change(Timeout.Infinite, Timeout.Infinite);
-            if (!held) return;
+            if (!held)
+            {
+                // Report an ordinary safety release separately from menu pulses.
+                if (reason is not null && (wasHeld || wasDragging || queued > 0))
+                    logError($"left_button_safety_release: reason={reason} held={wasHeld} dragging={wasDragging} pendingClicks={queued}");
+                return;
+            }
             try { up(); held = false; }
             catch (Exception exception) { Fail(exception); throw; }
+            if (reason is not null)
+                logError($"left_button_safety_release: reason={reason} held={wasHeld} dragging={wasDragging} pendingClicks={queued}");
         }
     }
 

@@ -1,7 +1,9 @@
-$ErrorActionPreference = 'Continue'
+param([string]$ArtifactRoot = '', [string]$Task = ((Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-failure-capture'), [switch]$IncludeAndroid)
+$ErrorActionPreference = 'Stop'
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
 $root = Split-Path $PSScriptRoot -Parent
-$destination = Join-Path $root "test-results\failure-captures\$stamp"
+. (Join-Path (Split-Path $root -Parent) 'tools\ArtifactPaths.ps1')
+$destination = Join-Path (New-RightpadTask $Task $ArtifactRoot) 'evidence'
 $diagnostics = Join-Path $env:LOCALAPPDATA 'rightpad\diagnostics'
 $null = New-Item -ItemType Directory -Path $destination -Force
 
@@ -39,12 +41,14 @@ $receivers = @(Get-Process -Name 'Rightpad.Receiver' -ErrorAction SilentlyContin
 })
 $foregroundPid = [RightpadFreezeNative]::ForegroundPid()
 $foreground = Get-Process -Id $foregroundPid -ErrorAction SilentlyContinue
+$foregroundRecord = $null
+if ($foreground) { $foregroundRecord = [pscustomobject]@{ Pid=$foreground.Id; Name=$foreground.ProcessName; Path=$foreground.Path } }
 $system = [pscustomobject]@{
     CapturedAt = [DateTimeOffset]::Now.ToString('o')
     Receiver = $receivers
     Udp50000 = @(Get-NetUDPEndpoint -ErrorAction SilentlyContinue | Where-Object LocalPort -eq 50000 |
         Select-Object LocalAddress,LocalPort,OwningProcess)
-    Foreground = if ($foreground) { [pscustomobject]@{ Pid=$foreground.Id; Name=$foreground.ProcessName; Path=$foreground.Path } }
+    Foreground = $foregroundRecord
     MouseDevices = @(Get-PnpDevice -Class Mouse -ErrorAction SilentlyContinue | Select-Object Status,FriendlyName,InstanceId)
     HidDevices = @(Get-PnpDevice -Class HIDClass -ErrorAction SilentlyContinue | Select-Object Status,FriendlyName,InstanceId)
     SunshineProcesses = @(Get-Process -Name 'sunshine' -ErrorAction SilentlyContinue | Select-Object Id,Path,StartTime,SessionId)
@@ -53,7 +57,7 @@ $system = [pscustomobject]@{
 $system | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $destination 'system.json') -Encoding UTF8
 
 $adb = Get-Command adb -ErrorAction SilentlyContinue
-if ($adb) {
+if ($IncludeAndroid -and $adb) {
     & adb devices -l 2>&1 | Set-Content -LiteralPath (Join-Path $destination 'adb-devices.txt') -Encoding UTF8
     & adb shell dumpsys activity activities 2>&1 | Set-Content -LiteralPath (Join-Path $destination 'android-activity.txt') -Encoding UTF8
     & adb logcat -d -t 2000 2>&1 | Set-Content -LiteralPath (Join-Path $destination 'android-logcat.txt') -Encoding UTF8

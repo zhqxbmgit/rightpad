@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <AssemblyMetadata Include="RightpadSourceRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..'))" />
+    <AssemblyMetadata Include="RightpadArtifactsRoot" Value="$(RightpadArtifactsRoot)" />
+    <AssemblyMetadata Include="RightpadArtifactScope" Value="$(RightpadArtifactScope)" />
     <Using Include="System.IO" />
     <Using Include="System.Net.Http" />
     <ProjectReference Include="../Rightpad.Receiver/Rightpad.Receiver.csproj" />

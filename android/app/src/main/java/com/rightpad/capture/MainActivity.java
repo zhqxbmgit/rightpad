@@ -7,22 +7,17 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.BatteryManager;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 
-import java.io.IOException;
-
 public final class MainActivity extends Activity {
-    private static final String RECORD_TAG = "RightpadRecord";
-
     private TouchCaptureView captureView;
     private android.widget.FrameLayout root;
     private ScreenControlEditorPanel editorPanel;
     private final android.window.OnBackInvokedCallback editorBack = this::closeEditor;
-    private TouchRecordWriter recordWriter;
+    private TouchDiagnostics diagnostics;
     private UdpTouchSender udpSender;
     private ReceiverDiscoveryClient discovery;
     private HapticFeedbackListener haptics;
@@ -48,13 +43,13 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         configureEdgeToEdge();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        try {
-            recordWriter = new TouchRecordWriter(getFilesDir());
-        } catch (IOException exception) {
-            Log.e(RECORD_TAG, "recording_open_failed", exception);
-        }
+        boolean diagnosticRequested = savedInstanceState == null
+                && getIntent().getBooleanExtra(TouchDiagnostics.EXTRA, false);
+        getIntent().removeExtra(TouchDiagnostics.EXTRA); // One launch only, never persistent.
+        diagnostics = diagnosticRequested ? TouchDiagnostics.start(true, getFilesDir()) : null;
         udpSender = new UdpTouchSender();
-        captureView = new TouchCaptureView(this, recordWriter, udpSender,
+        udpSender.setDiagnostics(diagnostics);
+        captureView = new TouchCaptureView(this, diagnostics, udpSender,
                 this::exit, this::showSettings);
         root = new android.widget.FrameLayout(this);
         root.addView(captureView);
@@ -84,6 +79,15 @@ public final class MainActivity extends Activity {
         udpSender.setUpObserver(haptics::expectUp);
         haptics.layouts = remoteLayout::receive;
         haptics.modes = udpSender::modeReply;
+        haptics.cancellations = udpSender::cancelReply;
+        udpSender.setResyncObserver(() -> {
+            captureView.stopCapture("touch_cancel_resync");
+            remoteLayout.abort();
+            captureView.controls.config.reset();
+            haptics.setActive(foreground && receiverTarget!=null ? receiverTarget.getAddress() : null,udpSender.getSenderRunId());
+            health.configure(foreground && receiverTarget!=null,udpSender.getSenderRunId());
+            refreshHealth();
+        });
         discovery = new ReceiverDiscoveryClient(this, this::receiverChanged);
         updateBattery(registerReceiver(null, batteryFilter));
         applyImmersiveMode();
@@ -135,6 +139,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        if (diagnostics != null) diagnostics.stop("activity_paused");
         remoteLayout.abort();
         if (batteryReceiverRegistered) {
             unregisterReceiver(batteryReceiver);
@@ -159,15 +164,15 @@ public final class MainActivity extends Activity {
         haptics.close();
         discovery.close();
         udpSender.close();
-        if (recordWriter != null) {
-            recordWriter.close();
-        }
+        if (diagnostics != null) diagnostics.stop("activity_destroyed");
         super.onDestroy();
     }
 
     private void receiverChanged(java.net.InetSocketAddress target, String id) {
         if (!foreground) return;
         if (!java.util.Objects.equals(receiverTarget, target) || !java.util.Objects.equals(receiverId, id)) {
+            // Initial discovery is part of startup; subsequent target loss/replacement fences diagnostics.
+            if (receiverTarget != null && diagnostics != null) diagnostics.stop("receiver_changed");
             remoteLayout.abort();
             health.configure(false, 0);
             healthUi.removeCallbacks(expireHealth);
@@ -194,6 +199,7 @@ public final class MainActivity extends Activity {
     }
 
     private void exit() {
+        if (diagnostics != null) diagnostics.stop("power_exit");
         haptics.close();
         captureView.stopCapture("power_exit");
         discovery.close();

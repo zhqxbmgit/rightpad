@@ -131,7 +131,7 @@ internal static class LeftButtonControllerTests
         int wakeups = 0, ups = 0;
         using var button = new LeftButtonController(() => { }, () => { ups++; throw new Win32Exception(5); }, _ => { }, () => wakeups++, 200);
         button.Click();
-        Throws<Win32Exception>(button.CancelPendingAndRelease);
+        Throws<Win32Exception>(() => button.CancelPendingAndRelease());
         Check(button.Failure is Win32Exception, "cleanup failure retained as receiver error");
         Equal(1, wakeups, "failure wakes idle receiver"); Check(ups >= 2, "best effort release attempted");
     }

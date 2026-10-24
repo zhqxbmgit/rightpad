@@ -4,10 +4,15 @@ internal interface IMouseOutput : IDisposable
 {
     string BackendName { get; }
     string? DeviceIdentity => null;
+    // Which physical buttons this bridge can actually emit. Left-only bridges
+    // report "left" so a Mode mouse binding fails clearly instead of guessing.
+    string ButtonSupport => "left";
     MouseOutputStats Stats { get; }
     void Move(int dx, int dy);
     void LeftDown();
     void LeftUp();
+    // Additive: existing left callers and counters are unchanged.
+    void SetButton(ModeMouseButton button, bool down);
 }
 
 // Counts API calls, not HID report chunks or proof that a foreground app consumed input.

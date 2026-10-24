@@ -389,8 +389,7 @@ internal static class Cz1ParameterTests
     }
     private static void Markup()
     {
-        var root=new DirectoryInfo(AppContext.BaseDirectory);while(root is not null&&!Directory.Exists(Path.Combine(root.FullName,"windows","Rightpad.Receiver")))root=root.Parent;
-        Check(root is not null,"repo root");string source=Path.Combine(root!.FullName,"windows","Rightpad.Receiver");
+        string source=Path.Combine(TestPaths.SourceRoot,"windows","Rightpad.Receiver");
         var xml=XDocument.Load(Path.Combine(source,"Views","MotionView.xaml"));string text=xml.ToString();
         foreach(string binding in new[]{"Amax","Vmax","Tau","Damping","Glide","PositionStop","VelocityStop","ActiveText","SavedText","StatusText"})Check(text.Contains("{Binding "+binding+"}"),"C field bound: "+binding);
         Check(xml.Descendants().Any(e=>e.Name.LocalName=="Expander"&&e.Descendants().Count(x=>x.Name.LocalName=="Cz1ParameterEditor")==2),"stop thresholds in expandable advanced region");

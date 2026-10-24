@@ -53,6 +53,7 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
     }
     public IPEndPoint? LocalEndpoint => Volatile.Read(ref current)?.Receiver?.LocalEndpoint;
     public string ModeStatus => Volatile.Read(ref current)?.Receiver?.Mode?.Status ?? settings.Current.ModeControl.Summary + " · 已停止";
+    internal ModeSession? ModeSession => Volatile.Read(ref current)?.Receiver?.Mode;
     public RemoteLayoutClient? Layout
     {
         get
@@ -425,8 +426,13 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             }
             Volatile.Write(ref run.Mouse, mouse);
             Volatile.Write(ref run.Motion, motion);
-            buttons = mouse is null ? null : new(mouse.LeftDown, mouse.LeftUp, output.WriteLine,
-                run.Cancellation.Cancel, initial.ClickHoldMs);
+            if (mouse is not null) output.WriteLine($"mouse_buttons: backend={mouse.BackendName} support={mouse.ButtonSupport}");
+            // One device, two independent button sources: ordinary Gesture and Mode.
+            var buttonMerge = mouse is null ? null : new MouseButtonMerge(mouse);
+            buttons = buttonMerge is null ? null : new(
+                () => buttonMerge.Set(MouseButtonSource.Gesture, ModeMouseButton.Left, true),
+                () => buttonMerge.Set(MouseButtonSource.Gesture, ModeMouseButton.Left, false),
+                output.WriteLine, run.Cancellation.Cancel, initial.ClickHoldMs);
             // Hold belongs to the request, which can occur after the packet's motion output.
             haptics = new(output);
             gesture = buttons is null ? null : new((_, packet) =>
@@ -444,12 +450,14 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
                 output.WriteLine(FormattableString.Invariant($"gesture: singleTap=enabled doubleTapDrag=enabled tapMaxDurationMs={initial.TapMaxDurationMs} tapMovementThresholdPx={initial.TapMovementThresholdPx} clickHoldMs={initial.ClickHoldMs} doubleTapIntervalMs={initial.DoubleTapIntervalMs}"));
             if(rawMouse && mouseFactory is null) run.Mode=new ModeSession(settings,
                 state=>SetMergedGamepadState(state,true),haptics.TryEnqueueConfig,log:output.WriteLine,
-                gamepadReady:()=> {lock(run.GamepadGate) return run.Gamepad?.Available==true && !run.GamepadClosed && run.GamepadError is null;});
+                gamepadReady:()=> {lock(run.GamepadGate) return run.Gamepad?.Available==true && !run.GamepadClosed && run.GamepadError is null;},
+                haptic:haptics.TryEnqueue,
+                mouse:buttonMerge is null ? null : (button,down)=>buttonMerge.Set(MouseButtonSource.Mode,button,down));
             receiver = new UdpReceiver(endpoint ?? new(IPAddress.Any, UdpReceiver.Port), output,
                 motion: motion, detailedLogging: !rawMouse, gesture: gesture, settings: settings,
                 controlSend: haptics.TryEnqueueConfig,
                 hitchTrace: HitchTrace, runtimeRun: run.Id, mode:run.Mode,
-                cancelButtons: buttons is null ? null : buttons.CancelPendingAndRelease, flightRecorder: flightRecorder, motionTrace: motionTrace,
+                cancelButtons: buttons is null ? null : reason => buttons.CancelPendingAndRelease(reason), flightRecorder: flightRecorder, motionTrace: motionTrace,
                 gamepad: run.GamepadSession = rawMouse ? new GamepadSessionProcessor(SetGamepadState, message =>
                 {
                     output.WriteLine(message);

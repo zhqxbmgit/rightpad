@@ -102,10 +102,19 @@ int rightpad_vhid_move(void* handle, int32_t dx, int32_t dy, char* error, int si
     return boundary(error, size, [&] { return handle ? static_cast<rightpad::MouseSession*>(handle)->move(dx, dy) : failure("mouse handle is null"); });
 }
 int rightpad_vhid_left_down(void* handle, char* error, int size) {
-    return boundary(error, size, [&] { return handle ? static_cast<rightpad::MouseSession*>(handle)->button(true) : failure("mouse handle is null"); });
+    return boundary(error, size, [&] { return handle ? static_cast<rightpad::MouseSession*>(handle)->button(0, true) : failure("mouse handle is null"); });
 }
 int rightpad_vhid_left_up(void* handle, char* error, int size) {
-    return boundary(error, size, [&] { return handle ? static_cast<rightpad::MouseSession*>(handle)->button(false) : failure("mouse handle is null"); });
+    return boundary(error, size, [&] { return handle ? static_cast<rightpad::MouseSession*>(handle)->button(0, false) : failure("mouse handle is null"); });
+}
+// Additive mouse-button extension 1; every ABI-2 export above keeps its meaning.
+int rightpad_vhid_mouse_api_version() { return 1; }
+int rightpad_vhid_button(void* handle, int32_t button, int32_t down, char* error, int size) {
+    return boundary(error, size, [&] {
+        if (down != 0 && down != 1) return lvh::OperationStatus::failure(lvh::ErrorCode::invalid_argument, "invalid mouse button state");
+        if (!handle) return failure("mouse handle is null");
+        return static_cast<rightpad::MouseSession*>(handle)->button(button, down != 0);
+    });
 }
 int rightpad_vhid_destroy(void* handle, char* error, int size) {
     return boundary(error, size, [&] {

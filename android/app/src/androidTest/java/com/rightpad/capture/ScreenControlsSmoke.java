@@ -336,7 +336,7 @@ public final class ScreenControlsSmoke extends Instrumentation {
                     Field profileSequence = UdpTouchSender.class.getDeclaredField("profileSequence"); profileSequence.setAccessible(true);
                     check(latest.getInt(sender) == 0 && profileSequence.getLong(sender) == 0, "reserved contact never publishes or advances type7");
                 } catch (Exception e) { throw new AssertionError(e); }
-                check(haptics[0] == 0, "C1 Mode and Mouse produce zero local Screen Control haptics");
+                check(haptics[0] == 0, "unsynchronized Mode DOWN and Mouse produce zero local Screen Control haptics");
                 try {
                     Field sequence = UdpTouchSender.class.getDeclaredField("nextSequence"); sequence.setAccessible(true);
                     check(sequence.getLong(sender) == 6, "C1 Mode produces zero Touch packets");

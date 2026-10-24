@@ -9,9 +9,21 @@ internal sealed class NativeVirtualHidMouse : IVirtualHidMouse
 {
     private const string Library = "Rightpad.VirtualHid.dll";
     private const int BufferSize = 2048;
+    // Additive mouse-button extension. A bridge built before this extension keeps
+    // left-button support; right/middle then fail explicitly instead of guessing.
+    internal const int RequiredButtonApiVersion = 1;
     private readonly MouseHandle handle;
     private readonly MotionTrace? motionTrace;
+    private readonly int buttonApi;
     public string DeviceIdentity { get; }
+    public string ButtonSupport => ButtonSupportText(buttonApi);
+    internal static string ButtonSupportText(int apiVersion) =>
+        apiVersion >= RequiredButtonApiVersion ? "left,right,middle" : "left";
+    internal static void EnsureButtonExtension(int apiVersion)
+    {
+        if (apiVersion < RequiredButtonApiVersion)
+            throw new IOException("libvirtualhid mouse button extension unavailable (bridge has no rightpad_vhid_button): deploy the matching bridge. Only the left button can be emitted.");
+    }
 
     public NativeVirtualHidMouse(MotionTrace? motionTrace = null)
     {
@@ -19,6 +31,7 @@ internal sealed class NativeVirtualHidMouse : IVirtualHidMouse
         try
         {
             NativeVirtualHidAbi.Validate(NativeVirtualHidAbi.ReadVersion());
+            buttonApi = ProbeButtonApi();
             var error = new StringBuilder(BufferSize);
             var identity = new StringBuilder(BufferSize);
             Check(Create(out handle, identity, BufferSize, error, BufferSize), error);
@@ -26,6 +39,12 @@ internal sealed class NativeVirtualHidMouse : IVirtualHidMouse
         }
         catch (Exception e) when (e is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
         { throw new IOException("libvirtualhid native bridge load failed; deploy the matching x64 bridge and dependencies. " + e.Message, e); }
+    }
+
+    private static int ProbeButtonApi()
+    {
+        try { return ReadButtonApiVersion(); }
+        catch (EntryPointNotFoundException) { return 0; } // Pre-extension bridge: left only.
     }
 
     public void Move(int dx, int dy)
@@ -45,12 +64,19 @@ internal sealed class NativeVirtualHidMouse : IVirtualHidMouse
         }
         Check(result, error);
     }
-    public void LeftDown() => Button(true);
-    public void LeftUp() => Button(false);
-    private void Button(bool down)
+    public void LeftDown() => SetButton(ModeMouseButton.Left, true);
+    public void LeftUp() => SetButton(ModeMouseButton.Left, false);
+    public void SetButton(ModeMouseButton button, bool down)
     {
         var error = new StringBuilder(BufferSize);
-        Check(down ? DownNative(handle, error, BufferSize) : UpNative(handle, error, BufferSize), error);
+        if (button == ModeMouseButton.Left)
+        {
+            // Old entry points stay authoritative for the existing left path.
+            Check(down ? DownNative(handle, error, BufferSize) : UpNative(handle, error, BufferSize), error);
+            return;
+        }
+        EnsureButtonExtension(buttonApi);
+        Check(ButtonNative(handle, (int)button, down ? 1 : 0, error, BufferSize), error);
     }
     public void Dispose()
     {
@@ -74,10 +100,15 @@ internal sealed class NativeVirtualHidMouse : IVirtualHidMouse
     private static extern int Create(out MouseHandle handle, StringBuilder identity, int identitySize, StringBuilder error, int errorSize);
     [DllImport(Library, EntryPoint = "rightpad_vhid_move", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     private static extern int MoveNative(MouseHandle handle, int dx, int dy, StringBuilder error, int size);
+    // Bridge button codes: 0 left, 1 right, 2 middle; mirror ModeMouseButton.
+    [DllImport(Library, EntryPoint = "rightpad_vhid_button", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    private static extern int ButtonNative(MouseHandle handle, int button, int down, StringBuilder error, int size);
     [DllImport(Library, EntryPoint = "rightpad_vhid_left_down", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     private static extern int DownNative(MouseHandle handle, StringBuilder error, int size);
     [DllImport(Library, EntryPoint = "rightpad_vhid_left_up", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     private static extern int UpNative(MouseHandle handle, StringBuilder error, int size);
     [DllImport(Library, EntryPoint = "rightpad_vhid_destroy", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     private static extern int Destroy(IntPtr handle, StringBuilder? error, int size);
+    [DllImport(Library, EntryPoint = "rightpad_vhid_mouse_api_version", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int ReadButtonApiVersion();
 }

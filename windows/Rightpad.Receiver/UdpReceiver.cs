@@ -24,7 +24,7 @@ internal sealed class UdpReceiver : IDisposable
     private readonly GestureProcessor? gesture;
     private readonly bool detailedLogging;
     private readonly RuntimeSettingsStore? settings;
-    private readonly Action? cancelButtons;
+    private readonly Action<string>? cancelButtons;
     private readonly TextWriter output;
     private readonly FlightRecorder? flightRecorder;
     private readonly GamepadSessionProcessor? gamepad;
@@ -45,6 +45,8 @@ internal sealed class UdpReceiver : IDisposable
     private long inputTimeouts, lastAcceptedAtTicks, lastAcceptedSampleAtTicks, lastHeartbeatAtTicks;
     private long lastTouchDatagramAtTicks, activeSession = -1;
     private IPAddress? lastRemoteIp;
+    private readonly Action<IPAddress,byte[]>? cancelReply;
+    private (uint Session,uint Sequence,IPAddress Source)? latestDown;
 
     public IPEndPoint LocalEndpoint { get; }
     public PacketStatistics Statistics { get; } = new();
@@ -59,7 +61,7 @@ internal sealed class UdpReceiver : IDisposable
     // Endpoint and timeout injection are for loopback tests, not user configuration.
     public UdpReceiver(IPEndPoint endpoint, TextWriter output, TimeSpan? timeout = null,
         ITouchMotion? motion = null, bool detailedLogging = true, GestureProcessor? gesture = null,
-        RuntimeSettingsStore? settings = null, Action? cancelButtons = null, FlightRecorder? flightRecorder = null,
+        RuntimeSettingsStore? settings = null, Action<string>? cancelButtons = null, FlightRecorder? flightRecorder = null,
         MotionTrace? motionTrace = null, GamepadSessionProcessor? gamepad = null,
         Action<IPAddress, byte[]>? controlSend = null, HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0, ModeSession? mode = null)
     {
@@ -68,6 +70,7 @@ internal sealed class UdpReceiver : IDisposable
         socket = new UdpClient(endpoint);
         LocalEndpoint = (IPEndPoint)socket.Client.LocalEndPoint!;
         this.motion = motion;
+        cancelReply = controlSend;
         this.motionTrace = motionTrace;
         this.hitchTrace = hitchTrace;
         this.runtimeRun = runtimeRun;
@@ -79,6 +82,10 @@ internal sealed class UdpReceiver : IDisposable
         this.flightRecorder = flightRecorder;
         this.gamepad = gamepad;
         Mode = mode;
+        if(Mode is not null) Mode.MenuBoundary = open => {
+            ClearInput(open ? "menu_enter" : "menu_exit");
+            gamepad?.SetInputModal(open);
+        };
         if (settings is not null && controlSend is not null) controls = new(settings, () => Presence, controlSend, output);
         if (controlSend is not null) Layout = new(() => Presence, controlSend);
         logger = new RawSampleLogger(output, detailedLogging);
@@ -186,6 +193,26 @@ internal sealed class UdpReceiver : IDisposable
         }
         CheckTimeouts(now); // Invalid/old traffic must not postpone expiry, even at the recovery boundary.
         Statistics.RecordReceived();
+        if (bytes.Length>=2 && bytes[0]==2 && bytes[1]==9)
+        {
+            if (!TouchCancellationProtocol.TryDecode(bytes,out var cancel)) { Statistics.RecordInvalid(); return; }
+            var authority=Presence;
+            if (cancel.Run!=authority.RunId || authority.RemoteIp!=remote.Address.ToString()) return;
+            // A later accepted packet already supersedes this boundary. ACK it without
+            // touching the newer contact. An unseen DOWN may have been lost/reordered.
+            if (Statistics.LastSequence is not uint last || cancel.Sequence>last)
+            {
+                if(latestDown is { } d && (cancel.Down<d.Sequence ||
+                    (cancel.Down==d.Sequence && (cancel.Session!=d.Session || !remote.Address.Equals(d.Source))))) return;
+                Statistics.Fence(cancel.Sequence); // Fence even a DOWN arriving after its CANCEL.
+                Mode?.CancelTouch();
+                ClearInput("touch_cancel");
+                touchDeadline=null;
+                output.WriteLine($"touch_cancel: senderRunId={cancel.Run:X16} sessionId={cancel.Session} downSequence={cancel.Down} sequence={cancel.Sequence}");
+            }
+            cancelReply?.Invoke(remote.Address,TouchCancellationProtocol.Acknowledge(cancel));
+            return; // No presence renewal, click or haptic confirmation.
+        }
         if (RemoteLayoutProtocol.Matches(bytes))
         {
             Layout?.Accept(bytes, remote.Address, now);
@@ -260,6 +287,7 @@ internal sealed class UdpReceiver : IDisposable
                 ("senderRunId", $"{h.SenderRunId:X16}"), ("trigger", h.EventType.ToString()));
             ClearInput("sender_run_change");
             Statistics.ResetSequence();
+            latestDown=null;
             lastProfileSequence = null;
             Volatile.Write(ref motionProfile, (int)MotionProfile.Normal);
             touchDeadline = null;
@@ -282,19 +310,25 @@ internal sealed class UdpReceiver : IDisposable
             observation.Delta == 0 ? HitchStatus.Duplicate : HitchStatus.Old);
         if (observation.Accepted)
         {
+            if(h.EventType==TouchEventType.Down) latestDown=(h.SessionId,h.Sequence,remote.Address);
             RecordPresence(remote, now);
             touchDeadline = now + Ticks(inputTimeout);
             Interlocked.Exchange(ref lastAcceptedAtTicks, now);
             Interlocked.Exchange(ref lastAcceptedSampleAtTicks, now);
             var snapshot = settings?.Current;
-            motionTrace?.Accepted(packet, now);
-            motion?.ProcessAt(packet, now, snapshot);
-            if (snapshot is null) { gesture?.Process(packet); }
-            else
-            {
-                gesture?.Process(packet, snapshot.TapMaxDurationMs, snapshot.TapMovementThresholdPx, snapshot.ClickHoldMs,
+            // Movement and gesture output are separable so Mode can keep the one
+            // original Motion/HID movement path while withholding button events.
+            void Movement() {
+                motionTrace?.Accepted(packet, now);
+                motion?.ProcessAt(packet, now, snapshot);
+            }
+            void Gestures() {
+                if (snapshot is null) { gesture?.Process(packet); }
+                else gesture?.Process(packet, snapshot.TapMaxDurationMs, snapshot.TapMovementThresholdPx, snapshot.ClickHoldMs,
                     snapshot.DoubleTapIntervalMs);
             }
+            if(Mode is null) { Movement(); Gestures(); }
+            else Mode.RouteTouch(packet,snapshot??RuntimeSettings.Default,Movement,Gestures);
             Interlocked.Exchange(ref activeSession, motion?.ActiveSessionId is uint id ? id : -1);
         }
         logger.Packet(elapsedMs, remote, packet, observation);
@@ -331,7 +365,7 @@ internal sealed class UdpReceiver : IDisposable
         motion?.Reset();
         gesture?.Reset();
         Interlocked.Exchange(ref activeSession, -1);
-        cancelButtons?.Invoke();
+        cancelButtons?.Invoke(reason);
         if (session >= 0) flightRecorder?.Event("touch_session_reset", ("reason", reason), ("sessionId", session));
     }
     private static long Ticks(TimeSpan time) => (long)(time.TotalSeconds * Stopwatch.Frequency);

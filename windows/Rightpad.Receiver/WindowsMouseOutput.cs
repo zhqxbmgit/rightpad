@@ -16,6 +16,10 @@ internal sealed class WindowsMouseOutput : IMouseOutput
     internal const uint MouseMove = 0x0001;
     internal const uint MouseLeftDown = 0x0002;
     internal const uint MouseLeftUp = 0x0004;
+    internal const uint MouseRightDown = 0x0008;
+    internal const uint MouseRightUp = 0x0010;
+    internal const uint MouseMiddleDown = 0x0020;
+    internal const uint MouseMiddleUp = 0x0040;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct MouseInput
@@ -73,6 +77,14 @@ internal sealed class WindowsMouseOutput : IMouseOutput
 
     public void LeftDown() => Button(MouseLeftDown);
     public void LeftUp() => Button(MouseLeftUp);
+    public string ButtonSupport => "left,right,middle";
+    public void SetButton(ModeMouseButton button, bool down) => Button(button switch
+    {
+        ModeMouseButton.Left => down ? MouseLeftDown : MouseLeftUp,
+        ModeMouseButton.Right => down ? MouseRightDown : MouseRightUp,
+        ModeMouseButton.Middle => down ? MouseMiddleDown : MouseMiddleUp,
+        _ => throw new ArgumentOutOfRangeException(nameof(button))
+    });
 
     private void Button(uint flags)
     {
@@ -88,12 +100,20 @@ internal sealed class WindowsMouseOutput : IMouseOutput
             Interlocked.Increment(ref leftButtonFailures);
             RecordFailure("button", inserted, error);
             throw new Win32Exception(error,
-                $"SendInput button={(flags == MouseLeftDown ? "LEFT_DOWN" : "LEFT_UP")} inserted={inserted} expected=1 win32Error={error}. Cause may not be reported by Windows (including UIPI).");
+                $"SendInput button={ButtonName(flags)} inserted={inserted} expected=1 win32Error={error}. Cause may not be reported by Windows (including UIPI).");
         }
         RecordSuccess();
         if (flags == MouseLeftDown) Interlocked.Increment(ref leftDownSuccess);
-        else Interlocked.Increment(ref leftUpSuccess);
+        else if (flags == MouseLeftUp) Interlocked.Increment(ref leftUpSuccess);
     }
+
+    private static string ButtonName(uint flags) => flags switch
+    {
+        MouseLeftDown => "LEFT_DOWN", MouseLeftUp => "LEFT_UP",
+        MouseRightDown => "RIGHT_DOWN", MouseRightUp => "RIGHT_UP",
+        MouseMiddleDown => "MIDDLE_DOWN", MouseMiddleUp => "MIDDLE_UP",
+        _ => flags.ToString()
+    };
 
     public WindowsMouseOutput(FlightRecorder? flightRecorder = null, HitchTraceRecorder? hitchTrace = null, long runtimeRun = 0)
         : this(SendInput, Marshal.GetLastPInvokeError, null, flightRecorder, hitchTrace, runtimeRun) { }

@@ -10,6 +10,7 @@ internal sealed class PacketStatistics
     public void RecordHeartbeat() => Interlocked.Increment(ref heartbeatPackets);
     public void RecordOutdatedRun() => Interlocked.Increment(ref outdatedRunPackets);
     public void ResetSequence() => LastSequence = null;
+    public void Fence(uint sequence) { if (LastSequence is null || sequence > LastSequence) LastSequence = sequence; }
     public long ReceivedPackets => Interlocked.Read(ref receivedPackets);
     public long InvalidPackets => Interlocked.Read(ref invalidPackets);
     public long AcceptedPackets => Interlocked.Read(ref acceptedPackets);

@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <RightpadArtifactsRoot Condition="'$(RightpadArtifactsRoot)' == ''">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)artifact-root.txt').Trim())</RightpadArtifactsRoot>
+    <RightpadArtifactScope Condition="'$(RightpadArtifactScope)' == ''">local</RightpadArtifactScope>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <!-- WPF temporary projects retain the source directory, unlike their generated project names. -->
+    <RightpadProjectIdentity>$([System.IO.Path]::GetFileName('$(MSBuildProjectDirectory)'))</RightpadProjectIdentity>
+    <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)' == '' And '$(UseArtifactsOutput)' != 'true' And '$(ArtifactsPath)' == ''">$(RightpadArtifactsRoot)\builds\windows\$(RightpadArtifactScope)\$(RightpadProjectIdentity)\obj\$(Configuration)\</BaseIntermediateOutputPath>
+    <BaseOutputPath Condition="'$(BaseOutputPath)' == '' And '$(UseArtifactsOutput)' != 'true' And '$(ArtifactsPath)' == ''">$(RightpadArtifactsRoot)\builds\windows\$(RightpadArtifactScope)\$(RightpadProjectIdentity)\bin\</BaseOutputPath>
+    <!-- Retained historical outputs must never become source after moving the defaults. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**</DefaultItemExcludes>
+    <RightpadNativeOutput>$(RightpadArtifactsRoot)\builds\native\$(RightpadArtifactScope)\$(Configuration)\bin</RightpadNativeOutput>
+  </PropertyGroup>
+</Project>

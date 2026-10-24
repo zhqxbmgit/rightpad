@@ -14,7 +14,10 @@ $taskName = 'Rightpad Receiver Dev'
 $taskDescription = 'rightpad independent interactive development Receiver (project launcher).'
 $windowsRoot = Split-Path $PSScriptRoot -Parent
 $receiverPath = Join-Path $windowsRoot 'Rightpad.Receiver\bin\Release\net8.0-windows\Rightpad.Receiver.exe'
-$logRoot = Join-Path $windowsRoot 'test-results\receiver-runtime'
+. (Join-Path (Split-Path $windowsRoot -Parent) 'tools\ArtifactPaths.ps1')
+# Read the persisted project default, never a transient terminal environment variable.
+$logRoot = Join-Path (Get-RightpadArtifactRoot) 'receiver-runtime'
+$legacyCurrentPath = Join-Path $windowsRoot 'test-results\receiver-runtime\current.json'
 $currentPath = Join-Path $logRoot 'current.json'
 $launchOptionsPath = Join-Path $logRoot 'launch-options.json'
 $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -95,7 +98,13 @@ function Ensure-Task {
 }
 
 function Read-Run {
-    if (Test-Path -LiteralPath $currentPath) { Get-Content -LiteralPath $currentPath -Raw | ConvertFrom-Json }
+    $records = @(foreach ($path in @($currentPath, $legacyCurrentPath) | Select-Object -Unique) {
+        if (Test-Path -LiteralPath $path) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json }
+    })
+    $live = @($records | Where-Object { Get-OwnedReceiver $_ })
+    if ($live.Count -gt 1) { throw 'Multiple live launcher records; no automatic stop or launch is safe.' }
+    if ($live.Count -eq 1) { return $live[0] }
+    $records | Sort-Object { [DateTime]$_.StartUtc } -Descending | Select-Object -First 1
 }
 
 function Get-OwnedReceiver($run) {

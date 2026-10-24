@@ -19,13 +19,26 @@ int main() {
         check(session.move(INT_MIN, INT_MAX).ok());
         auto event = session.mouse->last_submitted_event();
         check(event.x == INT_MIN && event.y == INT_MAX && event.kind == lvh::MouseEventKind::relative_motion);
-        check(session.button(true).ok() && session.held);
+        check(session.button(true).ok() && session.held == 1U);
         event = session.mouse->last_submitted_event();
         check(event.kind == lvh::MouseEventKind::button && event.button == lvh::MouseButton::left && event.pressed);
-        check(session.button(false).ok() && !session.held);
+        check(session.button(false).ok() && session.held == 0U);
+        check(!session.mouse->last_submitted_event().pressed);
+        // Additive per-button API: right and middle map to the library buttons,
+        // and every held button is released independently on close.
+        check(rightpad_vhid_mouse_api_version() == 1);
+        check(session.button(1, true).ok() && session.held == 2U);
+        event = session.mouse->last_submitted_event();
+        check(event.kind == lvh::MouseEventKind::button && event.button == lvh::MouseButton::right && event.pressed);
+        check(session.button(2, true).ok() && session.held == 6U);
+        event = session.mouse->last_submitted_event();
+        check(event.kind == lvh::MouseEventKind::button && event.button == lvh::MouseButton::middle && event.pressed);
+        check(session.button(1, false).ok() && session.held == 4U);
         check(!session.mouse->last_submitted_event().pressed);
         check(session.button(true).ok());
-        check(session.close().ok() && !session.held && !session.mouse && !session.runtime);
+        check(session.button(3, true).ok() == false); // Unmapped code is rejected, never defaulted.
+        check(session.button(-1, true).ok() == false);
+        check(session.close().ok() && session.held == 0U && !session.mouse && !session.runtime);
         check(session.close().ok());
         char error[128]{};
         rightpad::KeyboardSession keyboard;

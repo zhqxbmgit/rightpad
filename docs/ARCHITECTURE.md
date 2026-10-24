@@ -1,5 +1,64 @@
 # rightpad System Architecture
 
+Development storage contract (2026-10-22): source, development output and deployed
+runtime are separate roots. `artifact-root.txt` selects `C:\rightpad-artifacts`
+for future builds, intermediates, task evidence/candidates/recovery and new launcher
+logs. The formal Receiver Release location and user configuration stay unchanged.
+Existing logs and historical artifacts remain at their original paths. See
+[DEVELOPMENT_ARTIFACTS.md](DEVELOPMENT_ARTIFACTS.md) for current entry points,
+override precedence, legacy Status lookup and authorization boundaries. This
+tooling change does not change input, Motion, protocols or application behavior.
+
+Current Mode shortcut-menu extension (2026-10-20 second round; slot completion
+2026-10-21; unbound confirmation and cursor availability 2026-10-22): Receiver now
+selects either the preserved single binding below or a six-slot pulse menu using
+only the fixed complete Ring. Old appearance value 1 loads as Ring while all
+other mode fields and settings are retained. ModeSession owns the menu, pulse
+queue and lifecycle under its existing gate. Accepted Touch packets still enter
+UdpReceiver's single original Motion/HID movement path exactly once while the menu
+is open; ordinary Gesture single-click/double-tap-drag output is withheld before
+a mouse button can be generated. A tap on a bound slot executes exactly one
+keyboard/gamepad press and release; only after both edges completed does
+ModeSession submit one confirmation through the existing Haptic Feedback v1
+channel (same RPHF bytes, sender run, raw UP identity, Android CONFIRM and dedupe)
+and then close the menu automatically. A tap on an unbound direction submits that
+same single confirmation (same qualified UP identity) with no key, gamepad or
+mouse output, then closes immediately. One open cycle accepts at most one valid
+slot selection, bound or unbound, so repeated or late taps cannot enqueue more
+work; the former serial pulse queue is gone and a second Mode DOWN still closes
+the menu manually. Center taps emit nothing and keep the menu open. The WPF
+non-activating transparent host renders a small white arrow with a black outline
+at the same ModeMenuSnapshot CursorX/CursorY used by the Ring (2026-10-22 visible
+marker extension). Its silhouette tip is the observed position; DIP geometry uses
+the Ring's monitor-origin/DPI transform, renders last, and clips naturally at the
+existing overlay bounds. It has no private movement state or cursor read, and is
+omitted from the static settings preview. Hiding/closing the menu also removes the
+marker. While open, the presenter consumes the latest shared snapshot at WPF
+CompositionTarget.Rendering opportunities; its original idle timer is stopped
+until the menu closes. The retained arrow changes only its transform, leaving
+unchanged Ring labels and decoration intact. Close/fault/Dispose detach the frame
+handler; the existing fault/release lifecycle and 2 s presentation timeout remain. The
+menu never submits SetCursorPos. A separate read-only system-cursor adapter uses GetCursorPos
+to capture the opening anchor and observe the actual Windows position for
+highlight and tap authority, so asynchronous Motion output is observed rather
+than predicted. Cursor visibility and ClipCursor are not availability vetoes: a
+hidden/suppressed cursor still has a real position and a clip constraint does not
+invalidate a readable coordinate. A 12 DIP inclusive neutral radius and six
+nearest directions select slots independently of decoration and distance. Edge
+decoration is clipped rather than moving the anchor; a bounded selection caption
+stays visible. Real GetCursorPos/GetMonitorInfo/GetDpiForMonitor failures or a
+changed monitor/DPI exit with a fresh-DOWN fence; an explicit new synchronized
+Mode contact can retry environmental faults, while output-device failures retain
+their latch. Entry releases old drag/pending clicks and records that safety release
+separately from slot pulses; exit discards old taps, UP and queued work. Healthy
+idle and normal lifts do not time out the menu. Motion parameters, sensitivity, devices and wire
+formats are unchanged. Common Save remains disk-first. See
+[MODE_SHORTCUT_MENU.md](MODE_SHORTCUT_MENU.md),
+[HAPTIC_FEEDBACK_PROTOCOL.md](HAPTIC_FEEDBACK_PROTOCOL.md) and
+[the current delivery report](MODE_MENU_COMPAT_DELIVERY_20261022.md). The
+2026-10-21 action-delivery report remains as history for its bound-slot behavior;
+its unbound and cursor-availability rules are superseded.
+
 Current Mode button contract (2026-10-17): `rightpad.input.mode` now reports
 contact facts for a Receiver-owned single keyboard/gamepad binding, with
 Momentary or Toggle behavior. It retains its saved geometry and no Mode haptic.
@@ -353,6 +412,24 @@ Game
 ---
 
 # 4. Android Architecture
+
+Current touch diagnostic policy (2026-10-22): ordinary launches create no raw
+touch CSV and emit no per-sample or per-packet success logs. A developer launch
+with `--ez rightpad.diagnostic.touch true` enables one session, capped at 60 seconds
+or 10,000 diagnostic events (samples plus send-success records, full-queue attempts
+included), whichever comes first. Only this session creates a dedicated diagnostic
+worker and a 256-entry queue. Capture submits unchanged real Touch input before
+offering immutable sample references. The worker alone creates/writes/flushes/closes
+the CSV and formats detailed logs; no diagnostic disk I/O runs on UI or UDP Sender.
+Full buffers drop diagnostics and count losses, never modifying real input. File
+errors stop diagnostics only. Pause, target loss/replacement, modal input changes,
+detach, close and destroy fence the session and discard queued diagnostic work;
+callers never join or drain it. A file operation already in progress can complete
+before worker-owned close. Resume and Activity state restoration do not rearm it.
+Old files are neither overwritten nor removed. Low-frequency lifecycle, connection
+and failure logs remain. Protocol, acquisition, normal Touch queue/copies and
+Receiver behavior stay unchanged. See [Android README](../android/README.md) and
+[delivery evidence](ANDROID_TOUCH_DIAGNOSTICS_DELIVERY_20261022.md).
 
 Recommended structure:
 

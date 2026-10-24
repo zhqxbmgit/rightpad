@@ -1,5 +1,37 @@
 # Mode Contact v1 / Touch v2 type8
 
+2026-10-24：Mode 新增 Android 本地、接纳后的一次 PRESS 振动，复用 B 的
+10 ms／255 策略；不代表 Receiver 执行成功。触发点仅为 View 中 `modeDown()`
+返回 true 后，既有 type8/RPMD 字节、序号、接触代次、ACK、租约和重传均不变。
+RPMD 接收、重同步与维护不触发振动；正常 UP、CANCEL 和失败接纳也不触发。
+反馈失败隔离且不补发，不以反馈结果控制接触发送。见
+[Mode 契约](MODE_CONTROL.md) 与[交付证据](MODE_LOCAL_PRESS_DELIVERY_20261024.md)。
+
+2026-10-23：单键绑定新增鼠标左键/右键/中键。**本协议没有变化**：Android 仍只上报
+接触事实，不携带键、鼠标按钮或“保持开启”状态；字节、长度、序号、contact、租约、
+代次、RPMD 与既有 worker/端口全部不变。鼠标键是纯 Receiver 本地解释：有效 DOWN
+改变该会话的鼠标来源贡献，正常 UP/切换、租约与安全中断按原契约推进。普通 Touch 的
+type9/RPTC 取消只清普通点击资格与触摸板自己的按钮贡献，**不会**清除有效的 Mode
+切换保持；Mode 自己的 CANCEL/租约/presence/run 变化才清除它。一次代次失效仍然只
+撤销本代次输出，旧代次消息不能重新按下新绑定。见
+[MODE_CONTROL.md](MODE_CONTROL.md) 与
+[MODE_MOUSE_BUTTONS_DELIVERY_20261023.md](MODE_MOUSE_BUTTONS_DELIVERY_20261023.md)。
+
+2026-10-19：系统光标方向选择仍完全位于 Receiver，本协议字节和去重规则不变。
+光标/显示环境故障关闭并切换代次，普通鼠标从新 DOWN 恢复；环境恢复后，新同步
+代次的明确 Mode DOWN 可重试打开。真实设备按下/释放失败保留原输出错误门闩。
+
+2026-10-21：槽位动作完成后菜单自动关闭，同样只发生在 Receiver 本地，不发送 CANCEL、
+不轮换本次 Mode 代次，Android 不需要重新同步；下一次明确 Mode DOWN 可再次打开。
+自动关闭清理本次菜单接触与旧点击资格，普通鼠标从下一次新 DOWN 恢复。正常 UP 仍然
+只结束接触并确认，不会关闭菜单。
+
+2026-10-18：接触字节、RPMD、序号、600 ms 租约、代次和既有 worker/端口均未改变。
+Receiver 可将有效 DOWN 解释为快捷菜单开关，每次接触只切换一次；正常 UP 仅结束
+接触并确认，不能关闭菜单。主动菜单进入/退出清理不发 CANCEL 或轮换自身 Mode
+代次，避免开关循环。配置实际变化及安全中断仍轮换代次，并关闭菜单、撤销脉冲。
+相同完整配置或无关 Save 不撤销或重开菜单。业务契约见 [MODE_SHORTCUT_MENU.md](MODE_SHORTCUT_MENU.md)。
+
 当前格式：2026-10-17。绑定与保持状态只由 Windows Receiver 解释。Android 上报
 Mode 接触事实，不携带键盘键、手柄键、按压行为或“切换开启”的业务状态。
 
@@ -94,6 +126,9 @@ Mode lease 或 Receiver presence 变化仍负责释放。目标切换创建新�
 并更换 Sender run；旧路由只允许最终安全消息。Receiver Stop/Dispose 在本地直接释放。
 
 ## 绑定变更与输出确认
+
+2026-10-24：用户已决定移除电脑声音反馈，当前程序没有该设施或配置。
+本轮移除不改变 type8/RPMD、ModeBinding、接触代次及以下输入提交／失败处理。
 
 Mode 配置不加入 RPCT，也不要求 Android 缓存绑定。Receiver 成功 Save 后，只有完整
 ModeBinding 改变才释放旧输出并建立新 generation；相同配置及无关 Save 不触发状态变化。

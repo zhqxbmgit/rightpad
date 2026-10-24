@@ -4,7 +4,11 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if(args.Length==2 && args[0]=="--menu-cursor-diagnostic") return ModeMenuOverlayProbe.Diagnostic(args[1]);
+        if(args.Length==2 && args[0]=="--menu-environment-probe") return ModeMenuOverlayProbe.Run(args[1],true);
         if(args.Length==2 && args[0]=="--mode-observer") return ModeInputObserver.Run(args[1]);
+        if(args.Length==2 && args[0]=="--mode-observer-hidden") return ModeInputObserver.Run(args[1],true);
+        if(args.Length==2 && args[0]=="--menu-overlay-probe") return ModeMenuOverlayProbe.Run(args[1]);
         if (args.Length == 3 && args[0] == "--remote-layout-java")
         {
             try { RemoteLayoutJavaTests.Run(args[1], args[2]); return 0; }
@@ -37,10 +41,15 @@ internal static class Program
         bool guiStartupOnly = args.SequenceEqual(new[] { "--normal-gui-startup" });
         bool receiverModeOnly = args.SequenceEqual(new[] { "--receiver-touch-mode" });
         bool cz1Only = args.SequenceEqual(new[] { "--cz1-parameters" });
-        if (args.Length != 0 && !cz1Only && !motionOnly && !mr1Only && !uiSettingsOnly && !gamepadOnly && !guiStartupOnly && !receiverModeOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--cz1-parameters | --receiver-touch-mode | --normal-gui-startup | --gamepad | --ui-settings | --mr1 | --motion-profile | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
+        bool modeMenuOnly = args.SequenceEqual(new[] { "--mode-menu" });
+        bool artifactPathsOnly = args.SequenceEqual(new[] { "--artifact-paths" });
+        if (args.Length != 0 && !artifactPathsOnly && !cz1Only && !motionOnly && !mr1Only && !uiSettingsOnly && !gamepadOnly && !guiStartupOnly && !receiverModeOnly && !modeMenuOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--artifact-paths | --cz1-parameters | --receiver-touch-mode | --normal-gui-startup | --gamepad | --ui-settings | --mr1 | --motion-profile | --mode-menu | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            .. TouchCancellationTests.Cases,
+            .. ModeMenuTests.Cases,
             .. ModeBindingTests.Cases,
+            .. ModeMouseButtonTests.Cases,
             .. RemoteLayoutWindowTests.Cases,
             .. RemoteLayoutTests.Cases,
             .. Cz1ParameterTests.Cases,
@@ -316,6 +325,13 @@ internal static class Program
         ];
         if (receiverModeOnly) tests = [.. ReceiverTouchModeTests.Cases];
         if (cz1Only) tests = [.. Cz1ParameterTests.Cases];
+        if (modeMenuOnly) tests = [.. ModeMenuTests.Cases];
+        if (artifactPathsOnly) tests = tests.Where(test => test.Name is
+            "Motion UI removes inactive editors and restart advice" or
+            "Receiver mode GUI binding / Selected-Pending-Active contract" or
+            "C panel bindings keyboard and advanced layout contract" or
+            "C panel offline WPF render at narrow page width / advanced error layout" or
+            "Mode menu WPF render ring at small and scaled viewports").ToArray();
         foreach (var test in tests)
         {
             try

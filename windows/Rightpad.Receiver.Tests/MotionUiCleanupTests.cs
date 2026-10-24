@@ -15,11 +15,7 @@ internal static class MotionUiCleanupTests
 
     private static void NormalUi()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (root is not null && !File.Exists(Path.Combine(root.FullName, "windows", "Rightpad.Receiver", "Views", "MotionView.xaml")))
-            root = root.Parent;
-        Check(root is not null, "locate Receiver XAML for UI contract");
-        string receiver = Path.Combine(root!.FullName, "windows", "Rightpad.Receiver");
+        string receiver = Path.Combine(TestPaths.SourceRoot, "windows", "Rightpad.Receiver");
         var motion = XDocument.Load(Path.Combine(receiver, "Views", "MotionView.xaml"));
         var editors = motion.Descendants().Where(e => e.Name.LocalName == "NumericEditor")
             .Select(e => (string?)e.Attribute("DataContext")).ToArray();

@@ -264,10 +264,7 @@ internal static class ReceiverTouchModeTests
     }
     private static Task Markup()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while(root is not null && !File.Exists(Path.Combine(root.FullName,"windows","Rightpad.Receiver","Views","MotionView.xaml"))) root=root.Parent;
-        Check(root is not null,"locate actual XAML");
-        var xml=XDocument.Load(Path.Combine(root!.FullName,"windows","Rightpad.Receiver","Views","MotionView.xaml"));
+        var xml=XDocument.Load(Path.Combine(TestPaths.SourceRoot,"windows","Rightpad.Receiver","Views","MotionView.xaml"));
         string markup=xml.ToString();
         foreach(string binding in new[]{"SelectedTouchModeText","ActiveTouchModeText","PendingTouchModeText","CanSelectTouchMode"})
             Check(markup.Contains("{Binding "+binding+"}"),"actual binding "+binding);

@@ -32,7 +32,7 @@ internal static class Cz1PanelRenderTests
                     new(IPAddress.Loopback,0),rawMouse:false,motionMode:MotionMode.M_R1,useProductMotionSettings:true);
                 var model = new MainViewModel(runtime,settings,new(new(new StartupMemory(),"C:\\offline\\Rightpad.Receiver.exe")));
                 model.Refresh();
-                string directory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","..","..","..","panel-preview"));
+                string directory = Path.Combine(TestPaths.EvidenceDirectory,"panel-preview");
                 Directory.CreateDirectory(directory);
                 foreach(bool advanced in new[]{false,true})
                 {

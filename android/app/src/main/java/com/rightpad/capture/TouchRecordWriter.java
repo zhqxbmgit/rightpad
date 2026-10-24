@@ -1,9 +1,6 @@
 package com.rightpad.capture;
 
-import android.util.Log;
-
 import java.io.BufferedWriter;
-import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -13,91 +10,48 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-final class TouchRecordWriter implements Closeable {
-    private static final String TAG = "RightpadRecord";
+final class TouchRecordWriter implements TouchDiagnostics.Sink {
     private static final String HEADER =
             "sessionId,sampleIndex,action,source,x,y,eventTimeNs";
 
     private final File file;
     private BufferedWriter writer;
-    private long sampleIndex;
 
     TouchRecordWriter(File filesDirectory) throws IOException {
         file = createRecordingFile(filesDirectory);
         writer = new BufferedWriter(new OutputStreamWriter(
                 new FileOutputStream(file), StandardCharsets.UTF_8));
-        writer.write(HEADER);
-        writer.newLine();
-        writer.flush();
-        Log.i(TAG, "recording_started path=" + file.getAbsolutePath());
-    }
-
-    void write(TouchSample sample) {
-        if (writer == null) {
-            return;
-        }
-
         try {
-            writer.write(Long.toString(sample.sessionId));
-            writer.write(',');
-            writer.write(Long.toString(sampleIndex));
-            writer.write(',');
-            writer.write(sample.action.name());
-            writer.write(',');
-            writer.write(sample.historical ? "historical" : "current");
-            writer.write(',');
-            writer.write(Float.toString(sample.x));
-            writer.write(',');
-            writer.write(Float.toString(sample.y));
-            writer.write(',');
-            writer.write(Long.toString(sample.eventTimeNs));
+            writer.write(HEADER);
             writer.newLine();
-            sampleIndex++;
-        } catch (IOException exception) {
-            Log.e(TAG, "recording_failed path=" + file.getAbsolutePath(), exception);
-            closeAfterFailure();
-        }
-    }
-
-    void flush() {
-        if (writer == null) {
-            return;
-        }
-
-        try {
             writer.flush();
         } catch (IOException exception) {
-            Log.e(TAG, "flush_failed path=" + file.getAbsolutePath(), exception);
-            closeAfterFailure();
+            try { writer.close(); } catch (IOException ignored) { }
+            throw exception;
         }
+    }
+
+    @Override public void write(TouchSample sample, long sampleIndex) throws IOException {
+        writer.write(Long.toString(sample.sessionId));
+        writer.write(',');
+        writer.write(Long.toString(sampleIndex));
+        writer.write(',');
+        writer.write(sample.action.name());
+        writer.write(',');
+        writer.write(sample.historical ? "historical" : "current");
+        writer.write(',');
+        writer.write(Float.toString(sample.x));
+        writer.write(',');
+        writer.write(Float.toString(sample.y));
+        writer.write(',');
+        writer.write(Long.toString(sample.eventTimeNs));
+        writer.newLine();
     }
 
     @Override
-    public void close() {
-        if (writer == null) {
-            return;
-        }
+    public void close() throws IOException { writer.close(); }
 
-        try {
-            writer.close();
-            Log.i(TAG, "recording_closed path=" + file.getAbsolutePath()
-                    + " samples=" + sampleIndex);
-        } catch (IOException exception) {
-            Log.e(TAG, "close_failed path=" + file.getAbsolutePath(), exception);
-        } finally {
-            writer = null;
-        }
-    }
-
-    private void closeAfterFailure() {
-        try {
-            writer.close();
-        } catch (IOException ignored) {
-            // The original write or flush error is already logged.
-        } finally {
-            writer = null;
-        }
-    }
+    @Override public String description() { return file.getAbsolutePath(); }
 
     private static File createRecordingFile(File filesDirectory) throws IOException {
         String timestamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)

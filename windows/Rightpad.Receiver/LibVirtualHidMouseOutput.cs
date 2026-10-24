@@ -12,8 +12,12 @@ internal sealed class LibVirtualHidMouseOutput : IMouseOutput
     private readonly HitchTraceRecorder? hitchTrace;
     private readonly long runtimeRun;
     private MouseOutputStats stats;
-    private bool disposed, held;
+    private bool disposed;
+    // Per-button device state, not a merged source state: every button that may
+    // still be down after an ambiguous submission is released on Dispose.
+    private int held;
     public string BackendName => "libvirtualhid";
+    public string ButtonSupport => native.ButtonSupport;
     public string DeviceIdentity { get; }
     public MouseOutputStats Stats { get { lock (gate) return stats; } }
 
@@ -54,19 +58,26 @@ internal sealed class LibVirtualHidMouseOutput : IMouseOutput
             Succeeded();
         }
     }
-    public void LeftDown() => Button(true);
-    public void LeftUp() => Button(false);
-    private void Button(bool down)
+    public void LeftDown() => Button(ModeMouseButton.Left, true);
+    public void LeftUp() => Button(ModeMouseButton.Left, false);
+    public void SetButton(ModeMouseButton button, bool down) => Button(button, down);
+    private void Button(ModeMouseButton button, bool down)
     {
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            if (down) held = true; // Ambiguous submission still requires a cleanup UP.
-            try { if (down) native.LeftDown(); else native.LeftUp(); }
+            int bit = 1 << (int)button;
+            if (down) held |= bit; // Ambiguous submission still requires a cleanup UP.
+            try { native.SetButton(button, down); }
             catch (Exception e) { stats = stats with { ButtonFailures = stats.ButtonFailures + 1 }; Failed("button", e); throw; }
-            held = down;
-            stats = down ? stats with { LeftDownSuccesses = stats.LeftDownSuccesses + 1 }
-                : stats with { LeftUpSuccesses = stats.LeftUpSuccesses + 1 };
+            if (!down) held &= ~bit; // A failed release keeps the bit so Dispose retries it.
+            bool left = button == ModeMouseButton.Left;
+            stats = (down, left) switch
+            {
+                (true, true) => stats with { LeftDownSuccesses = stats.LeftDownSuccesses + 1 },
+                (false, true) => stats with { LeftUpSuccesses = stats.LeftUpSuccesses + 1 },
+                _ => stats
+            };
             Succeeded();
         }
     }
@@ -82,7 +93,12 @@ internal sealed class LibVirtualHidMouseOutput : IMouseOutput
         {
             if (disposed) return;
             Exception? failure = null;
-            try { if (held) LeftUp(); } catch (Exception e) { failure = e; }
+            for (int index = 0; index < 3; index++)
+            {
+                if ((held & (1 << index)) == 0) continue;
+                try { SetButton((ModeMouseButton)index, false); }
+                catch (Exception e) { failure ??= e; }
+            }
             try { native.Dispose(); } catch (Exception e) { Failed("destroy", e); failure ??= e; }
             finally { disposed = true; }
             if (failure is not null) throw new IOException("libvirtualhid cleanup failed: " + failure.Message, failure);
@@ -94,7 +110,7 @@ internal sealed class LibVirtualHidMouseOutput : IMouseOutput
 internal interface IVirtualHidMouse : IDisposable
 {
     string DeviceIdentity { get; }
+    string ButtonSupport { get; }
     void Move(int dx, int dy);
-    void LeftDown();
-    void LeftUp();
+    void SetButton(ModeMouseButton button, bool down);
 }

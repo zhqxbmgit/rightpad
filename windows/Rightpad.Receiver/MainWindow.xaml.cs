@@ -19,11 +19,13 @@ public partial class MainWindow : Window
     private readonly Forms.NotifyIcon trayIcon;
     private readonly System.Drawing.Icon? trayIconImage;
     private RemoteLayoutEditorWindow? layoutEditor;
+    private readonly ModeMenuPresenter menuPresenter;
 
     internal MainWindow(ReceiverRuntime runtime, SettingsViewModel settings, StartupViewModel startup,
         SettingsFileStore settingsFile)
     {
         this.runtime = runtime;
+        menuPresenter = new(() => runtime.ModeSession);
         this.settingsFile = settingsFile;
         model = new(runtime, settings, startup);
         InitializeComponent();
@@ -97,6 +99,7 @@ public partial class MainWindow : Window
         if (trayBehavior.IsExitRequested) return;
         IsEnabled = false;
         timer.Stop();
+        menuPresenter.Dispose();
         layoutEditor?.CloseForShutdown();
         await trayBehavior.ExitAsync(
             runtime.StopAsync,

@@ -43,6 +43,10 @@ public final class UdpTouchSenderTest {
                 byte[] down = receive(socket); check(sequence(down) == 0 && run(down) == firstRun, "first seq zero / same run");
                 check(Arrays.equals(down, receive(socket)) && Arrays.equals(down, receive(socket)), "DOWN exact triplicate");
                 sender.setForeground(false);
+                byte[] cancel=receive(socket);
+                check(cancel[1]==9,"pause sends distinct cancellation");
+                ByteBuffer cb=ByteBuffer.wrap(cancel).order(ByteOrder.LITTLE_ENDIAN);
+                sender.cancelReply(new TouchCancellation.Ack(cb.getLong(2),Integer.toUnsignedLong(cb.getInt(10)),Integer.toUnsignedLong(cb.getInt(14)),Integer.toUnsignedLong(cb.getInt(18))));
                 Thread.sleep(100); socket.setSoTimeout(50);
                 try { while (true) receive(socket); } catch (SocketTimeoutException expected) { }
                 socket.setSoTimeout(650);
@@ -53,7 +57,7 @@ public final class UdpTouchSenderTest {
                 check(heartbeat[1] == 4 && run(heartbeat) == firstRun, "resume same run");
                 check(System.nanoTime() - resumed < 400_000_000L, "resume immediate heartbeat");
                 sender.submit(touch(TouchSample.Action.DOWN));
-                byte[] up = receive(socket); check(sequence(up) == 1, "heartbeat / pause do not consume touch sequence");
+                byte[] up = receive(socket); check(sequence(up) == 2, "cancellation fences touch sequence; heartbeat does not consume it");
                 check(Arrays.equals(up, receive(socket)) && Arrays.equals(up, receive(socket)), "resumed DOWN exact triplicate");
                 System.out.println("PASS sender pause / resume / identity / sequence / copies");
                 long until = System.nanoTime() + 1_600_000_000L;

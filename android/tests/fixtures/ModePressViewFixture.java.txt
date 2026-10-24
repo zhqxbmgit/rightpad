@@ -1,0 +1,134 @@
+package com.rightpad.capture;
+
+import java.util.*;
+
+/** Only the Android View shell and output backends are fake. Dispatch and cleanup are extracted verbatim. */
+public final class ModePressViewFixture {
+    static int checks;
+    static void check(boolean value, String message) { checks++; if (!value) throw new AssertionError(message); }
+    static final class MotionEvent {
+        static final int ACTION_DOWN=0, ACTION_UP=1, ACTION_MOVE=2, ACTION_CANCEL=3, ACTION_POINTER_DOWN=5;
+        static final int INVALID_POINTER_ID=-1, TOOL_TYPE_FINGER=1;
+        final int action, count, pointer; final float x, y; final long down, time;
+        MotionEvent(int action, int count, int pointer, float x, float y, long down, long time) {
+            this.action=action; this.count=count; this.pointer=pointer; this.x=x; this.y=y; this.down=down; this.time=time;
+        }
+        int getActionMasked(){return action;} int getPointerCount(){return count;} int getPointerId(int i){return pointer;}
+        float getX(){return x;} float getY(){return y;} long getDownTime(){return down;} long getEventTime(){return time;}
+        int getToolType(int i){return TOOL_TYPE_FINGER;} int getHistorySize(){return 0;}
+        float getHistoricalX(int i){return x;} float getHistoricalY(int i){return y;}
+        int findPointerIndex(int id){return id==pointer?0:-1;}
+    }
+    static final class Backend implements ScreenControlFeedback.Backend {
+        int api=36, attempts, availableCalls; boolean fail, missing, serviceFailure;
+        public boolean available(){availableCalls++; if(serviceFailure)throw new SecurityException(); return !missing;}
+        public int apiLevel(){return api;}
+        public void predefinedClick(ScreenControlFeedback.Event e){throw new AssertionError("Mode must use B policy");}
+        public void oneShot(ScreenControlFeedback.Event e,long ms,int amp){
+            check(e==ScreenControlFeedback.Event.PRESS && ms==10 && amp==255,"Mode PRESS exactly B oneShot(10,255)");
+            attempts++; if(fail)throw new IllegalStateException("fake vibration failure");
+        }
+        public void legacy(ScreenControlFeedback.Event e,long ms){
+            check(e==ScreenControlFeedback.Event.PRESS && ms==10,"Mode legacy PRESS 10ms");
+            attempts++; if(fail)throw new SecurityException();
+        }
+    }
+    static final class Sender {
+        final ModeContactStream stream=new ModeContactStream(); long now=1_000_000_000L;
+        boolean capture=true; int downCalls, accepted, ups, cancels, touchCancels;
+        void ready(long generation){stream.reply(new ModeContactStream.Reply(7,generation,0,true),now);}
+        boolean canCapture(){return capture;}
+        boolean modeDown(){downCalls++; boolean ok=canCapture() && stream.down(now); if(ok)accepted++; return ok;}
+        void modeUp(){ups++;stream.up();} void modeCancel(){cancels++;stream.cancel();}
+        void cancelTouch(){touchCancels++;}
+    }
+    static final class Controls {
+        final Backend backend=new Backend(); final ScreenControlFeedback feedback=new ScreenControlFeedback(backend);
+        boolean editor; int downs, touches, edits, cancellations;
+        boolean editing(){return editor;} void editTouch(MotionEvent e){edits++;}
+        Map<String,ControlRect> rects(){return Map.of(ScreenControlRouter.MODE_ID,new ControlRect(60,0,20,20),
+                "xbox.b.slide",new ControlRect(0,0,20,20),"xbox.x.slide_lr",new ControlRect(30,0,20,20));}
+        void down(String id,MotionEvent e){downs++;} void touch(String id,MotionEvent e){touches++;} void cancel(){cancellations++;}
+    }
+    final Controls controls=new Controls(); final Sender udpSender=new Sender();
+    final ScreenControlRouter router=new ScreenControlRouter();
+    final PowerGestureTracker settingsGesture=new PowerGestureTracker(),powerGesture=new PowerGestureTracker();
+    Runnable beforeRemoteDown=()->{},requestSettings=()->{},requestExit=()->{};
+    boolean reservedContact,inputModal; long modeDownTime=Long.MIN_VALUE,sessionId,unbufferedDispatchRequests;
+    int activePointerId=-1,lastUnbufferedEventIdentity,touchPackets;
+    float settingsCenterX=65,settingsCenterY=50,settingsRadius=5,powerCenterX=65,powerCenterY=70,powerRadius=5;
+    static final class Logger {void logInterruption(long s,int p,String r){}}
+    static final class Diagnostics {void stop(String reason){}}
+    final Logger logger=new Logger(); final Diagnostics diagnostics=null;
+    float dp(float value){return value;} void requestUnbufferedDispatch(MotionEvent e){}
+    void captureEvent(MotionEvent e,int i,TouchSample.Action action){touchPackets++;}
+    // PRODUCTION_DISPATCH
+    // PRODUCTION_CLEANUP
+    void event(int action,long down,long time){onTouchEvent(new MotionEvent(action,1,7,65,5,down,time));}
+    void down(long time){event(MotionEvent.ACTION_DOWN,time,time);}
+    void up(long down){event(MotionEvent.ACTION_UP,down,down+10);}
+    void isolated(){check(touchPackets==0 && unbufferedDispatchRequests==0 && controls.downs==0 && controls.touches==0,
+            "Mode never enters Touch, B/X contribution or slide dispatch");}
+    static ModePressViewFixture ready(){var v=new ModePressViewFixture();v.udpSender.ready(100);return v;}
+    public static void main(String[] args) {
+        // No Receiver binding/use mirror: every accepted contact takes the identical dispatch path.
+        var v=ready();
+        for(int i=0;i<5;i++) {
+            long t=10+i*20; v.down(t);
+            check(v.controls.backend.attempts==i+1 && v.udpSender.accepted==i+1,"one PRESS per accepted new DOWN");
+            v.down(t); check(v.controls.backend.attempts==i+1,"duplicate MotionEvent DOWN fenced");
+            v.event(MotionEvent.ACTION_MOVE,t,t+4000);
+            for(int retry=0;retry<5;retry++) {
+                v.udpSender.stream.claim(7,v.udpSender.now+retry*20_000_000L);
+                v.udpSender.stream.reply(new ModeContactStream.Reply(7,100,0,true),v.udpSender.now);
+            }
+            check(v.controls.backend.attempts==i+1,"long hold, refresh, retries and duplicate replies do not vibrate");
+            v.up(t);v.up(t);v.isolated();
+            check(v.controls.backend.attempts==i+1,"UP and orphan UP no feedback");
+        }
+        for(int api:new int[]{25,26,28,29,34,36}) {
+            v=ready();v.controls.backend.api=api;v.down(1);v.up(1);
+            check(v.controls.backend.attempts==1,"same B policy across API branches without changing minSdk");
+        }
+        v=new ModePressViewFixture();v.down(1);v.up(1);
+        check(v.controls.backend.availableCalls==0 && v.udpSender.accepted==0,"unsynchronized rejected DOWN no feedback");v.isolated();
+        v=ready();v.udpSender.capture=false;v.down(1);v.up(1);
+        check(v.controls.backend.availableCalls==0,"capture gate rejection no feedback");v.isolated();
+        v=ready();v.udpSender.now+=600_000_001L;v.down(1);
+        check(v.controls.backend.availableCalls==0,"expired reply rejects without feedback");
+        v=ready();v.down(1);v.down(2);
+        check(v.controls.backend.attempts==1,"already touching sender rejects a second DOWN");
+        for(int action:new int[]{MotionEvent.ACTION_CANCEL,MotionEvent.ACTION_POINTER_DOWN,MotionEvent.ACTION_MOVE}) {
+            v=ready();v.down(1);
+            int count=action==MotionEvent.ACTION_POINTER_DOWN?2:1, pointer=action==MotionEvent.ACTION_MOVE?8:7;
+            v.onTouchEvent(new MotionEvent(action,count,pointer,65,5,1,2));
+            v.up(1);v.event(MotionEvent.ACTION_MOVE,1,5);
+            check(v.controls.backend.attempts==1 && v.udpSender.cancels==1,"cancel/pointer anomaly one cancellation, no extra haptic");v.isolated();
+        }
+        v=ready();v.onTouchEvent(new MotionEvent(MotionEvent.ACTION_DOWN,2,7,65,5,1,1));
+        check(v.controls.backend.attempts==0 && v.udpSender.accepted==0,"invalid multiple-pointer DOWN never vibrates");
+        for(int failure=0;failure<3;failure++) {
+            v=ready();v.controls.backend.fail=failure==0;v.controls.backend.missing=failure==1;v.controls.backend.serviceFailure=failure==2;
+            v.down(1);
+            check(v.udpSender.accepted==1 && v.udpSender.stream.claim(7,v.udpSender.now)[26]==1,"backend failure leaves admitted DOWN sendable");
+            v.up(1);
+            v.udpSender.stream.reply(new ModeContactStream.Reply(7,100,1,true),v.udpSender.now);
+            check(v.udpSender.stream.claim(7,v.udpSender.now)[26]==2,"backend failure leaves UP sendable");
+            v.stopCapture("paused");
+            check(v.udpSender.stream.claim(7,v.udpSender.now)[26]==3 && v.controls.backend.availableCalls==1,
+                    "backend failure leaves cancellation sendable without retry");v.isolated();
+        }
+        for(String reason:new String[]{"paused","view_detached","input_mode_changed","target_changed","disconnect","editor"}) {
+            v=ready();v.down(1);v.stopCapture(reason);
+            check(v.controls.backend.attempts==1 && v.udpSender.cancels==1,"lifecycle no additional haptic: "+reason);v.isolated();
+        }
+        v=ready();v.controls.editor=true;v.down(1);v.event(MotionEvent.ACTION_MOVE,1,5);v.up(1);
+        check(v.controls.edits==3 && v.udpSender.downCalls==0 && v.controls.backend.attempts==0,"editor selection/move/resize path isolated");
+        v=ready();v.inputModal=true;v.down(1);check(v.udpSender.downCalls==0,"input modal isolated");
+        for(float y:new float[]{50,70}) {
+            v=ready();v.onTouchEvent(new MotionEvent(MotionEvent.ACTION_DOWN,1,7,65,y,1,1));
+            check(v.udpSender.downCalls==0 && v.controls.backend.attempts==0,"Settings/Power never request Mode PRESS");
+        }
+        System.out.println("RESULT ModePressFeedbackTests checks="+checks+" failed=0 (production dispatch/cleanup, real router/stream/policy; fake Android shell)");
+    }
+}

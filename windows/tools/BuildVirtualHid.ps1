@@ -1,9 +1,15 @@
-param([ValidateSet('Debug','Release')][string]$Configuration = 'Release', [switch]$Test)
+param([ValidateSet('Debug','Release')][string]$Configuration = 'Release', [switch]$Test, [string]$ArtifactRoot = '', [string]$Scope = 'local', [switch]$Plan)
 $ErrorActionPreference = 'Stop'
 $source = Join-Path (Split-Path $PSScriptRoot -Parent) 'native\Rightpad.VirtualHid'
-$dependency = Join-Path $source 'obj\libvirtualhid'
-$build = Join-Path $source "obj\$Configuration"
-$destination = Join-Path $source "bin\$Configuration"
+. (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'tools\ArtifactPaths.ps1')
+Assert-RightpadPathSegment $Scope
+$artifactBase = Join-Path (Get-RightpadArtifactRoot $ArtifactRoot) 'builds\native'
+$dependency = Join-Path $artifactBase 'dependencies\libvirtualhid'
+$build = Join-Path $artifactBase "$Scope\$Configuration\obj"
+$destination = Join-Path $artifactBase "$Scope\$Configuration\bin"
+if ($Plan) { [pscustomobject]@{ Source=$source; Dependency=$dependency; Build=$build; Destination=$destination }; return }
+$null = New-RightpadDirectory $build
+$null = New-RightpadDirectory $destination
 function Invoke-Checked([string]$Command, [string[]]$Arguments) {
     & $Command @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Command failed with exit code $LASTEXITCODE" }

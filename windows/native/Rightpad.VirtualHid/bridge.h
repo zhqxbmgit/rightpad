@@ -16,6 +16,10 @@ RP_API int rightpad_vhid_move(void* handle, int32_t dx, int32_t dy, char* error,
 RP_API int rightpad_vhid_left_down(void* handle, char* error, int error_size);
 RP_API int rightpad_vhid_left_up(void* handle, char* error, int error_size);
 RP_API int rightpad_vhid_destroy(void* handle, char* error, int error_size);
+// Additive mouse-button extension 1; the ABI-2 exports above keep their meaning.
+// button: 0 = left, 1 = right, 2 = middle (wheel press). down: 0 or 1.
+RP_API int rightpad_vhid_mouse_api_version(void);
+RP_API int rightpad_vhid_button(void* handle, int32_t button, int32_t down, char* error, int error_size);
 
 // Bridge logical flags, NOT XInput wButtons. Map explicitly to lvh::GamepadButton.
 enum rightpad_gamepad_button {

@@ -1,10 +1,16 @@
+param([string]$ArtifactRoot = '', [string]$Scope = 'local')
 $ErrorActionPreference = 'Stop'
 $androidRoot = Split-Path $PSScriptRoot -Parent
-$outputDirectory = Join-Path $androidRoot 'app/build/jvm-tests'
+. (Join-Path (Split-Path $androidRoot -Parent) 'tools\ArtifactPaths.ps1')
+Assert-RightpadPathSegment $Scope
+$outputDirectory = Join-Path (Get-RightpadArtifactRoot $ArtifactRoot) "builds\android\$Scope\jvm-tests"
+$null = New-RightpadDirectory $outputDirectory
 $sourceDirectory = Join-Path $androidRoot 'app/src/main/java/com/rightpad/capture'
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 $javacPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/javac.exe' } else { 'javac' }
 $javaPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/java.exe' } else { 'java' }
+& $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $PSScriptRoot 'stubs/android/os/Looper.java') (Join-Path $PSScriptRoot 'stubs/android/os/Handler.java') (Join-Path $sourceDirectory 'TouchCancellation.java')
+if ($LASTEXITCODE -ne 0) { throw 'Cancellation support compilation failed.' }
 & $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $sourceDirectory 'ModeContactStream.java') (Join-Path $PSScriptRoot 'ModeContactTests.java')
 if ($LASTEXITCODE -ne 0) { throw 'Mode contact compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.ModeContactTests
@@ -19,10 +25,15 @@ if ($LASTEXITCODE -ne 0) { throw 'Layout file guard tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Encoder test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.ProtocolV2EncoderTest
 if ($LASTEXITCODE -ne 0) { throw 'Encoder tests failed.' }
-& $javacPath --release 17 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'stubs/android/util/Log.java') (Join-Path $sourceDirectory 'SlideControlGesture.java') (Join-Path $sourceDirectory 'SlideControlLRGesture.java') (Join-Path $sourceDirectory 'ControlConfigProtocol.java') (Join-Path $sourceDirectory 'ControlConfigCache.java') (Join-Path $sourceDirectory 'GamepadState.java') (Join-Path $sourceDirectory 'GamepadStateSubmission.java') (Join-Path $sourceDirectory 'GamepadProtocol.java') (Join-Path $sourceDirectory 'GamepadSendState.java') (Join-Path $sourceDirectory 'HeartbeatSchedule.java') (Join-Path $sourceDirectory 'MotionProfileProtocol.java') (Join-Path $sourceDirectory 'UdpTouchSender.java') (Join-Path $PSScriptRoot 'UdpTouchSenderTest.java')
+& $javacPath --release 17 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'stubs/android/util/Log.java') (Join-Path $sourceDirectory 'SlideControlGesture.java') (Join-Path $sourceDirectory 'SlideControlLRGesture.java') (Join-Path $sourceDirectory 'ControlConfigProtocol.java') (Join-Path $sourceDirectory 'ControlConfigCache.java') (Join-Path $sourceDirectory 'GamepadState.java') (Join-Path $sourceDirectory 'GamepadStateSubmission.java') (Join-Path $sourceDirectory 'GamepadProtocol.java') (Join-Path $sourceDirectory 'GamepadSendState.java') (Join-Path $sourceDirectory 'HeartbeatSchedule.java') (Join-Path $sourceDirectory 'MotionProfileProtocol.java') (Join-Path $sourceDirectory 'TouchRecordWriter.java') (Join-Path $sourceDirectory 'TouchSampleLogger.java') (Join-Path $sourceDirectory 'TouchDiagnostics.java') (Join-Path $sourceDirectory 'UdpTouchSender.java') (Join-Path $PSScriptRoot 'UdpTouchSenderTest.java')
 if ($LASTEXITCODE -ne 0) { throw 'Sender test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.UdpTouchSenderTest
 if ($LASTEXITCODE -ne 0) { throw 'Sender tests failed.' }
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'TouchDiagnosticsTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Touch diagnostics compilation failed.' }
+$diagnosticFixtures = Join-Path $outputDirectory ('diagnostic-fixtures-' + [guid]::NewGuid().ToString('N'))
+& $javaPath -cp $outputDirectory com.rightpad.capture.TouchDiagnosticsTests $androidRoot $diagnosticFixtures
+if ($LASTEXITCODE -ne 0) { throw 'Touch diagnostics tests failed.' }
 & $javacPath --release 17 -cp $outputDirectory -d $outputDirectory (Join-Path $sourceDirectory 'BatteryDisplay.java') (Join-Path $sourceDirectory 'TopToolLayout.java') (Join-Path $sourceDirectory 'PowerGestureTracker.java') (Join-Path $PSScriptRoot 'UiStatusAndPowerTest.java')
 if ($LASTEXITCODE -ne 0) { throw 'UI status/power test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.UiStatusAndPowerTest
@@ -69,6 +80,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Control config tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Screen control feedback test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.ScreenControlFeedbackTests
 if ($LASTEXITCODE -ne 0) { throw 'Screen control feedback tests failed.' }
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'ModePressFeedbackTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Mode PRESS test compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.ModePressFeedbackTests $androidRoot (Join-Path $outputDirectory 'mode-press-fixture')
+if ($LASTEXITCODE -ne 0) { throw 'Mode PRESS tests failed.' }
 
 $lrSources = @('SlideControlLRGesture', 'SlideControlLRDefinition', 'SlideControlLRInstance') | ForEach-Object { Join-Path $sourceDirectory ($_ + '.java') }
 & $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory $lrSources (Join-Path $PSScriptRoot 'SlideControlLRTests.java')
@@ -99,3 +114,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Fixed unbuffered tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Reserved control test compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.ReservedControlTests $androidRoot
 if ($LASTEXITCODE -ne 0) { throw 'Reserved control tests failed.' }
+
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'InputReliabilityTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Input reliability compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.InputReliabilityTests
+if ($LASTEXITCODE -ne 0) { throw 'Input reliability tests failed.' }

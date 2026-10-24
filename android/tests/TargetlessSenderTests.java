@@ -54,7 +54,7 @@ public final class TargetlessSenderTests {
         byte[] first;
         do {
             first = receive(s);
-            check(first[1] == 4 || first[1] == 7 || first[1] == 5, "only heartbeat/profile/gamepad traffic");
+            check(first[1] == 4 || first[1] == 7 || first[1] == 5 || first[1]==9, "only heartbeat/profile/gamepad/cancellation traffic");
         } while (first[1] != 5 || sequence(first) != sequence(expected));
         check(Arrays.equals(expected, first), "exact current run/sequence/state/flags bytes");
         check(Arrays.equals(first, receive(s)), "second identical safety/state copy");
@@ -134,6 +134,8 @@ public final class TargetlessSenderTests {
                 expected = GamepadProtocol.encode(sender.getSenderRunId(), p.sequence(), p.submission());
             }
             triple(s, expected);
+            TouchCancellation c=(TouchCancellation)field(sender,"cancellation");
+            if(c!=null) sender.cancelReply(new TouchCancellation.Ack(c.run,c.session,c.down,c.sequence));
             synchronized (gate(sender)) { check(field(gamepad(sender), "pending") == null, "worker sends and clears target Neutral"); }
             quiet(s);
             sender.close(); join(sender);

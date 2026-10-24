@@ -1,0 +1,8 @@
+gradle.projectsEvaluated {
+    rootProject.tasks.register('rightpadArtifactPaths') {
+        doLast {
+            println "RIGHTPAD_PROJECT_CACHE=${gradle.startParameter.projectCacheDir}"
+            rootProject.allprojects.each { println "RIGHTPAD_BUILD ${it.path}=${it.layout.buildDirectory.get().asFile}" }
+        }
+    }
+}

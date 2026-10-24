@@ -2,6 +2,12 @@
 
 ## Protocol v2 — CURRENT (2026-09-09)
 
+2026-10-23 adds the narrowly scoped ordinary-contact cancellation barrier in
+[TOUCH_CANCELLATION_PROTOCOL.md](TOUCH_CANCELLATION_PROTOCOL.md). Type9 and its
+independent RPTC acknowledgement reuse existing workers/ports; types1..8 retain
+their bytes. Only explicit cancellation waits for that acknowledgement. Ordinary
+Touch is still best-effort UDP and does not wait for ordinary click feedback.
+
 2026-10-17 adds independent type8 MODE_CONTACT (32 bytes), with 32-byte RPMD
 acknowledgement/generation snapshots on existing reverse UDP 50002. It reports
 only contact facts for the Receiver-owned Mode binding; it cannot admit or renew
@@ -33,8 +39,8 @@ Production Android and Windows use v2 only. v1 is rejected; there is no dual
 stack. The original v1 definition below is preserved as historical measurement
 context. This section supersedes its production lifecycle and presence rules.
 
-Transport remains one-way UDP on port 50000. All multibyte fields are little
-endian. No ACK, handshake, reliable UDP, retransmission, FEC, pairing,
+Normal Touch transport remains one-way UDP on port 50000. All multibyte fields are little
+endian. Outside the explicit type9 cancellation exception above, no ACK, handshake, reliable UDP, retransmission, FEC, pairing,
 authentication, clock synchronization, jitter buffer or interpolation is added.
 Independent [Receiver Discovery v1](DISCOVERY_PROTOCOL.md) uses UDP 50001 to
 select the OFFER datagram source IPv4. It adds no fields or events to Touch v2.
@@ -54,7 +60,8 @@ select the OFFER datagram source IPv4. It adds no fields or events to Touch v2.
 Each sample is uint64 timestampNs, float32 x, float32 y (16 bytes). Touch size
 must equal `20 + 16 * sampleCount`. DOWN/UP require one sample; MOVE requires at
 least one. DOWN/UP retain three identical copies per logical packet; MOVE one.
-CANCEL remains local only. Finite coordinates, complete fields and exact length
+Raw CANCEL is not encoded as UP; explicit cancellation uses the separate type9
+barrier above. Finite coordinates, complete fields and exact length
 are validated before any run, presence, sequence or input state changes.
 
 ### Heartbeat layout
@@ -71,6 +78,9 @@ created in Activity.onCreate and on each discovery target transition. Its comple
 signed conversion loss. It is transient run identity, not a device ID or security
 mechanism. A new Sender starts Touch sequence at zero. Each logical Touch advances
 it once; copies and heartbeat never advance it. No uint32 wraparound handling.
+The explicit type9 cancellation boundary also consumes one Touch sequence value.
+An unconfirmed cancellation fences capture and requests a fresh run after its
+bounded retry window, including when the discovery target has not changed.
 
 Production starts without a target. A valid discovery OFFER installs its source
 IPv4; target transition stops capture, clears queued Touch and the session gate,

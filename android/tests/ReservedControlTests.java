@@ -82,10 +82,10 @@ public final class ReservedControlTests {
             Path source = Path.of(args[0]).resolve("app/src/main/java/com/rightpad/capture");
             String view = Files.readString(source.resolve("TouchCaptureView.java"));
             check(!view.contains("publishProfile("), "no production View profile publication");
-            int start = view.indexOf("if (reservedContact)");
+            int start = view.indexOf("if (reservedContact)", view.indexOf("if (owner == ScreenControlRouter.Owner.SCREEN_CONTROL)"));
             String branch = view.substring(start, view.indexOf("if (action == MotionEvent.ACTION_CANCEL)", start + 80));
             check(!branch.contains("captureEvent(") && !branch.contains("controls.touch(") && !branch.contains("feedback")
-                    && branch.contains("modeUp()") && branch.contains("modeCancel()") && branch.contains("return true;"), "Mode lifecycle reports only contact facts, no Mouse/gamepad/haptics");
+                    && branch.contains("modeUp()") && branch.contains("modeCancel()") && branch.contains("return true;"), "Mode MOVE/UP/CANCEL lifecycle reports only contact facts, no Mouse/gamepad/extra haptics");
             String controls = Files.readString(source.resolve("ScreenControls.java"));
             check(controls.contains("register(new ScreenControlDefinition(MODE_ID") && controls.contains("profile.label"), "production definition and visible M label preserved");
             check(controls.contains("if (MODE_ID.equals(id)) return;"), "reserved definition avoids gesture/haptic execution");

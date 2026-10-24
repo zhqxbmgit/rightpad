@@ -1,5 +1,7 @@
 # rightpad Receiver for Windows 11
 
+Current build/task/output contract: [DEVELOPMENT_ARTIFACTS.md](../docs/DEVELOPMENT_ARTIFACTS.md). Source remains `C:\rightpad`; future artifacts default to `C:\rightpad-artifacts`. Historical delivery results keep their original paths.
+
 C#, .NET 8, WPF; one GUI process owns UDP reception, the fixed Motion engine, Single Tap
 and libvirtualhid Virtual HID Mouse plus an independent Xbox360 gamepad. No managed third-party packages, Core project
 or new service/IPC layer. The existing native bridge requires the installed
@@ -192,7 +194,7 @@ device or Windows component is automatically blamed by the recorder.
 After an incident, the user need not operate Windows within 60 seconds:
 once control is available, report the approximate time and run
 `windows/tools/FreezeRightpadFlightRecorder.ps1` first. It copies rolling logs to
-`windows/test-results/failure-captures/<timestamp>/` and captures read-only process,
+`C:\rightpad-artifacts\test-results\<timestamp>-failure-capture\evidence\` and captures read-only process,
 session/integrity/desktop, UDP, foreground process, Mouse/HID, Sunshine and Android
 ADB/logcat state. It does not restart, inject input, modify Bluetooth/network/
 Registry, or run an active probe.
@@ -228,19 +230,16 @@ Persistent Receiver launched by Codex must use the independent project launcher:
 
 ```powershell
 & C:\rightpad\windows\tools\RightpadReceiverTask.ps1 -Mode Stop
-# Build Release after stopping the previous binary.
+# This lifecycle example requires separate deployment authorization and recovery protection.
+# Build/test the external candidate before entering the deployment window.
 & C:\rightpad\windows\tools\RightpadReceiverTask.ps1 -Mode Start
 & C:\rightpad\windows\tools\RightpadReceiverTask.ps1 -Mode Status
 ```
 
-Stop an existing development runtime before rebuilding its Release files. Start
+Ordinary builds now write external outputs and do not require stopping the deployed Receiver. Only a separately authorized deployment replaces formal Release files. Start
 ensures the fixed `Rightpad Receiver Dev` task and starts the **WPF GUI**, passing
-`--dev-log-dir`. The GUI reads the normal user settings file; automated tuning
-checks must restore 7/7 and 300/8/25 before leaving it for acceptance.
-To preserve an established live baseline during development, build/test final
-Release into an isolated `--artifacts-path` directory first. Then stop and verify
-the old process and both ports, copy the verified Receiver output into the normal
-Release path, and Start once through the launcher.
+`--dev-log-dir`. The GUI reads the normal user settings file; authorized temporary tuning checks must restore the exact live values captured before that task, never historical defaults.
+Use `tools/Invoke-Development.ps1 -Action BuildWindows -Task <fresh-date-task>` for isolated outputs, evidence and a candidate manifest. Build success does not authorize deployment. Only after separate authorization and independent recovery protection should a deployment stop the old process, replace formal Release files and Start through the launcher.
 
 The task uses current-user InteractiveToken, Limited/LUA, no triggers, no stored
 password, no time limit and no automatic restart. The Receiver must match the
@@ -255,7 +254,7 @@ does not call the launcher or modify the development task.
 
 The independent wrapper explicitly retains/waits for the WinExe process handle.
 It writes receiver.log, start.json, receiver.json and exit evidence under ignored
-`windows/test-results/receiver-runtime/`. Status returns RuntimeLog, identity,
+`C:\rightpad-artifacts\receiver-runtime\` for future authorized new runs. The current legacy instance keeps its original logs; Status checks both old and new records. Status returns RuntimeLog, identity,
 PID and UDP ownership. Stop requests the verified WPF window to close normally
 before stopping the task/forcing only a verified residual. Use it with input idle;
 forced termination cannot guarantee LEFT UP or final settings/log flush.
@@ -267,8 +266,8 @@ No arguments now means GUI. Protocol diagnostics must be explicitly selected:
 
 ```powershell
 # Human-owned interactive console only; stop any listener first.
-.\Rightpad.Receiver.exe --diagnostics --dev-log-dir C:\rightpad\windows\test-results\protocol
-.\Rightpad.Receiver.exe --raw-mouse --sensitivity-x 5 --sensitivity-y 6 --tap-max-duration-ms 300 --tap-movement-threshold-px 8 --click-hold-ms 25 --double-tap-interval-ms 130 --dev-log-dir C:\rightpad\windows\test-results\raw
+.\Rightpad.Receiver.exe --diagnostics --dev-log-dir C:\rightpad-artifacts\test-results\<date-task>\evidence\protocol
+.\Rightpad.Receiver.exe --raw-mouse --sensitivity-x 5 --sensitivity-y 6 --tap-max-duration-ms 300 --tap-movement-threshold-px 8 --click-hold-ms 25 --double-tap-interval-ms 130 --dev-log-dir C:\rightpad-artifacts\test-results\<date-task>\evidence\raw
 ```
 
 These modes reuse ReceiverRuntime without a WPF window. WinExe does not imply a

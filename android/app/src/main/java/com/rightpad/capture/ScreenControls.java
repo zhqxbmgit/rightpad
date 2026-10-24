@@ -45,8 +45,8 @@ final class ScreenControls {
                 GamepadState.B, GamepadState.Y, GamepadState.A));
         register(ScreenControlDefinition.lr(SlideControlLRDefinition.phaseSix(), Math.round(64 * density), .15f, .55f,
                 GamepadState.X, GamepadState.DPAD_LEFT, GamepadState.DPAD_RIGHT, GamepadState.DPAD_UP));
-        // Reserved no-op control keeps its label, geometry and editor identity.
-        // Its contact belongs to the router, never to a gamepad gesture or feedback policy.
+        // Reserved contact keeps its label, geometry and editor identity; no gamepad gesture.
+        // The View requests local PRESS feedback only after Sender admits a new Mode DOWN.
         register(new ScreenControlDefinition(MODE_ID, "Mode", SlideControlGesture.Config.phaseOne(density),
                 Math.round(64 * density), .42f, .55f));
         store = new ScreenControlLayoutStore(new File(host.getContext().getFilesDir(), "screen-controls.properties"));

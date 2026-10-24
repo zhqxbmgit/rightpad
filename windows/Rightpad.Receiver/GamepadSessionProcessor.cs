@@ -21,6 +21,14 @@ internal sealed class GamepadSessionProcessor(Func<XboxGamepadState, bool> submi
     private readonly SemaphoreSlim deadlineChanged = new(0, 1);
     private readonly Func<long> clock = timestamp ?? Stopwatch.GetTimestamp;
     private bool failed, stopped;
+    private bool inputModal, awaitingNeutral;
+    internal void SetInputModal(bool active)
+    {
+        lock(gate) {
+            if(active) awaitingNeutral=state!=XboxGamepadState.Neutral;
+            inputModal=active;Neutral(active?"menu_enter":"menu_exit");
+        }
+    }
     private GamepadSessionStats stats;
     public GamepadSessionStats Stats { get { lock (gate) return stats; } }
     internal XboxGamepadState State { get { lock (gate) return state; } }
@@ -31,7 +39,7 @@ internal sealed class GamepadSessionProcessor(Func<XboxGamepadState, bool> submi
         {
             bool newRun = authority.RunId != presence.RunId;
             if (newRun || !presence.Connected || authority.RemoteIp != presence.RemoteIp) Neutral("presence_change");
-            if (newRun) sequence = null;
+            if (newRun) {sequence = null;awaitingNeutral=false;}
             // Disconnect/reconnect of the same run retains its watermark: late duplicates cannot re-press.
             authority = presence;
         }
@@ -53,6 +61,13 @@ internal sealed class GamepadSessionProcessor(Func<XboxGamepadState, bool> submi
             }
             sequence = packet.Sequence;
             refreshedAt = now;
+            // Consume serials while modal. A refresh of a pre-menu held B/X state
+            // cannot revive it after closing; require a new neutral boundary first.
+            if(inputModal || awaitingNeutral) {
+                if(inputModal) awaitingNeutral=packet.State!=XboxGamepadState.Neutral;
+                else if(packet.State==XboxGamepadState.Neutral) awaitingNeutral=false;
+                Neutral("input_modal");return !failed;
+            }
             stats = stats with { Accepted = stats.Accepted + 1 };
             log?.Invoke($"gamepad_received: senderRunId={packet.SenderRunId:X16} sequence={packet.Sequence} buttons={(ushort)packet.State.Buttons} minimumDwellMs={packet.MinimumDwellMs} forceNeutral={packet.ForceNeutral} atTicks={now}");
             if (packet.ForceNeutral) { Neutral("force_neutral"); return !failed; }
