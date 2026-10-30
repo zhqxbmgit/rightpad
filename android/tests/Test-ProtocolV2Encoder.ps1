@@ -11,10 +11,14 @@ $javacPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/javac.exe' } el
 $javaPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/java.exe' } else { 'java' }
 & $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $PSScriptRoot 'stubs/android/os/Looper.java') (Join-Path $PSScriptRoot 'stubs/android/os/Handler.java') (Join-Path $sourceDirectory 'TouchCancellation.java')
 if ($LASTEXITCODE -ne 0) { throw 'Cancellation support compilation failed.' }
-& $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $sourceDirectory 'ModeContactStream.java') (Join-Path $PSScriptRoot 'ModeContactTests.java')
+& $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $sourceDirectory 'ControlRect.java') (Join-Path $sourceDirectory 'ModeFixedRegions.java') (Join-Path $sourceDirectory 'ModeContactStream.java') (Join-Path $PSScriptRoot 'ModeContactTests.java')
 if ($LASTEXITCODE -ne 0) { throw 'Mode contact compilation failed.' }
 & $javaPath -cp $outputDirectory com.rightpad.capture.ModeContactTests
 if ($LASTEXITCODE -ne 0) { throw 'Mode contact tests failed.' }
+& $javacPath --release 17 -encoding UTF-8 -cp $outputDirectory -d $outputDirectory (Join-Path $PSScriptRoot 'ModeFixedRegionsTests.java')
+if ($LASTEXITCODE -ne 0) { throw 'Mode fixed regions compilation failed.' }
+& $javaPath -cp $outputDirectory com.rightpad.capture.ModeFixedRegionsTests
+if ($LASTEXITCODE -ne 0) { throw 'Mode fixed regions tests failed.' }
 & $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $sourceDirectory 'ControlRect.java') (Join-Path $sourceDirectory 'RemoteLayoutProtocol.java') (Join-Path $sourceDirectory 'RemoteLayoutSession.java')
 if ($LASTEXITCODE -ne 0) { throw 'Remote layout test compilation failed.' }
 & $javacPath --release 17 -encoding UTF-8 -d $outputDirectory (Join-Path $androidRoot 'app/src/androidTest/java/com/rightpad/capture/LayoutTestFileGuard.java') (Join-Path $PSScriptRoot 'LayoutTestFileGuardTests.java')

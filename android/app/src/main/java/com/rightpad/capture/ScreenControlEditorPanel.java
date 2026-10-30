@@ -59,6 +59,10 @@ final class ScreenControlEditorPanel extends LinearLayout {
         LinearLayout buttons = new LinearLayout(context);
         save = button(buttons, "Save", () -> {
             try {
+                if(surface instanceof TouchCaptureView view) {
+                    String error=view.modeLayoutError(controls.layout.layout().get(ScreenControlRouter.MODE_ID));
+                    if(error!=null)throw new IllegalArgumentException(error);
+                }
                 controls.layout.save(controls.store);
                 controls.localLayoutRevision++;
                 exit.run();

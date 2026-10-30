@@ -1,5 +1,7 @@
 # Haptic Feedback v1
 
+2026-10-29：固定三区域 Mode 的本地档位提示复用 B STRONG_ONE_SHOT，按接触去重、同 MOVE 最多一次，UP 不补振。仅表示本地预选，不表示 Windows 成功。RPHF 字节、Touchpad CONFIRM 和 Ring 确认不改。见 [固定区域契约](MODE_FIXED_REGIONS.md)。
+
 2026-10-24 independent local exception: Mode 新增 Android 本地、接纳后的一次 PRESS
 振动，复用 B 的 10 ms／255 策略；不代表 Receiver 执行成功。The View uses the
 existing ScreenControlFeedback only after `modeDown()` accepts a new contact.

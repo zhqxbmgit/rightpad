@@ -16,6 +16,8 @@ internal sealed class RemoteLayoutClient(Func<SenderPresence> presence, Action<I
     private long nextSend, receivedAt, deadline, operationStartedAt, operationExpiresAt, operationSentAt;
     private int attempts;
     private bool uncertain;
+    internal Func<LayoutRect,string?> ValidateModeLayout { get; set; } = _ => null;
+    internal string? ValidationError { get; private set; }
     private readonly Dictionary<ulong, long> queries = new();
     public (LayoutMessage? Snapshot, bool Connected, bool Uncertain, int Remaining, long At) Capture(long now)
     {
@@ -91,6 +93,9 @@ internal sealed class RemoteLayoutClient(Func<SenderPresence> presence, Action<I
     }
     public bool Begin(byte kind, LayoutMessage basis, LayoutItem[]? draft, long now)
     {
+        ValidationError=null;
+        if(kind==RemoteLayoutProtocol.Try && draft?.FirstOrDefault(i=>i.Id=="rightpad.input.mode") is { } mode &&
+            ValidateModeLayout(mode.Rect) is { } error) {ValidationError=error;return false;}
         lock (gate)
         {
             ExpireOperation(now);

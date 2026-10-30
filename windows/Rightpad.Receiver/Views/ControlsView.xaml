@@ -6,11 +6,13 @@
       <WrapPanel>
         <Button x:Name="SinglePurpose" Content="单键绑定" MinHeight="56" MinWidth="170" Margin="0,4,12,4" Click="SingleMode" AutomationProperties.AutomationId="ModePurposeSingle"/>
         <Button x:Name="MenuPurpose" Content="电脑快捷菜单" MinHeight="56" MinWidth="190" Margin="0,4,12,4" Click="MenuMode" AutomationProperties.AutomationId="ModePurposeMenu"/>
+        <Button x:Name="GesturePurpose" Content="手势绑定" MinHeight="56" MinWidth="170" Margin="0,4,12,4" Click="GestureMode" AutomationProperties.AutomationId="ModePurposeGesture"/>
       </WrapPanel>
       <TextBlock Text="{Binding Settings.Mode.SavedSummary}" FontSize="18" Margin="0,8" TextWrapping="Wrap"/>
       <TextBlock Text="{Binding Settings.Mode.Summary}" FontSize="18" Margin="0,8" TextWrapping="Wrap"/>
       <TextBlock Text="{Binding ModeStatus}" FontSize="16" Margin="0,8" TextWrapping="Wrap" AutomationProperties.AutomationId="ModeRuntimeStatus"/>
       <Button x:Name="MenuConfigure" Content="配置快捷菜单 · 六个按钮" MinHeight="60" HorizontalAlignment="Left" Margin="0,8" Click="ConfigureMenu" AutomationProperties.AutomationId="ModeMenuConfigure"/>
+      <Button x:Name="GestureConfigure" Content="配置手势绑定 · 固定三区域预览" MinHeight="60" HorizontalAlignment="Left" Margin="0,8" Click="ConfigureGesture" AutomationProperties.AutomationId="ModeGestureConfigure"/>
       <StackPanel x:Name="SingleSettings"><WrapPanel>
         <Button Content="选择键盘键" MinHeight="52" MinWidth="150" Margin="0,4,12,4" Click="ChooseKeyboard" AutomationProperties.AutomationId="ModeKeyboardPicker"/>
         <Button Content="选择手柄键" MinHeight="52" MinWidth="150" Margin="0,4,12,4" Click="ChooseGamepad" AutomationProperties.AutomationId="ModeGamepadPicker"/>
@@ -22,9 +24,9 @@
         <Button x:Name="ToggleButton" Content="切换按住" MinHeight="52" MinWidth="150" Margin="0,4,12,4" Click="Toggle" AutomationProperties.AutomationId="ModeToggle"/>
       </WrapPanel>
       </StackPanel>
-      <TextBlock Text="只编辑草稿；点击窗口底部统一 Save 后写盘并应用。切换按住在正常抬起后保持，安全中断会释放。不增加 Mode 触觉反馈。" Style="{StaticResource Muted}" FontSize="14" TextWrapping="Wrap"/>
+      <TextBlock Text="只编辑草稿；点击窗口底部统一 Save 后写盘并应用。手势绑定只在正常抬指时执行一次。Mode 接纳新 DOWN 后有一次本地短振；手势档位提示只表示本地预选，不表示电脑执行成功。" Style="{StaticResource Muted}" FontSize="14" TextWrapping="Wrap"/>
       <TextBlock Text="键盘按物理键输出，字符受 Windows 布局、Shift 与锁定键影响。Fn、消费控制/媒体键、Guide 不在本轮可选范围；Pause、Print Screen 等按 Windows 特殊语义工作。" Style="{StaticResource Muted}" FontSize="14" TextWrapping="Wrap" Margin="0,8,0,0"/>
-      <TextBlock Text="鼠标键只有左键、右键、中键（滚轮按下），每次绑定一个，支持普通按钮与切换按住。触摸板与 Mode 各自持有自己的按下；任何一方释放都不会提前松开另一方仍需要的键。因此 Mode 左键保持期间，触摸板点按不会形成新的完整左键单击（同一个左键持续按下），右键保持期间普通左键点击与双击拖动照常存在。鼠标键只在单键绑定可用，不出现在快捷菜单槽位。" Style="{StaticResource Muted}" FontSize="14" TextWrapping="Wrap" Margin="0,8,0,0"/>
+      <TextBlock Text="鼠标键只有左键、右键、中键（滚轮按下）。单键绑定支持普通按钮与切换按住；手势绑定只执行一次脉冲。触摸板与 Mode 各自持有按下，任何一方释放都不会提前松开另一方仍需要的键。快捷菜单六槽仍只提供键盘与手柄。" Style="{StaticResource Muted}" FontSize="14" TextWrapping="Wrap" Margin="0,8,0,0"/>
     </StackPanel></Border>
     <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel>
       <TextBlock Text="手机按键布局与大小" Style="{StaticResource SectionTitle}"/>

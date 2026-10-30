@@ -1,5 +1,9 @@
 # Mode Contact v1 / Touch v2 type8
 
+2026-10-29：固定三区域新用途使用独立 type10/96 字节 Mode v2 与 RPMD v2/56 字节，
+不占用 v1 reserved。v1 和旧用途保留，新用途拒绝旧 type8 执行动作。完整字段、身份、
+同步和过渡见 [MODE_FIXED_REGIONS.md](MODE_FIXED_REGIONS.md)。
+
 2026-10-24：Mode 新增 Android 本地、接纳后的一次 PRESS 振动，复用 B 的
 10 ms／255 策略；不代表 Receiver 执行成功。触发点仅为 View 中 `modeDown()`
 返回 true 后，既有 type8/RPMD 字节、序号、接触代次、ACK、租约和重传均不变。

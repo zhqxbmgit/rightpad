@@ -87,7 +87,11 @@ internal sealed class UdpReceiver : IDisposable
             gamepad?.SetInputModal(open);
         };
         if (settings is not null && controlSend is not null) controls = new(settings, () => Presence, controlSend, output);
-        if (controlSend is not null) Layout = new(() => Presence, controlSend);
+        if (controlSend is not null) {
+            Layout = new(() => Presence, controlSend);
+            Layout.ValidateModeLayout = rect => settings?.Current.ModeControl is {Purpose:ModePurpose.GestureBinding} b ?
+                Mode?.Geometry is { } g ? g.Error(b.Gesture,rect) : "手机 Mode 输入坐标空间未同步，不能试用布局" : null;
+        }
         logger = new RawSampleLogger(output, detailedLogging);
         flightRecorder?.Event("udp_bound", ("endpoint", LocalEndpoint.ToString()));
     }
@@ -186,8 +190,9 @@ internal sealed class UdpReceiver : IDisposable
 
     internal void ProcessDatagram(byte[] bytes, IPEndPoint remote, long now, double elapsedMs = 0)
     {
-        if(bytes.Length>=2 && bytes[0]==2 && bytes[1]==8) {
-            if(ModeProtocol.TryDecode(bytes,out var modePacket)) Mode?.Process(modePacket,remote.Address,now);
+        if(bytes.Length>=2 && bytes[0]==2 && bytes[1] is 8 or 10) {
+            bool valid=bytes[1]==8 ? ModeProtocol.TryDecode(bytes,out var modePacket) : ModeGestureProtocol.TryDecode(bytes,out modePacket);
+            if(valid) Mode?.Process(modePacket,remote.Address,now);
             else Statistics.RecordInvalid();
             return;
         }

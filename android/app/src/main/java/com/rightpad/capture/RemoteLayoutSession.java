@@ -18,6 +18,7 @@ final class RemoteLayoutSession {
     private List<RemoteLayoutProtocol.Item> descriptions, tools;
     private int width, height, state, error;
     private long geometry, revision = 1, transaction, serial, deadline, pendingDeadline;
+    java.util.function.Predicate<Map<String,ControlRect>> geometryAllowed = ignored -> true;
 
     RemoteLayoutSession(long epoch, Save save, java.util.function.Consumer<Map<String, ControlRect>> publish) {
         this(epoch, save, publish, () -> Long.MIN_VALUE);
@@ -50,6 +51,7 @@ final class RemoteLayoutSession {
     void tick(long now, boolean idle) {
         if (state == WAITING && now >= pendingDeadline) restore(5);
         if (state == WAITING && idle) {
+            if(!geometryAllowed.test(candidate)) {restore(2);state=FAILED;return;}
             publish.accept(new LinkedHashMap<>(candidate));
             state = TRIAL; deadline = now + 60000;
         }
@@ -104,6 +106,9 @@ final class RemoteLayoutSession {
             if (item.flags() != 0 || !formal.containsKey(item.id()) || !item.rect().valid(width, height)) return false;
             rects.add(item.rect());
         }
+        var proposed=new LinkedHashMap<String,ControlRect>();
+        for(var item:m.items()) proposed.put(item.id(),item.rect());
+        if(!geometryAllowed.test(proposed)) return false;
         for (var tool : tools) rects.add(tool.rect());
         // Exact union coverage, allowing overlaps and preserving existing priority.
         var xs = new java.util.TreeSet<Integer>(); xs.add(0); xs.add(width);

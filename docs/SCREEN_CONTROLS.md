@@ -1,5 +1,9 @@
 # Screen Controls — current contract
 
+2026-10-30 Mode 限定反馈修正：固定三区域每个 MOVE 完整处理历史后，比较事件前与最终区域；最终进入不同的一档／二档时最多请求一次原 B STRONG_ONE_SHOT，包括二档退一档、再次切换、回原地后重入。同档／历史往返最终同档、最终原地、任何永久无效和 UP 不提示。原接纳 DOWN PRESS、B/X 自身的 first-commit 规则、Touchpad CONFIRM 和 Ring 确认保持。此条只替代 Mode 旧“整次接触每档一次”规则；详见 [固定区域契约](MODE_FIXED_REGIONS.md)。
+
+2026-10-29：Mode 新增固定三区域手势用途。Android 纯区域识别和有限预选短振是本轮限定例外；不改变 B/X、普通 Touch 或布局格式。旧 Mode 用途及新用途契约见 [MODE_FIXED_REGIONS.md](MODE_FIXED_REGIONS.md)。
+
 2026-10-24 approved exception: Mode 新增 Android 本地、接纳后的一次 PRESS 振动，
 复用 B 的 10 ms／255 策略；不代表 Receiver 执行成功。
 `TouchCaptureView` calls the existing `controls.feedback.emit(PRESS, STRONG_ONE_SHOT)`

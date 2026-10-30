@@ -15,8 +15,9 @@ public final class ModePressViewFixture {
         }
         int getActionMasked(){return action;} int getPointerCount(){return count;} int getPointerId(int i){return pointer;}
         float getX(){return x;} float getY(){return y;} long getDownTime(){return down;} long getEventTime(){return time;}
-        int getToolType(int i){return TOOL_TYPE_FINGER;} int getHistorySize(){return 0;}
-        float getHistoricalX(int i){return x;} float getHistoricalY(int i){return y;}
+        float[] hx={},hy={};
+        int getToolType(int i){return TOOL_TYPE_FINGER;} int getHistorySize(){return hx.length;}
+        float getHistoricalX(int i){return hx[i];} float getHistoricalY(int i){return hy[i];}
         int findPointerIndex(int id){return id==pointer?0:-1;}
     }
     static final class Backend implements ScreenControlFeedback.Backend {
@@ -25,11 +26,11 @@ public final class ModePressViewFixture {
         public int apiLevel(){return api;}
         public void predefinedClick(ScreenControlFeedback.Event e){throw new AssertionError("Mode must use B policy");}
         public void oneShot(ScreenControlFeedback.Event e,long ms,int amp){
-            check(e==ScreenControlFeedback.Event.PRESS && ms==10 && amp==255,"Mode PRESS exactly B oneShot(10,255)");
+            check((e==ScreenControlFeedback.Event.PRESS || e==ScreenControlFeedback.Event.DIRECTION_COMMIT) && ms==10 && amp==255,"Mode PRESS exactly B oneShot(10,255)");
             attempts++; if(fail)throw new IllegalStateException("fake vibration failure");
         }
         public void legacy(ScreenControlFeedback.Event e,long ms){
-            check(e==ScreenControlFeedback.Event.PRESS && ms==10,"Mode legacy PRESS 10ms");
+            check((e==ScreenControlFeedback.Event.PRESS || e==ScreenControlFeedback.Event.DIRECTION_COMMIT) && ms==10,"Mode legacy feedback 10ms");
             attempts++; if(fail)throw new SecurityException();
         }
     }
@@ -38,7 +39,8 @@ public final class ModePressViewFixture {
         boolean capture=true; int downCalls, accepted, ups, cancels, touchCancels;
         void ready(long generation){stream.reply(new ModeContactStream.Reply(7,generation,0,true),now);}
         boolean canCapture(){return capture;}
-        boolean modeDown(){downCalls++; boolean ok=canCapture() && stream.down(now); if(ok)accepted++; return ok;}
+        boolean modeDown(float x,float y){downCalls++; boolean ok=canCapture() && stream.down(now,x,y); if(ok)accepted++; return ok;}
+        void modeBeginEvent(){stream.beginEvent();} void modeSample(float x,float y,boolean feedback){stream.sample(x,y,feedback);} boolean modeEventHint(){return stream.eventHint();}
         void modeUp(){ups++;stream.up();} void modeCancel(){cancels++;stream.cancel();}
         void cancelTouch(){touchCancels++;}
     }
@@ -62,6 +64,7 @@ public final class ModePressViewFixture {
     final Logger logger=new Logger(); final Diagnostics diagnostics=null;
     float dp(float value){return value;} void requestUnbufferedDispatch(MotionEvent e){}
     void captureEvent(MotionEvent e,int i,TouchSample.Action action){touchPackets++;}
+    void refreshModeGeometry(boolean boundary){}
     // PRODUCTION_DISPATCH
     // PRODUCTION_CLEANUP
     void event(int action,long down,long time){onTouchEvent(new MotionEvent(action,1,7,65,5,down,time));}
@@ -70,6 +73,16 @@ public final class ModePressViewFixture {
     void isolated(){check(touchPackets==0 && unbufferedDispatchRequests==0 && controls.downs==0 && controls.touches==0,
             "Mode never enters Touch, B/X contribution or slide dispatch");}
     static ModePressViewFixture ready(){var v=new ModePressViewFixture();v.udpSender.ready(100);return v;}
+    static ModePressViewFixture gestureReady(){
+        var v=ready();
+        v.udpSender.stream.geometry(new ModeFixedRegions.Geometry(1,200,100,1,new ControlRect(60,0,20,20),0,0,200,100));
+        v.udpSender.stream.reply(new ModeContactStream.Reply(7,101,0,true,2,2,8,10,1,1),v.udpSender.now);
+        return v;
+    }
+    void move(float end,float... history){
+        var e=new MotionEvent(MotionEvent.ACTION_MOVE,1,7,end,5,1,2);
+        e.hx=history;e.hy=new float[history.length];Arrays.fill(e.hy,5);onTouchEvent(e);
+    }
     public static void main(String[] args) {
         // No Receiver binding/use mirror: every accepted contact takes the identical dispatch path.
         var v=ready();
@@ -129,6 +142,73 @@ public final class ModePressViewFixture {
             v=ready();v.onTouchEvent(new MotionEvent(MotionEvent.ACTION_DOWN,1,7,65,y,1,1));
             check(v.udpSender.downCalls==0 && v.controls.backend.attempts==0,"Settings/Power never request Mode PRESS");
         }
+        v=ready();
+        v.udpSender.stream.geometry(new ModeFixedRegions.Geometry(1,200,100,1,new ControlRect(60,0,20,20),0,0,200,100));
+        v.udpSender.stream.reply(new ModeContactStream.Reply(7,101,0,true,2,2,8,10,1,1),v.udpSender.now);
+        v.down(1);
+        var history=new MotionEvent(MotionEvent.ACTION_MOVE,1,7,90,5,1,2);history.hx=new float[]{81,85,89};history.hy=new float[]{5,5,5};
+        v.onTouchEvent(history);check(v.controls.backend.attempts==2,"one MOVE including first and second histories emits at most one hint");
+        v.onTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE,1,7,65,5,1,3));
+        v.onTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE,1,7,81,5,1,4));
+        v.onTouchEvent(new MotionEvent(MotionEvent.ACTION_UP,1,7,90,5,1,5));
+        check(v.controls.backend.attempts==3,"origin silent, reentry hints and UP silent");v.isolated();
+        v.udpSender.stream.reply(new ModeContactStream.Reply(7,101,1,true,2,2,8,10,1,1),v.udpSender.now);
+        check(v.udpSender.stream.claim(7,v.udpSender.now)[28]==3,"real View final UP selects second");
+        for(int api:new int[]{25,26,36}) for(int failure=0;failure<4;failure++) {
+            v=gestureReady();v.controls.backend.api=api;
+            v.controls.backend.fail=failure==1;v.controls.backend.missing=failure==2;v.controls.backend.serviceFailure=failure==3;
+            v.down(1);
+            check(v.controls.backend.availableCalls==1,"gesture accepted DOWN requests PRESS once");
+            v.udpSender.stream.claim(7,v.udpSender.now);
+            int calls=1;
+            for(float x:new float[]{81,90,81,90,65,81,65,90}) {
+                v.move(x);if(x!=65)calls++;
+                check(v.controls.backend.availableCalls==calls,"each tier transition/reentry requests once, origin silent");
+                v.move(x);check(v.controls.backend.availableCalls==calls,"same region repeated MOVE silent");
+            }
+            v.move(90,81,90,81);check(v.controls.backend.availableCalls==calls,"history roundtrip final same second silent");
+            v.move(81,90,81,90);calls++;check(v.controls.backend.availableCalls==calls,"many historical transitions one final first hint");
+            v.move(81,90);check(v.controls.backend.availableCalls==calls,"first roundtrip silent");
+            v.move(65,90);check(v.controls.backend.availableCalls==calls,"final origin silent");
+            v.move(90,81,85);calls++;check(v.controls.backend.availableCalls==calls,"origin through first final second one hint");
+            v.onTouchEvent(new MotionEvent(MotionEvent.ACTION_UP,1,7,81,5,1,3));
+            check(v.controls.backend.availableCalls==calls,"UP changes second to first without feedback");
+            v.udpSender.stream.reply(new ModeContactStream.Reply(7,101,1,true,2,2,8,10,1,1),v.udpSender.now);
+            byte[] up=v.udpSender.stream.claim(7,v.udpSender.now);
+            check(up[26]==2 && up[28]==2,"feedback failures leave final first UP sendable");
+            for(int retry=0;retry<3;retry++) {
+                v.udpSender.stream.claim(7,v.udpSender.now+retry*20_000_000L);
+                v.udpSender.stream.reply(new ModeContactStream.Reply(7,101,1,true,2,2,8,10,1,1),v.udpSender.now);
+            }
+            v.stopCapture("paused");check(v.controls.backend.availableCalls==calls,"ACK/retry/sync/lifecycle no feedback");v.isolated();
+        }
+        for(float end:new float[]{65,81,90,100}) {
+            v=gestureReady();v.down(1);v.move(end,81,100,90);
+            check(v.controls.backend.availableCalls==1,"historical outside permanently suppresses entire MOVE hint");
+            v.move(81);v.up(1);
+            check(v.controls.backend.availableCalls==1,"invalid return/UP never hints");
+            v.udpSender.stream.claim(7,v.udpSender.now);
+            v.udpSender.stream.reply(new ModeContactStream.Reply(7,101,1,true,2,2,8,10,1,1),v.udpSender.now);
+            check(v.udpSender.stream.claim(7,v.udpSender.now)[28]==0,"historical invalid final output cancelled");v.isolated();
+        }
+        for(int action:new int[]{MotionEvent.ACTION_CANCEL,MotionEvent.ACTION_POINTER_DOWN,MotionEvent.ACTION_MOVE}) {
+            v=gestureReady();v.down(1);v.move(90);
+            v.onTouchEvent(new MotionEvent(action,action==MotionEvent.ACTION_POINTER_DOWN?2:1,
+                    action==MotionEvent.ACTION_MOVE?8:7,81,5,1,3));
+            v.move(81);v.up(1);
+            check(v.controls.backend.availableCalls==2,"gesture cancel/pointer fault prevents all later hints");v.isolated();
+        }
+        for(boolean failure:new boolean[]{false,true}) {
+            v=ready();v.controls.backend.fail=failure;
+            v.udpSender.stream.geometry(new ModeFixedRegions.Geometry(1,200,100,1,new ControlRect(60,0,20,20),0,0,200,100));
+            v.udpSender.stream.reply(new ModeContactStream.Reply(7,101,0,true,2,2,8,10,1,1),v.udpSender.now);
+            v.down(1);v.onTouchEvent(new MotionEvent(MotionEvent.ACTION_UP,1,7,90,5,1,5));
+            check(v.controls.backend.attempts==1,"UP without MOVE never adds preselection haptic, backend failure isolated");
+            v.udpSender.stream.reply(new ModeContactStream.Reply(7,101,1,true,2,2,8,10,1,1),v.udpSender.now);
+            check(v.udpSender.stream.claim(7,v.udpSender.now)[28]==3,"UP-only final selection unaffected by feedback failure");v.isolated();
+        }
+        v=ready();v.onTouchEvent(new MotionEvent(MotionEvent.ACTION_DOWN,1,7,85,5,1,1));
+        check(v.touchPackets==1 && v.udpSender.downCalls==0,"extension DOWN remains touchpad, never global Mode grab");
         System.out.println("RESULT ModePressFeedbackTests checks="+checks+" failed=0 (production dispatch/cleanup, real router/stream/policy; fake Android shell)");
     }
 }

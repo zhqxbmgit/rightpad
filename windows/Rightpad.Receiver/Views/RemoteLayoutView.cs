@@ -117,7 +117,7 @@ public sealed class RemoteLayoutView : UserControl
     {
         var basis = kind == RemoteLayoutProtocol.Try ? draft.Basis : Client?.Capture(timestamp()).Snapshot;
         if (basis is null || Client?.Begin(kind, basis, draft.Items, timestamp()) != true)
-        { notice = "操作未开始：请刷新手机现状后重试"; Render(); return; }
+        { notice = Client?.ValidationError ?? "操作未开始：请刷新手机现状后重试"; Render(); return; }
         pendingKind = kind;
         notice = kind == RemoteLayoutProtocol.Try ? "等待手机实际应用" : kind == RemoteLayoutProtocol.Keep ? "正在保存：等待手机写盘结果" : "等待手机恢复原布局";
         Render();
@@ -159,6 +159,7 @@ public sealed class RemoteLayoutView : UserControl
         status.Text = (captured?.Connected == true ? "已连接 · " : "") + state + (captured?.Uncertain == true ? " · 结果待确认" : "") +
             (draft.Conflict ? "\n手机版本或几何已改变：请刷新现状，旧草稿禁止应用" : "") +
             (error.Length > 0 ? "\n" + error : "");
+        if(notice.Length>0) status.Text+="\n"+notice;
         status.ToolTip = notice;
         stepText.Text = "步长 " + step + " px";
         var r = draft.Selection?.Rect;

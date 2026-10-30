@@ -4,7 +4,8 @@ using System.Net;
 namespace Rightpad.Receiver;
 
 internal enum ModeContactPhase : byte { Idle, Down, Up, Cancel }
-internal readonly record struct ModeContact(ulong Run, ulong Generation, uint Sequence, uint Contact, ModeContactPhase Phase);
+internal readonly record struct ModeContact(ulong Run, ulong Generation, uint Sequence, uint Contact, ModeContactPhase Phase,
+    ulong Revision=0, byte Selection=0, ModeGeometry? Geometry=null);
 internal static class ModeProtocol
 {
     public const int ContactSize=32, ReplySize=32;
@@ -41,6 +42,15 @@ internal sealed class ModeSession : IDisposable
     private readonly Func<bool> gamepadReady;
     private IModeKeyboard? keyboard;
     private ModeBinding binding;
+    private ModeBinding? contactBinding;
+    private ulong revision=1, contactRevision;
+    private bool extended, gesturePulse, closeContact;
+    private ModeGeometry? geometry;
+    private long geometryAt;
+    internal ModeGeometry? Geometry { get { lock(gate) return presence.Connected &&
+        Stopwatch.GetElapsedTime(geometryAt,clock()).TotalSeconds<2 ? geometry : null; } }
+    internal string? ValidateGesture(ModeBinding value) => value.Purpose!=ModePurpose.GestureBinding ? null :
+        Geometry is { } g ? g.Error(value.Gesture) : "手机布局／输入坐标空间尚未同步，不能应用手势绑定";
     private SenderPresence presence=new();
     private static long generationSource=DateTime.UtcNow.Ticks;
     private ulong generation=(ulong)Interlocked.Increment(ref generationSource);
@@ -82,13 +92,20 @@ internal sealed class ModeSession : IDisposable
         lock(gate) {
             var next=settings.Current.ModeControl;
             if(next==binding || stopped) return;
-            Reset("binding_changed");binding=next;error=null;menuEnvironmentFault=false;
+            // A gesture-only Save preserves the one admitted contact's old binding.
+            // A purpose switch or an already-open Ring remains a safety boundary.
+            bool retain=touching && !menu.Open && binding.Purpose==ModePurpose.GestureBinding && next.Purpose==binding.Purpose;
+            revision++;
+            if(!retain) Reset("binding_changed");
+            binding=next;error=null;menuEnvironmentFault=false;
         }
     }
     public void UpdatePresence(SenderPresence next)
     {
         lock(gate) {
-            if(next.RunId!=presence.RunId || next.RemoteIp!=presence.RemoteIp || next.Connected!=presence.Connected) Reset("presence_change");
+            if(next.RunId!=presence.RunId || next.RemoteIp!=presence.RemoteIp || next.Connected!=presence.Connected) {
+                Reset("presence_change");geometry=null;geometryAt=0;extended=false;
+            }
             presence=next;
         }
     }
@@ -97,21 +114,53 @@ internal sealed class ModeSession : IDisposable
         lock(gate) {
             TickLocked(now);
             if(stopped || !presence.Connected || packet.Run!=presence.RunId || source.ToString()!=presence.RemoteIp || packet.Generation!=generation) return;
-            if(packet.Phase==ModeContactPhase.Idle && ack==0) { armed=true;seen=now;Reply(now,true);return; }
+            if(packet.Geometry is { } g) {
+                extended=true;
+                if(geometry!=g) log?.Invoke($"mode_geometry: id={g.Identity} view={g.Width}x{g.Height} density={g.Density} mode={g.Mode.X},{g.Mode.Y},{g.Mode.Width},{g.Mode.Height} safe={g.Left},{g.Top},{g.Right},{g.Bottom}");
+                if(geometry is not null && geometry!=g) {
+                    // Layout identities are monotonic within a Sender run. Old work
+                    // cannot move the geometry backwards or revive a cancelled UP.
+                    if(g.Identity<=geometry.Identity) return;
+                    geometry=g;geometryAt=now;Reset("layout_changed");Reply(now,true);return;
+                }
+                geometry=g;geometryAt=now;
+            } else if(extended || binding.Purpose==ModePurpose.GestureBinding) return;
+            if(packet.Phase==ModeContactPhase.Idle && ack==0) {
+                bool nextArmed=binding.Purpose!=ModePurpose.GestureBinding || packet.Revision==revision && geometry?.Error(binding.Gesture) is null;
+                if(!armed && nextArmed) log?.Invoke($"mode_sync: version={(extended?2:1)} revision={revision} geometry={geometry?.Identity??0} purpose={binding.Purpose}");
+                armed=nextArmed;
+                seen=now;Reply(now,true);return;
+            }
             if(packet.Phase==ModeContactPhase.Cancel) { Reset("cancel");Reply(now,true);return; }
             if(!armed || (error is not null && !menuEnvironmentFault)) return;
             if(packet==last && packet.Sequence==ack) { seen=now;Reply(now,false);return; }
             if(packet.Sequence!=ack+1 || packet.Sequence==0) { Reply(now,true);return; }
             if(packet.Phase==ModeContactPhase.Down) {
                 if(touching || packet.Contact!=contact+1 || packet.Contact==0) return;
+                if(gesturePulse || held && binding.Purpose==ModePurpose.GestureBinding) return;
+                if(binding.Purpose==ModePurpose.GestureBinding && (packet.Revision!=revision || geometry is null || geometry.Error(binding.Gesture) is not null)) {
+                    Reset("gesture_not_synchronized");Reply(now,true);return;
+                }
                 if(binding.Purpose==ModePurpose.SingleBinding && held && binding.Behavior==ModePressBehavior.Momentary) return; // Finish the previous short press first.
                 contact=packet.Contact;touching=true;
-                if(binding.Purpose==ModePurpose.ShortcutMenu) ToggleMenu();
+                contactBinding=binding;contactRevision=packet.Revision;closeContact=menu.Open;
+                if(closeContact) {CloseMenu();SetHeld(false);}
+                else if(binding.Purpose==ModePurpose.GestureBinding) { /* Selection only; UP is the sole commit. */ }
+                else if(binding.Purpose==ModePurpose.ShortcutMenu) ToggleMenu();
                 else if(binding.Behavior==ModePressBehavior.Toggle) SetHeld(!held);
                 else SetHeld(true);
             } else if(packet.Phase==ModeContactPhase.Up) {
                 if(!touching || packet.Contact!=contact) return;
                 touching=false;
+                if(contactBinding?.Purpose==ModePurpose.GestureBinding && !closeContact) {
+                    if(packet.Revision!=contactRevision) {Reset("gesture_snapshot_mismatch");Reply(now,true);return;}
+                    if(packet.Selection is >=1 and <=3) {
+                        var action=contactBinding.Gesture[packet.Selection-1];
+                        if(action.Menu) ToggleMenu(contactBinding);
+                        else if(action.Selected is { } key) {gesturePulse=true;SetHeld(true,key);}
+                    }
+                }
+                contactBinding=null;closeContact=false;
                 if(binding.Purpose==ModePurpose.SingleBinding && binding.Behavior==ModePressBehavior.Momentary && now>=releaseAt) SetHeld(false);
             } else return;
             last=packet;ack=packet.Sequence;seen=now;
@@ -160,9 +209,10 @@ internal sealed class ModeSession : IDisposable
         if(menu.Open && now>=presentationUntil) {error="菜单显示未响应，已恢复正常输入";menuEnvironmentFault=true;Reset("menu_presentation_timeout");}
         if(held && outputKey?.Kind==ModeBindingKind.Gamepad && !gamepadReady()) { Reset("gamepad_unavailable");error="Xbox360 backend unavailable"; }
         if(armed && Stopwatch.GetElapsedTime(seen,now)>=Lease) Reset("lease_expired");
-        if(held && now>=releaseAt && (binding.Purpose==ModePurpose.ShortcutMenu || (!touching && binding.Behavior==ModePressBehavior.Momentary))) {
-            bool pulse=menu.Open && binding.Purpose==ModePurpose.ShortcutMenu;
+        if(held && now>=releaseAt && (gesturePulse || menu.Open || binding.Purpose==ModePurpose.ShortcutMenu || (!touching && binding.Behavior==ModePressBehavior.Momentary))) {
+            bool pulse=menu.Open && menuActionAccepted;
             SetHeld(false);
+            gesturePulse=false;
             // A completed menu pulse is the only new feedback source; it never
             // changes the already-completed action and never blocks the close.
             if(pulse && error is null) CompleteMenuAction();
@@ -175,23 +225,27 @@ internal sealed class ModeSession : IDisposable
     {
         if(stopped || !presence.Connected || presence.RunId is not ulong run || presence.RemoteIp is null || (!immediate && now<replyAt)) return;
         replyAt=now+Stopwatch.Frequency/10;
-        send(IPAddress.Parse(presence.RemoteIp),ModeProtocol.Reply(run,generation,ack,armed));
+        // v1 remains available for old clients and old uses. A gesture purpose
+        // never advertises a usable legacy stream or interprets type8 as actions.
+        if(!extended) send(IPAddress.Parse(presence.RemoteIp),ModeProtocol.Reply(run,generation,ack,armed && binding.Purpose!=ModePurpose.GestureBinding));
+        send(IPAddress.Parse(presence.RemoteIp),ModeGestureProtocol.Reply(run,generation,ack,armed,binding,revision,geometry?.Identity??0));
     }
     private void Reset(string reason)
     {
         CloseMenu();
         SetHeld(false);
         touching=held=armed=false;ack=contact=0;last=default;releaseAt=replyAt=0;
+        contactBinding=null;contactRevision=0;gesturePulse=closeContact=false;
         generation=(ulong)Interlocked.Increment(ref generationSource);
         log?.Invoke($"mode_reset: reason={reason} generation={generation}");
     }
-    private void ToggleMenu()
+    private void ToggleMenu(ModeBinding? snapshot=null)
     {
         if(menu.Open) {CloseMenu();SetHeld(false);return;}
         try {
             // Do not invalidate RPMD here: opening is an ordinary accepted DOWN.
             // The corresponding normal UP keeps the menu open and is acknowledged.
-            freshTouch=true;ClearMenuAction();MenuBoundary?.Invoke(true);menu.Show(binding);presentationUntil=clock()+2*Stopwatch.Frequency;
+            freshTouch=true;ClearMenuAction();MenuBoundary?.Invoke(true);menu.Show(snapshot??binding);presentationUntil=clock()+2*Stopwatch.Frequency;
             error=null;menuEnvironmentFault=false;
             log?.Invoke("mode_menu_open");
         } catch(Exception e) {

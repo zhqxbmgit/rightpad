@@ -7,7 +7,7 @@ namespace Rightpad.Receiver;
 // be inserted before Unbound/Keyboard/Gamepad.
 internal enum ModeBindingKind { Unbound, Keyboard, Gamepad, Mouse }
 internal enum ModePressBehavior { Momentary, Toggle }
-internal enum ModePurpose { SingleBinding, ShortcutMenu }
+internal enum ModePurpose { SingleBinding, ShortcutMenu, GestureBinding }
 // Stable identifiers are the catalog Id strings "left"/"right"/"middle"; this
 // enum is the in-process identity shared by binding, session and mouse output.
 internal enum ModeMouseButton { Left, Right, Middle }
@@ -60,10 +60,11 @@ internal sealed record ModeBinding(ModeBindingKind Kind = ModeBindingKind.Unboun
     public ModePurpose Purpose { get; init; }
     public ModeMenuAppearance Appearance { get; init; }
     public ModeMenuSlots Slots { get; init; } = new();
-    public bool IsValid => Enum.IsDefined(Purpose) && Enum.IsDefined(Appearance) && Slots?.IsValid == true && Enum.IsDefined(Kind) && Enum.IsDefined(Behavior) &&
+    public ModeGestureSettings Gesture { get; init; } = new();
+    public bool IsValid => Gesture?.IsValid == true && Enum.IsDefined(Purpose) && Enum.IsDefined(Appearance) && Slots?.IsValid == true && Enum.IsDefined(Kind) && Enum.IsDefined(Behavior) &&
         (Kind == ModeBindingKind.Unbound ? Key == "" : ModeKeys.All.Any(k => k.Kind == Kind && k.Id == Key));
     public ModeKey? Selected => ModeKeys.All.FirstOrDefault(k => k.Kind == Kind && k.Id == Key);
-    public string Summary => Purpose == ModePurpose.ShortcutMenu ? "电脑快捷菜单 · 六个按钮" : (Selected?.Name ?? "未绑定") + " · " + (Behavior == ModePressBehavior.Toggle ? "切换按住" : "普通按钮");
+    public string Summary => Purpose == ModePurpose.GestureBinding ? "手势绑定 · " + Gesture.Summary : Purpose == ModePurpose.ShortcutMenu ? "电脑快捷菜单 · 六个按钮" : (Selected?.Name ?? "未绑定") + " · " + (Behavior == ModePressBehavior.Toggle ? "切换按住" : "普通按钮");
 }
 internal sealed record ModeKey(ModeBindingKind Kind, string Id, string Name, string Group, ushort VirtualKey = 0, ushort ScanCode = 0,
     XboxGamepadState Gamepad = default, ModeMouseButton Mouse = default);

@@ -27,6 +27,7 @@ public partial class MainWindow : Window
         this.runtime = runtime;
         menuPresenter = new(() => runtime.ModeSession);
         this.settingsFile = settingsFile;
+        settings.ModeGeometry=()=>runtime.ModeSession?.Geometry;
         model = new(runtime, settings, startup);
         InitializeComponent();
         pages = [new OverviewView(), new MotionView(), new TapView(), new DiagnosticsView(), new ControlsView()];

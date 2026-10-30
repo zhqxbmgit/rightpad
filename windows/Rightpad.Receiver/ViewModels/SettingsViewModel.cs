@@ -128,6 +128,9 @@ internal sealed class SettingsViewModel : ObservableModel
     public IReadOnlyList<ControlSettingsViewModel> Controls { get; }
     public Cz1SettingsViewModel Cz1 { get; }
     public ModeSettingsViewModel Mode { get; }
+    internal Func<ModeGeometry?> ModeGeometry { get; set; } = () => null;
+    internal string? ValidateModeGeometry(ModeBinding binding) => binding.Purpose!=ModePurpose.GestureBinding ? null :
+        ModeGeometry() is { } geometry ? geometry.Error(binding.Gesture) : "手机布局／输入坐标空间尚未同步，不能应用手势绑定";
 
     public SettingsViewModel(RuntimeSettingsStore store, SettingsFileStore file, string? warning = null)
     {
@@ -195,12 +198,18 @@ internal sealed class SettingsViewModel : ObservableModel
         if (!CanSave) return false;
         RuntimeSettings snapshot = draftSettings with { Cz1 = store.Current.Cz1 };
         if (!snapshot.IsProductValid) return false;
+        if(ValidateModeGeometry(snapshot.ModeControl) is { } geometryError) {Notice=geometryError;return false;}
         SetSaving(true);
         try
         {
             if (!await file.SaveNowAsync(snapshot))
             {
                 Notice = file.SaveError ?? "Settings save failed. Changes were not applied.";
+                return false;
+            }
+            if(ValidateModeGeometry(snapshot.ModeControl) is { } changedGeometry) {
+                bool restored=await file.SaveNowAsync(committedSettings);
+                Notice=changedGeometry+(restored?"；保存期间几何改变，已保留原正式设置。":"；磁盘恢复失败，行为未发布："+file.SaveError);
                 return false;
             }
             store.Publish(snapshot);

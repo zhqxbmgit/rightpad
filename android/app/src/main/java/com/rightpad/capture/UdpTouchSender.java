@@ -81,6 +81,21 @@ final class UdpTouchSender implements Closeable {
     private GamepadSendState gamepad = new GamepadSendState();
     private ModeContactStream mode = new ModeContactStream();
     private Pending retiredModeCancel;
+    private ModeFixedRegions.Geometry modeGeometry;
+    void modeGeometry(ModeFixedRegions.Geometry geometry) {
+        synchronized(sendGate) { modeGeometry=geometry;mode.geometry(geometry); }
+        thread.interrupt();
+    }
+    boolean modeLayoutAllowed(ModeFixedRegions.Geometry geometry) { synchronized(sendGate) { return mode.layoutAllowed(geometry); } }
+    String modeLayoutError(ModeFixedRegions.Geometry geometry) { synchronized(sendGate) { return mode.layoutError(geometry); } }
+    boolean modeDown(float x,float y) {
+        boolean accepted;
+        synchronized(sendGate) { accepted=canCapture() && mode.down(System.nanoTime(),x,y); }
+        thread.interrupt();return accepted;
+    }
+    void modeBeginEvent() { synchronized(sendGate) {mode.beginEvent();} }
+    void modeSample(float x,float y,boolean feedback) { synchronized(sendGate) {mode.sample(x,y,feedback);} }
+    boolean modeEventHint() { synchronized(sendGate) {return mode.eventHint();} }
     void modeReply(ModeContactStream.Reply reply) {
         synchronized(sendGate) { if(!closed && !closing && foreground && reply!=null && reply.run()==route.runId) mode.reply(reply,System.nanoTime()); }
         thread.interrupt();
@@ -152,6 +167,7 @@ final class UdpTouchSender implements Closeable {
             byte[] cancel=mode.claim(route.runId,System.nanoTime());
             if(route.endpoint!=null && cancel!=null) retiredModeCancel=new Pending(route,cancel);
             mode=new ModeContactStream();
+            mode.geometry(modeGeometry);
             pending.clear();
             activeSession = -1;
             layoutResponse = null;

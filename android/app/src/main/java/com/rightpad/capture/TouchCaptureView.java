@@ -52,6 +52,30 @@ final class TouchCaptureView extends View {
     private final PowerGestureTracker settingsGesture = new PowerGestureTracker();
     private boolean inputModal;
     private final float density;
+    private int inputInsetTop,inputInsetBottom;
+    private long modeGeometryIdentity;
+    private ModeFixedRegions.Geometry modeGeometry;
+    ModeFixedRegions.Geometry geometryFor(ControlRect rect,long identity) {
+        return new ModeFixedRegions.Geometry(identity,getWidth(),getHeight(),density,rect,
+                safeInsetLeft,inputInsetTop,getWidth()-safeInsetRight,getHeight()-inputInsetBottom);
+    }
+    boolean modeLayoutAllowed(ControlRect rect) { return udpSender.modeLayoutAllowed(geometryFor(rect,Math.max(1,modeGeometryIdentity))); }
+    String modeLayoutError(ControlRect rect) { return udpSender.modeLayoutError(geometryFor(rect,Math.max(1,modeGeometryIdentity))); }
+    void refreshModeGeometry(boolean boundary) {
+        ControlRect r=controls.rects().get(ScreenControlRouter.MODE_ID);
+        if(r==null) return;
+        var next=geometryFor(r,Math.max(1,modeGeometryIdentity));
+        var old=modeGeometry;
+        boolean changed=old==null || old.width()!=next.width() || old.height()!=next.height() || old.density()!=next.density() ||
+                old.left()!=next.left() || old.top()!=next.top() || old.right()!=next.right() || old.bottom()!=next.bottom() ||
+                old.mode().x!=r.x || old.mode().y!=r.y || old.mode().width!=r.width || old.mode().height!=r.height;
+        if(!boundary && !changed) return;
+        udpSender.modeCancel();
+        modeGeometry=geometryFor(r,++modeGeometryIdentity);
+        udpSender.modeGeometry(modeGeometry);
+        android.util.Log.i("RightpadMode","geometry id="+modeGeometryIdentity+" view="+getWidth()+"x"+getHeight()+
+                " density="+density+" mode="+r.x+","+r.y+","+r.width+","+r.height+" safe="+safeInsetLeft+","+inputInsetTop+","+(getWidth()-safeInsetRight)+","+(getHeight()-inputInsetBottom));
+    }
     private final float scaledDensity;
 
     private final Paint backgroundPaint = fillPaint();
@@ -137,12 +161,14 @@ final class TouchCaptureView extends View {
             // Both controls sit outside the centered camera cutout. Preserve side
             // cutout safety without shifting the whole row below its top inset;
             // transient system bars overlay the edge-to-edge surface without a jump.
-            if (safeInsetTop != 0 || safeInsetLeft != cutoutSafe.left
+            if (inputInsetTop != cutoutSafe.top || inputInsetBottom != cutoutSafe.bottom || safeInsetTop != 0 || safeInsetLeft != cutoutSafe.left
                     || safeInsetRight != cutoutSafe.right) {
                 safeInsetTop = 0;
+                inputInsetTop=cutoutSafe.top;inputInsetBottom=cutoutSafe.bottom;
                 safeInsetLeft = cutoutSafe.left;
                 safeInsetRight = cutoutSafe.right;
                 prepareGeometry(getWidth(), getHeight());
+                refreshModeGeometry(true);
                   remoteGeometryChanged.run();
                 invalidate();
             }
@@ -211,6 +237,7 @@ final class TouchCaptureView extends View {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
         prepareGeometry(width, height);
         controls.resize(width, height);
+        refreshModeGeometry(true);
         remoteGeometryChanged.run();
     }
 
@@ -457,7 +484,7 @@ final class TouchCaptureView extends View {
     @SuppressLint("ClickableViewAccessibility")
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) beforeRemoteDown.run();
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {beforeRemoteDown.run();refreshModeGeometry(false);}
         int action = event.getActionMasked();
         if (controls.editing()) {
             controls.editTouch(event);
@@ -489,7 +516,7 @@ final class TouchCaptureView extends View {
             reservedContact = owner == ScreenControlRouter.Owner.MODE;
             if (reservedContact) {
                 modeDownTime = event.getDownTime();
-                if (udpSender.modeDown())
+                if (udpSender.modeDown(event.getX(),event.getY()))
                     controls.feedback.emit(ScreenControlFeedback.Event.PRESS, ScreenControlFeedback.Style.STRONG_ONE_SHOT);
             }
             if (owner == ScreenControlRouter.Owner.SCREEN_CONTROL) {
@@ -510,7 +537,14 @@ final class TouchCaptureView extends View {
             if (action == MotionEvent.ACTION_CANCEL) {udpSender.modeCancel();router.cancel();}
             else if (router.owner()!=ScreenControlRouter.Owner.MODE) return true; // Completed contact: orphan UP/MOVE cannot cancel a toggle.
             else if (!router.accepts(event.getPointerCount(), event.getPointerId(0), action == MotionEvent.ACTION_POINTER_DOWN)) udpSender.modeCancel();
-            else if(action == MotionEvent.ACTION_UP && router.modeUp(event.getPointerCount(), event.getPointerId(0))) udpSender.modeUp();
+            else if(action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP) {
+                udpSender.modeBeginEvent();
+                for(int i=0;i<event.getHistorySize();i++) udpSender.modeSample(event.getHistoricalX(i),event.getHistoricalY(i),action==MotionEvent.ACTION_MOVE);
+                udpSender.modeSample(event.getX(),event.getY(),action==MotionEvent.ACTION_MOVE);
+                if(action==MotionEvent.ACTION_MOVE && udpSender.modeEventHint())
+                    controls.feedback.emit(ScreenControlFeedback.Event.DIRECTION_COMMIT,ScreenControlFeedback.Style.STRONG_ONE_SHOT);
+                if(action==MotionEvent.ACTION_UP && router.modeUp(event.getPointerCount(),event.getPointerId(0))) udpSender.modeUp();
+            }
             return true;
         }
         if (action == MotionEvent.ACTION_CANCEL) {

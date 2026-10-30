@@ -1,5 +1,7 @@
 # rightpad System Architecture
 
+2026-10-29 Mode fixed-region extension: a third purpose uses Android fixed View-space origin/first/second selection and Receiver-owned UP-only pulses, with bounded config/contact/layout snapshots. Limited type10/RPMD v2 on existing workers preserves old uses and all other paths. See [MODE_FIXED_REGIONS.md](MODE_FIXED_REGIONS.md).
+
 Development storage contract (2026-10-22): source, development output and deployed
 runtime are separate roots. `artifact-root.txt` selects `C:\rightpad-artifacts`
 for future builds, intermediates, task evidence/candidates/recovery and new launcher

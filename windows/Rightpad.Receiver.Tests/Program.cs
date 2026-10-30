@@ -41,14 +41,16 @@ internal static class Program
         bool guiStartupOnly = args.SequenceEqual(new[] { "--normal-gui-startup" });
         bool receiverModeOnly = args.SequenceEqual(new[] { "--receiver-touch-mode" });
         bool cz1Only = args.SequenceEqual(new[] { "--cz1-parameters" });
+        bool modeGestureOnly = args.SequenceEqual(new[] { "--mode-gesture" });
         bool modeMenuOnly = args.SequenceEqual(new[] { "--mode-menu" });
         bool artifactPathsOnly = args.SequenceEqual(new[] { "--artifact-paths" });
-        if (args.Length != 0 && !artifactPathsOnly && !cz1Only && !motionOnly && !mr1Only && !uiSettingsOnly && !gamepadOnly && !guiStartupOnly && !receiverModeOnly && !modeMenuOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--artifact-paths | --cz1-parameters | --receiver-touch-mode | --normal-gui-startup | --gamepad | --ui-settings | --mr1 | --motion-profile | --mode-menu | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
+        if (args.Length != 0 && !artifactPathsOnly && !cz1Only && !motionOnly && !mr1Only && !uiSettingsOnly && !gamepadOnly && !guiStartupOnly && !receiverModeOnly && !modeMenuOnly && !modeGestureOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--artifact-paths | --cz1-parameters | --receiver-touch-mode | --normal-gui-startup | --gamepad | --ui-settings | --mr1 | --motion-profile | --mode-menu | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
             .. TouchCancellationTests.Cases,
             .. ModeMenuTests.Cases,
             .. ModeBindingTests.Cases,
+            .. ModeGestureTests.Cases,
             .. ModeMouseButtonTests.Cases,
             .. RemoteLayoutWindowTests.Cases,
             .. RemoteLayoutTests.Cases,
@@ -325,6 +327,7 @@ internal static class Program
         ];
         if (receiverModeOnly) tests = [.. ReceiverTouchModeTests.Cases];
         if (cz1Only) tests = [.. Cz1ParameterTests.Cases];
+        if (modeGestureOnly) tests = [.. ModeGestureTests.Cases];
         if (modeMenuOnly) tests = [.. ModeMenuTests.Cases];
         if (artifactPathsOnly) tests = tests.Where(test => test.Name is
             "Motion UI removes inactive editors and restart advice" or

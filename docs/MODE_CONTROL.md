@@ -1,5 +1,10 @@
 # Mode 用途与单键绑定
 
+2026-10-29 增加第三用途“手势绑定”：固定原 Mode／右侧一档／右侧二档，只在正常 UP
+执行一个最终脉冲。支持目录键盘／手柄／鼠标，二档可打开现有 Ring。原普通／Toggle
+和电脑快捷菜单保留，不自动启用或改正式值。几何、回撤／越界、Save 快照、预选反馈
+和兼容以 [MODE_FIXED_REGIONS.md](MODE_FIXED_REGIONS.md) 为准，下方原用途说明保留。
+
 2026-10-24 本地 PRESS 例外：Mode 新增 Android 本地、接纳后的一次 PRESS 振动，
 复用 B 的 10 ms／255 策略；不代表 Receiver 执行成功。仅在
 `UdpTouchSender.modeDown()` 返回 true 后，View 复用原 `controls.feedback` 实例请求

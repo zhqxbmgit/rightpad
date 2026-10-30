@@ -23,8 +23,10 @@ final class RemoteLayoutBridge {
                     view.stopCapture("remote_layout_changed");
                     view.controls.layout = new ScreenControlLayoutEditor(view.controls.definitions,
                             layout, view.getWidth(), view.getHeight());
+                    view.refreshModeGeometry(true);
                     view.invalidate();
                 }, SystemClock::elapsedRealtime);
+        session.geometryAllowed = layout -> view.modeLayoutAllowed(layout.get(ScreenControlRouter.MODE_ID));
         view.beforeRemoteDown = () -> session.tick(SystemClock.elapsedRealtime(), view.remoteIdle());
         view.remoteGeometryChanged = this::sync;
     }
@@ -50,6 +52,7 @@ final class RemoteLayoutBridge {
     void receive(byte[] bytes) {
         var m = RemoteLayoutProtocol.decode(bytes, bytes.length);
         if (m == null || m.kind() == RemoteLayoutProtocol.SNAPSHOT || m.run() != sender.getSenderRunId() || !sync()) return;
+        if(m.kind()!=RemoteLayoutProtocol.QUERY) {view.stopCapture("layout_transaction");view.refreshModeGeometry(true);}
         var result = session.handle(m, SystemClock.elapsedRealtime(), view.remoteIdle(), view.controls.editing());
         sender.submitLayout(RemoteLayoutProtocol.encode(result));
         schedule();

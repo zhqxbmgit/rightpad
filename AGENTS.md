@@ -2,6 +2,47 @@
 
 # rightpad Project Instructions
 
+Approved Mode region-transition feedback correction (2026-10-30): supersedes only
+the 2026-10-29 per-contact first/second hint eligibility. For each MOVE, preserve
+all ordered historical/final samples and entered/permanent-invalid facts, then
+compare its starting and final valid regions. A different final first or second
+region requests at most one existing B STRONG_ONE_SHOT hint, including second to
+first, repeated tier switches and reentry after origin. Same-region roundtrips,
+final origin, any permanent invalidation and UP are silent. Admitted-DOWN PRESS,
+fixed geometry, selection, Save snapshots, ownership, protocols and output stay
+unchanged. Missing/throwing feedback is isolated without retry or queue. This
+round authorizes Android-only protected update, with an independent guard running
+the full real health check before ready and confirming armed before installation;
+Receiver binaries/process/settings, layout and app data remain intact. No Git
+writes or production/game input injection. See docs/MODE_FIXED_REGIONS.md and
+docs/MODE_REGION_FEEDBACK_DELIVERY_20261030.md.
+
+Approved Mode fixed right-region gesture-binding exception (2026-10-29): a third
+purpose adds UP-only origin/first/second pulses. Origin is the existing Mode
+rectangle; independent dp widths extend to its right with the same top/height.
+Initial development 8/10 dp, each 1..50 in 0.5 steps, is not human acceptance or
+permission to overwrite saved settings. Half-open regions assign internal edges
+outward. Android performs fixed-region selection, ordered history and final UP,
+retaining entered-tier and permanent-invalid facts; only original Mode DOWN
+admits, with locked ownership. No relative-DOWN threshold, hysteresis, angle,
+timed hold action or automatic tier upgrade. Receiver owns bindings/output and
+bounded current-contact snapshots. Disk-first same-purpose Save preserves the
+old contact geometry/binding, including Ring slots; next DOWN uses the new revision.
+Purpose/layout/lifecycle fences cancel. Only second may open existing Ring on UP;
+an open-menu closing contact is fully consumed. Reuse existing keyboard/Xbox/mouse
+contributions and 25 ms pulses; never overwrite a pending release. Limited type10
+96-byte Mode v2 and RPMD v2 56-byte extensions carry config/layout identities and
+actual View/density/cutout-safe geometry on existing workers/ports. Old type8/v1
+reserved bytes and old uses remain unchanged; unsynced new use has no fallback.
+Preselection reuses B STRONG_ONE_SHOT: first once, outward second once; direct
+second consumes both with one hint, at most one per MOVE with history, none on UP,
+invalid/cancel/retry/sync/output. Original admitted-DOWN PRESS stays. Feedback means
+local admission/selection only. Active-purpose Save/layout trial rejects overflow
+and names its side; unknown geometry is unavailable, inactive regions cannot veto
+old uses. Preserve static M/stable ID, original layout bytes, Single Momentary/
+Toggle, Ring, B/X, Touchpad, Motion, native ABI/devices and other wire meanings.
+No Git writes or game/input injection in this delivery. See docs/MODE_FIXED_REGIONS.md.
+
 Approved Mode Android-local PRESS feedback exception (2026-10-24): only after
 `UdpTouchSender.modeDown()` accepts a new Mode DOWN, Android immediately attempts
 one local PRESS through the existing ScreenControlFeedback instance and B's

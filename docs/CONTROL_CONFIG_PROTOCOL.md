@@ -1,5 +1,8 @@
 # Virtual Controls Config v2 (Phase 6C)
 
+2026-10-29：Mode 固定区域宽度通过独立 RPMD v2 同步，不加入 RPCT。Mode-only Save
+不推进本协议 B/X epoch/revision，不重定时在途 B/X。见 [Mode 固定区域契约](MODE_FIXED_REGIONS.md)。
+
 2026-10-17 Mode addition: Mode uses the same Receiver draft/disk-first Save but
 stores its complete binding separately as top-level `modeControl`. Binding and
 toggle state stay on Windows, so RPCT remains the same 62-byte complete B+X
