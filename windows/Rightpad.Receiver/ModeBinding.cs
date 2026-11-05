@@ -57,14 +57,36 @@ internal sealed record ModeMenuSlots
 }
 internal sealed record ModeBinding(ModeBindingKind Kind = ModeBindingKind.Unbound, string Key = "", ModePressBehavior Behavior = ModePressBehavior.Momentary)
 {
+    public const int MinMenuSizePercent = 50;
+    public const int MaxMenuSizePercent = 100;
+    public const int MenuSizeStep = 5;
     public ModePurpose Purpose { get; init; }
     public ModeMenuAppearance Appearance { get; init; }
     public ModeMenuSlots Slots { get; init; } = new();
     public ModeGestureSettings Gesture { get; init; } = new();
-    public bool IsValid => Gesture?.IsValid == true && Enum.IsDefined(Purpose) && Enum.IsDefined(Appearance) && Slots?.IsValid == true && Enum.IsDefined(Kind) && Enum.IsDefined(Behavior) &&
+    [JsonConverter(typeof(ModeMenuSizeConverter))]
+    public int MenuSizePercent { get; init; } = MaxMenuSizePercent;
+    internal static bool ValidMenuSize(int percent) =>
+        percent is >= MinMenuSizePercent and <= MaxMenuSizePercent && percent % MenuSizeStep == 0;
+    public bool IsValid => ValidMenuSize(MenuSizePercent) && Gesture?.IsValid == true && Enum.IsDefined(Purpose) && Enum.IsDefined(Appearance) && Slots?.IsValid == true && Enum.IsDefined(Kind) && Enum.IsDefined(Behavior) &&
         (Kind == ModeBindingKind.Unbound ? Key == "" : ModeKeys.All.Any(k => k.Kind == Kind && k.Id == Key));
     public ModeKey? Selected => ModeKeys.All.FirstOrDefault(k => k.Kind == Kind && k.Id == Key);
     public string Summary => Purpose == ModePurpose.GestureBinding ? "手势绑定 · " + Gesture.Summary : Purpose == ModePurpose.ShortcutMenu ? "电脑快捷菜单 · 六个按钮" : (Selected?.Name ?? "未绑定") + " · " + (Behavior == ModePressBehavior.Toggle ? "切换按住" : "普通按钮");
+}
+// A malformed visual preference falls back locally while the rest of the
+// Mode binding goes through the existing deserialization and validation.
+internal sealed class ModeMenuSizeConverter : JsonConverter<int>
+{
+    public override int Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetDecimal(out decimal value) &&
+            value is >= ModeBinding.MinMenuSizePercent and <= ModeBinding.MaxMenuSizePercent &&
+            value == decimal.Truncate(value) && ModeBinding.ValidMenuSize((int)value))
+            return (int)value;
+        reader.Skip();
+        return ModeBinding.MaxMenuSizePercent;
+    }
+    public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options) => writer.WriteNumberValue(value);
 }
 internal sealed record ModeKey(ModeBindingKind Kind, string Id, string Name, string Group, ushort VirtualKey = 0, ushort ScanCode = 0,
     XboxGamepadState Gamepad = default, ModeMouseButton Mouse = default);

@@ -92,6 +92,10 @@ internal sealed class ModeSession : IDisposable
         lock(gate) {
             var next=settings.Current.ModeControl;
             if(next==binding || stopped) return;
+            if((binding with {MenuSizePercent=next.MenuSizePercent})==next) {
+                binding=next;
+                return;
+            }
             // A gesture-only Save preserves the one admitted contact's old binding.
             // A purpose switch or an already-open Ring remains a safety boundary.
             bool retain=touching && !menu.Open && binding.Purpose==ModePurpose.GestureBinding && next.Purpose==binding.Purpose;
@@ -245,7 +249,10 @@ internal sealed class ModeSession : IDisposable
         try {
             // Do not invalidate RPMD here: opening is an ordinary accepted DOWN.
             // The corresponding normal UP keeps the menu open and is acknowledged.
-            freshTouch=true;ClearMenuAction();MenuBoundary?.Invoke(true);menu.Show(snapshot??binding);presentationUntil=clock()+2*Stopwatch.Frequency;
+            // Gesture actions and slots retain their DOWN snapshot. The visual
+            // size belongs to the Ring being opened now.
+            var configuration=snapshot is null ? binding : snapshot with {MenuSizePercent=binding.MenuSizePercent};
+            freshTouch=true;ClearMenuAction();MenuBoundary?.Invoke(true);menu.Show(configuration);presentationUntil=clock()+2*Stopwatch.Frequency;
             error=null;menuEnvironmentFault=false;
             log?.Invoke("mode_menu_open");
         } catch(Exception e) {

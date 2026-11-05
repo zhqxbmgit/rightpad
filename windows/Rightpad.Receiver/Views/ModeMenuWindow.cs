@@ -162,7 +162,6 @@ internal sealed class ModeMenuVisual : FrameworkElement
     private static readonly Brush Tile=new SolidColorBrush(Color.FromRgb(34,54,44));
     private static readonly Brush Hover=new SolidColorBrush(Color.FromRgb(58,99,73));
     private static readonly Brush Pressed=new SolidColorBrush(Color.FromRgb(88,133,96));
-    private static readonly Brush Neutral=new SolidColorBrush(Color.FromRgb(22,34,28));
     private static readonly Pen Edge=new(new SolidColorBrush(Color.FromRgb(143,177,152)),1.5);
     // DIP geometry: the outer silhouette's tip is exactly (0,0), without a
     // centered stroke extending the hotspot. This only displays an observation.
@@ -170,7 +169,7 @@ internal sealed class ModeMenuVisual : FrameworkElement
     private static readonly Geometry CursorBody=Geometry.Parse("M2,4.2 L2,18.5 6.6,14.3 11.9,24.3 13.3,23.6 7.7,13 14,13 Z");
     // Frozen drawing resources are safe for a preview and the overlay if their
     // owning WPF dispatchers differ, without changing either visual.
-    static ModeMenuVisual() { Tile.Freeze();Hover.Freeze();Pressed.Freeze();Neutral.Freeze();Edge.Brush.Freeze();Edge.Freeze();CursorOutline.Freeze();CursorBody.Freeze(); }
+    static ModeMenuVisual() { Tile.Freeze();Hover.Freeze();Pressed.Freeze();Edge.Brush.Freeze();Edge.Freeze();CursorOutline.Freeze();CursorBody.Freeze(); }
     public ModeMenuVisual()
     {
         ClipToBounds=true;
@@ -215,21 +214,6 @@ internal sealed class ModeMenuVisual : FrameworkElement
             var center=p.SlotCenter(i);var action=s.Configuration.Slots[i];
             Text(dc,action.Name,center.X,center.Y-d*.035,d*.033,d*.255,Brushes.White);
             Text(dc,action.Kind switch {ModeBindingKind.Keyboard=>"键盘 · 点按",ModeBindingKind.Gamepad=>"手柄 · 点按",_=>"未绑定"},center.X,center.Y+d*.045,d*.024,d*.25,Brushes.LightGray);
-        }
-        dc.DrawEllipse(Neutral,Edge,new(p.CenterX,p.CenterY),d*.175,d*.175);
-        Text(dc,"短移选方向",p.CenterX,p.CenterY-d*.025,d*.03,d*.31,Brushes.White);
-        Text(dc,"再点 Mode 关闭",p.CenterX,p.CenterY+d*.04,d*.022,d*.31,Brushes.LightGray);
-        // The anchor/dead-zone stays fixed; Windows remains the sole position authority.
-        dc.DrawEllipse(null,Edge,new(p.CenterX,p.CenterY),p.NeutralRadius,p.NeutralRadius);
-        if(!Preview) {
-            // Keep selection readable even when edge clipping hides the selected tile.
-            double width=Math.Min(d*.7,a.Width),height=60*a.Scale;
-            double x=Math.Clamp(p.CenterX,a.X+width/2,a.X+a.Width-width/2);
-            double y=Math.Clamp(p.CenterY+d*.57,a.Y+height/2,a.Y+a.Height-height/2);
-            dc.DrawRoundedRectangle(Neutral,Edge,new(x-width/2,y-height/2,width,height),8*a.Scale,8*a.Scale);
-            Text(dc,s.Hovered<0?"中性 · 再点 Mode 关闭":ModeMenuSlots.Directions[s.Hovered]+" · "+s.Configuration.Slots[s.Hovered].Name,
-                x,y,18*a.Scale,width-12*a.Scale,Brushes.White);
-            // The retained child arrow is composed above this Ring and caption.
         }
         dc.Pop();dc.Pop();dc.Pop();
     }

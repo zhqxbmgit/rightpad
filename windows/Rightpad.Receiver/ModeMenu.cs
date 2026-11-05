@@ -9,12 +9,13 @@ internal sealed record MenuPlacement(MenuArea Area, double CenterX, double Cente
 {
     public const double NeutralRadiusDip = 12;
     public double NeutralRadius => NeutralRadiusDip * Area.Scale;
-    public static MenuPlacement Create(MenuArea area, double x, double y)
+    public static MenuPlacement Create(MenuArea area, double x, double y, int menuSizePercent = ModeBinding.MaxMenuSizePercent)
     {
         if (!double.IsFinite(area.Scale) || area.Width <= 0 || area.Height <= 0 || area.Scale <= 0)
             throw new ArgumentOutOfRangeException(nameof(area));
         // True opening cursor = visual center = fixed anchor. Clip decoration at edges.
-        return new(area, x, y, Math.Min(480 * area.Scale, Math.Min(area.Width, area.Height)));
+        double diameter = 480 * menuSizePercent / 100d * area.Scale;
+        return new(area, x, y, Math.Min(diameter, Math.Min(area.Width, area.Height)));
     }
     public Point SlotCenter(int slot)
     {
@@ -42,7 +43,7 @@ internal readonly record struct ModeMenuObservation(ModeMenuSnapshot Snapshot,lo
 
 internal interface IModeMenuCursor
 {
-    MenuPlacement Capture();
+    MenuPlacement Capture(int menuSizePercent);
     Point Read(MenuPlacement placement);
 }
 
@@ -74,7 +75,7 @@ internal sealed class ModeMenu
     }
     public void Show(ModeBinding binding)
     {
-        ClearContact(); var p = cursor.Capture();
+        ClearContact(); var p = cursor.Capture(binding.MenuSizePercent);
         reads=1;changes=0;lastReadTicks=Stopwatch.GetTimestamp();
         snapshot = new(p, binding, p.CenterX, p.CenterY, -1, -1, ++revision);
         log?.Invoke($"mode_menu_anchor: x={p.CenterX} y={p.CenterY} dpi={p.Area.Scale * 96} neutralRadius={p.NeutralRadius}");

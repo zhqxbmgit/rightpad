@@ -4,6 +4,11 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--sampling-replay")
+        {
+            try { SamplingReplayExperiment.Run(args[1]); return 0; }
+            catch (Exception e) { Console.Error.WriteLine(e); return 1; }
+        }
         if(args.Length==2 && args[0]=="--menu-cursor-diagnostic") return ModeMenuOverlayProbe.Diagnostic(args[1]);
         if(args.Length==2 && args[0]=="--menu-environment-probe") return ModeMenuOverlayProbe.Run(args[1],true);
         if(args.Length==2 && args[0]=="--mode-observer") return ModeInputObserver.Run(args[1]);
@@ -47,6 +52,11 @@ internal static class Program
         if (args.Length != 0 && !artifactPathsOnly && !cz1Only && !motionOnly && !mr1Only && !uiSettingsOnly && !gamepadOnly && !guiStartupOnly && !receiverModeOnly && !modeMenuOnly && !modeGestureOnly) { Console.Error.WriteLine("Usage: Rightpad.Receiver.Tests [--artifact-paths | --cz1-parameters | --receiver-touch-mode | --normal-gui-startup | --gamepad | --ui-settings | --mr1 | --motion-profile | --mode-menu | --sendinput-smoke | --android-mouse-smoke | --sendinput-button-smoke | --android-tap-smoke]"); return 1; }
         (string Name, Func<Task> Run)[] tests =
         [
+            ("I/O diagnostics exception tree and reporting isolation", Sync(RuntimeFailureDiagnosticsTests.ExceptionTree)),
+            ("I/O diagnostics receive failure before cleanup", RuntimeFailureDiagnosticsTests.ReceiveFailure),
+            ("I/O diagnostics normal cancellation remains non-error", RuntimeFailureDiagnosticsTests.NormalCancellation),
+            ("I/O diagnostics first task before coordinated shutdown", RuntimeFailureDiagnosticsTests.TaskExitEvidence),
+            ("I/O diagnostics original error survives secondary cleanup evidence", RuntimeFailureDiagnosticsTests.CleanupDoesNotEraseEvidence),
             .. TouchCancellationTests.Cases,
             .. ModeMenuTests.Cases,
             .. ModeBindingTests.Cases,

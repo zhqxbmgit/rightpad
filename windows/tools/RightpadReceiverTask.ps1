@@ -141,6 +141,11 @@ public static class RightpadDevToken {
     [DllImport("advapi32.dll", SetLastError=true)] static extern bool GetTokenInformation(IntPtr t, int c, IntPtr b, int n, out int needed);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool QueryInformationJobObject(IntPtr j, int c, IntPtr b, int n, out int needed);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern uint GetConsoleProcessList([Out] uint[] members, uint length);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetConsoleCtrlHandler(ConsoleHandler handler, bool add);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentProcessId();
+    delegate bool ConsoleHandler(uint signal);
+    static readonly ConsoleHandler IgnoreInterrupt = signal => signal == 0 || signal == 1;
     [DllImport("user32.dll")] static extern IntPtr GetThreadDesktop(uint id);
     [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool GetUserObjectInformation(IntPtr h, int i, StringBuilder b, int n, out int needed);
     public static string Integrity(IntPtr process) {
@@ -167,6 +172,13 @@ public static class RightpadDevToken {
             if (!QueryInformationJobObject(IntPtr.Zero, 9, b, size, out n)) throw new Win32Exception();
             return Marshal.ReadInt32(b, 16);
         } finally { Marshal.FreeHGlobal(b); }
+    }
+    public static uint ProtectPrivateConsole() {
+        var members = new uint[2];
+        if (GetConsoleProcessList(members, 2) != 1 || members[0] != GetCurrentProcessId())
+            throw new InvalidOperationException("Scheduled Receiver wrapper does not own a private console.");
+        if (!SetConsoleCtrlHandler(IgnoreInterrupt, true)) throw new Win32Exception();
+        return members[0];
     }
 }
 '@
@@ -266,6 +278,8 @@ switch ($Mode) {
         }
         $jobFlags = [RightpadDevToken]::CurrentJobFlags()
         if ($jobFlags -band 0x2000) { throw 'Scheduled launcher inherited KILL_ON_JOB_CLOSE; refusing persistent launch.' }
+        # Keep the independently scheduled wrapper alive through console interrupts.
+        $consoleOwnerPid = [RightpadDevToken]::ProtectPrivateConsole()
         if (!(Test-Path -LiteralPath $receiverPath)) { throw "Missing Release binary: $receiverPath" }
         $selectedBackend = 'production'
         $selectedMotion = ''
@@ -282,6 +296,7 @@ switch ($Mode) {
         $run = @{ Directory = $runDirectory; StartUtc = [DateTime]::UtcNow.ToString('o');
             WrapperPid = $PID; WrapperStartUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o');
             SchedulerPid = $parent; Context = $context; ImmediateJobLimitFlags = $jobFlags; MouseBackend = $selectedBackend;
+            ConsoleProtection = @{ OwnerPid = $consoleOwnerPid; Private = $true; InterruptHandler = $true };
             MotionMode = $selectedMotion; MotionTrace = $selectedTrace }
         $run | ConvertTo-Json | Set-Content -LiteralPath $currentPath -Encoding UTF8
         $run | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runDirectory 'start.json') -Encoding UTF8

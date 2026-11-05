@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
@@ -9,7 +10,9 @@ namespace Rightpad.Receiver;
 internal sealed class ModeMenuSettingsWindow : Window
 {
     private readonly ModeSettingsViewModel model;
-    private readonly ModeMenuVisual preview=new() {Width=220,Height=220,Preview=true};
+    private readonly ModeMenuVisual preview=new() {Width=320,Height=320,Preview=true};
+    private readonly TextBlock menuSize=new() {Width=92,FontSize=22,TextAlignment=TextAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
+    private readonly Button smaller,larger;
     private readonly List<Button> slots=new();
     public ModeMenuSettingsWindow(ModeSettingsViewModel model)
     {
@@ -24,23 +27,43 @@ internal sealed class ModeMenuSettingsWindow : Window
         DockPanel.SetDock(hint,Dock.Top);root.Children.Add(hint);
         var content=new StackPanel();root.Children.Add(new ScrollViewer {Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
         var previewPanel=new StackPanel {HorizontalAlignment=HorizontalAlignment.Center,Margin=new(8)};
+        var sizeRow=new StackPanel {Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center};
+        sizeRow.Children.Add(new TextBlock {Text="菜单大小",FontSize=20,VerticalAlignment=VerticalAlignment.Center,Margin=new(0,0,12,0)});
+        smaller=SizeButton("－","MenuSizeDecrease","减小菜单", -1);
+        larger=SizeButton("＋","MenuSizeIncrease","增大菜单", 1);
+        AutomationProperties.SetAutomationId(menuSize,"MenuSizePercent");
+        sizeRow.Children.Add(smaller);sizeRow.Children.Add(menuSize);sizeRow.Children.Add(larger);
+        previewPanel.Children.Add(sizeRow);
         previewPanel.Children.Add(new TextBlock {Text="六个按钮预览 · 固定环形",FontSize=20,HorizontalAlignment=HorizontalAlignment.Center,Margin=new(4)});
         var previewHost=new Border {BorderBrush=Brushes.Gray,BorderThickness=new(1),Padding=new(6),Child=preview};
-        System.Windows.Automation.AutomationProperties.SetAutomationId(previewHost,"MenuAppearancePreview");
+        AutomationProperties.SetAutomationId(previewHost,"MenuAppearancePreview");
         previewPanel.Children.Add(previewHost);content.Children.Add(previewPanel);
         var grid=new UniformGrid {Columns=3};content.Children.Add(grid);
         for(int i=0;i<6;i++) {
             int slot=i;var b=Button("",()=> {ChooseSlot(slot);Refresh();});b.MinHeight=90;
-            System.Windows.Automation.AutomationProperties.SetAutomationId(b,"MenuSlot_"+i);
+            AutomationProperties.SetAutomationId(b,"MenuSlot_"+i);
             slots.Add(b);grid.Children.Add(b);
         }
         Refresh();
     }
     private void Refresh()
     {
-        preview.State=new(MenuPlacement.Create(new(0,0,480,480),240,240),model.Draft,240,240,-1,-1,0);
-        preview.InvalidateVisual();
-        for(int i=0;i<6;i++) slots[i].Content=$"{i+1} · {ModeMenuSlots.Directions[i]}\n{model.Draft.Slots[i].Name}";
+        var draft=model.Draft;
+        int percent=draft.MenuSizePercent;
+        menuSize.Text=$"{percent}%";
+        smaller.IsEnabled=percent>ModeBinding.MinMenuSizePercent;
+        larger.IsEnabled=percent<ModeBinding.MaxMenuSizePercent;
+        preview.State=new(MenuPlacement.Create(new(0,0,480,480),240,240,percent),draft,240,240,-1,-1,0);
+        for(int i=0;i<6;i++) slots[i].Content=$"{i+1} · {ModeMenuSlots.Directions[i]}\n{draft.Slots[i].Name}";
+    }
+    private Button SizeButton(string label,string id,string name,int direction)
+    {
+        var button=Button(label,()=> {model.StepMenuSize(direction);Refresh();});
+        button.MinWidth=64;
+        button.FontSize=24;
+        AutomationProperties.SetAutomationId(button,id);
+        AutomationProperties.SetName(button,name);
+        return button;
     }
     private void ChooseSlot(int slot)
     {

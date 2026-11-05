@@ -9,6 +9,15 @@ internal sealed class ModeSettingsViewModel(Func<ModeBinding> draft,Action<ModeB
     public void Behavior(ModePressBehavior behavior) {update(Draft with {Behavior=behavior});Refresh();}
     public void Purpose(ModePurpose purpose) {update(Draft with {Purpose=purpose});Refresh();}
     public void Slot(int slot,ModeBindingKind kind,string key) {update(Draft with {Slots=Draft.Slots.With(slot,new(kind,key))});Refresh();}
+    public void StepMenuSize(int direction)
+    {
+        var current=Draft;
+        int percent=Math.Clamp(current.MenuSizePercent+Math.Sign(direction)*ModeBinding.MenuSizeStep,
+            ModeBinding.MinMenuSizePercent,ModeBinding.MaxMenuSizePercent);
+        if(percent==current.MenuSizePercent) return;
+        update(current with {MenuSizePercent=percent});
+        Refresh();
+    }
     public void GestureAction(int entry,ModeBindingKind kind,string key,bool menu=false) {
         var action=new ModeGestureAction(kind,key,menu);
         var next=Draft.Gesture.With(entry,action);

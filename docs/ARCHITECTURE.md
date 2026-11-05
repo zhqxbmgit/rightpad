@@ -46,9 +46,10 @@ highlight and tap authority, so asynchronous Motion output is observed rather
 than predicted. Cursor visibility and ClipCursor are not availability vetoes: a
 hidden/suppressed cursor still has a real position and a clip constraint does not
 invalidate a readable coordinate. A 12 DIP inclusive neutral radius and six
-nearest directions select slots independently of decoration and distance. Edge
-decoration is clipped rather than moving the anchor; a bounded selection caption
-stays visible. Real GetCursorPos/GetMonitorInfo/GetDpiForMonitor failures or a
+nearest directions select slots independently of the Ring's transparent center.
+The selected sector highlights even when the cursor remains inside the opening.
+The overlay clips the Ring and slot labels at screen edges and keeps the anchor fixed.
+Real GetCursorPos/GetMonitorInfo/GetDpiForMonitor failures or a
 changed monitor/DPI exit with a fresh-DOWN fence; an explicit new synchronized
 Mode contact can retry environmental faults, while output-device failures retain
 their latch. Entry releases old drag/pending clicks and records that safety release

@@ -198,7 +198,10 @@ internal sealed class SettingsViewModel : ObservableModel
         if (!CanSave) return false;
         RuntimeSettings snapshot = draftSettings with { Cz1 = store.Current.Cz1 };
         if (!snapshot.IsProductValid) return false;
-        if(ValidateModeGeometry(snapshot.ModeControl) is { } geometryError) {Notice=geometryError;return false;}
+        var committedMode=committedSettings.ModeControl;
+        bool sizeOnly=snapshot.ModeControl.MenuSizePercent!=committedMode.MenuSizePercent &&
+            (snapshot with {ModeControl=snapshot.ModeControl with {MenuSizePercent=committedMode.MenuSizePercent}})==committedSettings;
+        if(!sizeOnly && ValidateModeGeometry(snapshot.ModeControl) is { } geometryError) {Notice=geometryError;return false;}
         SetSaving(true);
         try
         {
@@ -207,7 +210,7 @@ internal sealed class SettingsViewModel : ObservableModel
                 Notice = file.SaveError ?? "Settings save failed. Changes were not applied.";
                 return false;
             }
-            if(ValidateModeGeometry(snapshot.ModeControl) is { } changedGeometry) {
+            if(!sizeOnly && ValidateModeGeometry(snapshot.ModeControl) is { } changedGeometry) {
                 bool restored=await file.SaveNowAsync(committedSettings);
                 Notice=changedGeometry+(restored?"；保存期间几何改变，已保留原正式设置。":"；磁盘恢复失败，行为未发布："+file.SaveError);
                 return false;

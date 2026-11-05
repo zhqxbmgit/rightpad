@@ -2,6 +2,18 @@
 
 # rightpad Project Instructions
 
+Mode Ring visual simplification (2026-11-05): the six sector inner arcs frame
+a transparent center in the runtime overlay and the shared settings preview.
+Sector highlights supersede the historical selection caption requirement below.
+Keep the inclusive 12 DIP neutral radius, fixed anchor, edge clipping and retained
+runtime arrow. See docs/MODE_SHORTCUT_MENU.md.
+
+Mode Ring size setting (2026-11-05): the Receiver's shared Ring uses a
+disk-first 50–100% visual size in five-point steps, defaulting to 100%.
+A size-only Save affects the next opening and leaves current input, output
+and protocol state intact. Gesture actions and slots retain their DOWN
+snapshot. See docs/MODE_SHORTCUT_MENU.md.
+
 Approved Mode region-transition feedback correction (2026-10-30): supersedes only
 the 2026-10-29 per-contact first/second hint eligibility. For each MOVE, preserve
 all ordered historical/final samples and entered/permanent-invalid facts, then

@@ -19,6 +19,7 @@ internal static class ModeGestureTests
         ("Mode gesture pulse release pending cannot be overwritten and failure never replays",Pulses),
         ("Mode gesture mouse and gamepad source contributions preserved",Merge),
         ("Mode gesture Ring UP entry manual close contact and original six slots",Ring),
+        ("Mode gesture Ring size uses saved value at UP and preserves protocol state",RingSize),
         ("Mode gesture geometry validation independent widths overflow and old settings",Geometry),
         ("Mode gesture common disk first Save failure and geometry unavailable",Save)
         ,("Mode gesture production UDP dispatch keeps Touch and config versions independent",UdpRoute)
@@ -35,7 +36,7 @@ internal static class ModeGestureTests
     }
     sealed class Cursor : IModeMenuCursor {
         public Point Position=new(500,400);
-        public MenuPlacement Capture()=>MenuPlacement.Create(new(0,0,1000,800),500,400);
+        public MenuPlacement Capture(int menuSizePercent)=>MenuPlacement.Create(new(0,0,1000,800),500,400,menuSizePercent);
         public Point Read(MenuPlacement p)=>Position;
     }
     sealed class Mouse : IMouseOutput {
@@ -108,9 +109,10 @@ internal static class ModeGestureTests
         h.Down();h.Up(1);Check(h.Keyboard.Calls.Last()==("B",true),"next DOWN latest");h.Advance(30);
         h.Down();h.Packet(new(7,h.Gen,++h.Seq,h.Contact,ModeContactPhase.Up,1,1,G()));Check(!h.Session.Held,"mismatched revision cannot reinterpret");
         using var menu=new Harness(Config() with {Gesture=new() {Second=new(Menu:true)},Slots=new() {Top=new(ModeBindingKind.Keyboard,"Esc")}});
-        menu.Down();menu.Save(menu.Store.Current.ModeControl with {Slots=new() {Top=new(ModeBindingKind.Keyboard,"B")}});
+        menu.Down();menu.Save(menu.Store.Current.ModeControl with {Slots=new() {Top=new(ModeBindingKind.Keyboard,"B")},MenuSizePercent=70});
         menu.Packet(new(7,menu.Gen,2,1,ModeContactPhase.Up,1,3,G()));
-        Check(menu.Session.MenuSnapshot?.Configuration.Slots.Top.Key=="Esc","gesture menu action retains complete old Ring binding snapshot");
+        Check(menu.Session.MenuSnapshot is { } opened && opened.Configuration.Slots.Top.Key=="Esc" &&
+            opened.Placement.Diameter==336,"gesture menu keeps old slots and uses the visual size saved before opening");
     }
     static void Boundaries() {
         foreach(string boundary in new[]{"cancel","layout","purpose","presence","run","stop"}) {
@@ -155,6 +157,28 @@ internal static class ModeGestureTests
         h.Session.RouteTouch(Touch(TouchEventType.Up,2),h.Store.Current,()=>{},()=>throw new Exception("ordinary gesture leak"));
         Check(h.Keyboard.Calls.Last()==("Esc",true),"existing slot binding");h.Advance(30);
         Check(h.Keyboard.Calls.Last()==("Esc",false) && h.Confirmations==1 && !h.Session.MenuOpen,"slot release confirm auto close in gesture purpose");
+    }
+    static void RingSize() {
+        using var h=new Harness(Config() with {Gesture=new() {Second=new(Menu:true)}});
+        string path=Path.Combine(Path.GetTempPath(),"rightpad-gesture-ring-size-"+Guid.NewGuid(),"settings.json");
+        var vm=new SettingsViewModel(h.Store,new(path));
+        h.Down();
+        int replies=h.Replies.Count;
+        for(int i=0;i<6;i++) vm.Mode.StepMenuSize(-1);
+        Check(vm.SaveAsync().GetAwaiter().GetResult() && h.Session.Generation==h.Gen && h.Session.Acknowledged==1 &&
+            h.Replies.Count==replies,"size-only Save preserves the admitted contact and emits no protocol reply");
+        h.Up(3);
+        var opened=h.Session.MenuSnapshot;
+        Check(opened?.Placement.Diameter==336 && h.Session.Acknowledged==2 &&
+            BinaryPrimitives.ReadUInt64LittleEndian(h.Replies[^1].AsSpan(40))==1,"original revision opens the Ring using newly saved size");
+        for(int i=0;i<4;i++) vm.Mode.StepMenuSize(-1);
+        Check(vm.SaveAsync().GetAwaiter().GetResult() && h.Session.MenuSnapshot==opened && h.Session.Generation==h.Gen,
+            "pure visual Save keeps an open gesture Ring");
+        h.Down();h.Up(3);
+        Check(!h.Session.MenuOpen && !h.Session.Held,"manual close consumes the full contact");
+        h.Down();h.Up(3);
+        Check(h.Session.MenuSnapshot?.Placement.Diameter==240 &&
+            BinaryPrimitives.ReadUInt64LittleEndian(h.Replies[^1].AsSpan(40))==1,"next Ring uses 50% without a new wire revision");
     }
     static void Geometry() {
         var g=G();Check(g.Error(new()) is null,"initial widths fit");

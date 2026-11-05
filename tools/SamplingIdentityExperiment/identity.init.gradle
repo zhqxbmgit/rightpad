@@ -1,0 +1,19 @@
+// Explicit, isolated experiment only. Normal builds do not load this file.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            def android = project.extensions.getByName('android')
+            def root = new File(System.getenv('RIGHTPAD_IDENTITY_EXPERIMENT'))
+            android.flavorDimensions.add('samplingIdentity')
+            [control: 'com.rightpad.sampling.control',
+             pubg: 'com.tencent.tmgp.pubgmhd',
+             dfm: 'com.tencent.tmgp.dfm'].each { variant, identity ->
+                android.productFlavors.create(variant) {
+                    dimension 'samplingIdentity'
+                    applicationId identity
+                }
+                android.sourceSets.maybeCreate(variant).manifest.srcFile(new File(root, "${variant}.xml"))
+            }
+        }
+    }
+}

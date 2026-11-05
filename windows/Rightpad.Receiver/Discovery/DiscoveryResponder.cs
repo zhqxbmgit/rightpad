@@ -25,7 +25,7 @@ internal sealed class DiscoveryResponder : IDisposable
         LocalEndpoint = (IPEndPoint)socket.Client.LocalEndPoint!;
     }
 
-    public async Task RunAsync(CancellationToken token)
+    public async Task RunAsync(CancellationToken token, long runtimeRun = 0)
     {
         output.WriteLine($"discovery_started: endpoint={LocalEndpoint} receiverId={Convert.ToHexString(identity)}");
         flightRecorder?.Event("discovery_started", ("endpoint", LocalEndpoint.ToString()), ("receiverId", Convert.ToHexString(identity)));
@@ -46,6 +46,12 @@ internal sealed class DiscoveryResponder : IDisposable
                     }
                     continue;
                 }
+                catch (Exception e) when (e is not OperationCanceledException || !token.IsCancellationRequested)
+                {
+                    RuntimeFailureDiagnostics.Report(flightRecorder, output, runtimeRun,
+                        "discovery_receive", e, token.IsCancellationRequested);
+                    throw;
+                }
                 if (!DiscoveryCodec.TryDiscover(request.Buffer, out ulong nonce))
                 {
                     long count = Interlocked.Increment(ref invalid);
@@ -57,7 +63,13 @@ internal sealed class DiscoveryResponder : IDisposable
                     continue;
                 }
                 token.ThrowIfCancellationRequested();
-                await socket.SendAsync(DiscoveryCodec.Offer(nonce, identity), request.RemoteEndPoint, token).ConfigureAwait(false);
+                try { await socket.SendAsync(DiscoveryCodec.Offer(nonce, identity), request.RemoteEndPoint, token).ConfigureAwait(false); }
+                catch (Exception e) when (e is not OperationCanceledException || !token.IsCancellationRequested)
+                {
+                    RuntimeFailureDiagnostics.Report(flightRecorder, output, runtimeRun,
+                        "discovery_send", e, token.IsCancellationRequested);
+                    throw;
+                }
                 long sent = Interlocked.Increment(ref offers);
                 if (sent == 1 || sent % 60 == 0)
                 {
@@ -68,6 +80,12 @@ internal sealed class DiscoveryResponder : IDisposable
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception e)
+        {
+            RuntimeFailureDiagnostics.Report(flightRecorder, output, runtimeRun,
+                "discovery_loop_before_cleanup", e, token.IsCancellationRequested);
+            throw;
+        }
         finally
         {
             socket.Dispose();

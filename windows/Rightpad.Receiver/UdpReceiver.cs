@@ -132,6 +132,13 @@ internal sealed class UdpReceiver : IDisposable
                 {
                     continue;
                 }
+                catch (Exception e) when (e is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                {
+                    RuntimeFailureDiagnostics.Report(flightRecorder, output, runtimeRun,
+                        "touch_receive", e, cancellationToken.IsCancellationRequested,
+                        receiveCancellation.IsCancellationRequested);
+                    throw;
+                }
 
                 ProcessDatagram(received.Buffer, received.RemoteEndPoint, Stopwatch.GetTimestamp(), clock.Elapsed.TotalMilliseconds);
             }
@@ -139,6 +146,13 @@ internal sealed class UdpReceiver : IDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Ctrl+C cancels a pending receive without requiring another datagram.
+        }
+        catch (Exception e)
+        {
+            // Preserve the loop failure before cleanup can throw a second exception.
+            RuntimeFailureDiagnostics.Report(flightRecorder, output, runtimeRun,
+                "touch_loop_before_cleanup", e, cancellationToken.IsCancellationRequested);
+            throw;
         }
         finally
         {

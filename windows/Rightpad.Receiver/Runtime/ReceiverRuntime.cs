@@ -488,14 +488,28 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             if (run.Discovery is null) await touchTask.ConfigureAwait(false);
             else
             {
-                var discoveryTask = run.Discovery.RunAsync(run.Cancellation.Token);
-                await Task.WhenAny(touchTask, discoveryTask).ConfigureAwait(false);
+                var discoveryTask = run.Discovery.RunAsync(run.Cancellation.Token, run.Id);
+                var completed = await Task.WhenAny(touchTask, discoveryTask).ConfigureAwait(false);
+                try
+                {
+                    flightRecorder?.Event("runtime_task_completed", ("runtimeRunId", run.Id),
+                        ("firstObservedTask", ReferenceEquals(completed, touchTask) ? "touch" : "discovery"),
+                        ("touchStatus", touchTask.Status.ToString()), ("discoveryStatus", discoveryTask.Status.ToString()),
+                        ("cancellationRequestedBeforeShutdown", run.Cancellation.IsCancellationRequested));
+                    foreach (var task in new[] { ("touch", touchTask), ("discovery", discoveryTask) })
+                        if (task.Item2.Exception is { } failure)
+                            RuntimeFailureDiagnostics.Report(flightRecorder, output, run.Id,
+                                task.Item1 + "_task_before_shutdown", failure, run.Cancellation.IsCancellationRequested);
+                }
+                catch { /* Evidence must not block the existing cancellation path. */ }
                 run.Cancellation.Cancel();
                 await Task.WhenAll(touchTask, discoveryTask).ConfigureAwait(false);
             }
         }
         catch (Exception e)
         {
+            RuntimeFailureDiagnostics.Report(flightRecorder, output, run.Id,
+                "runtime", e, run.Cancellation.IsCancellationRequested);
             Volatile.Write(ref run.Error, e.Message);
             output.WriteLine($"receiver_error: {e.Message}");
             flightRecorder?.Event("runtime_error", ("runtimeRunId", run.Id), ("error", e.Message));
@@ -520,6 +534,8 @@ internal sealed class ReceiverRuntime(RuntimeSettingsStore settings, TextWriter 
             motionClock?.Dispose();
             if (motionClock?.Failure is { } clockFailure)
             {
+                RuntimeFailureDiagnostics.Report(flightRecorder, output, run.Id,
+                    "motion_clock", clockFailure, run.Cancellation.IsCancellationRequested);
                 Volatile.Write(ref run.Error, clockFailure.Message);
                 output.WriteLine($"motion_clock_error: {clockFailure.Message}");
             }

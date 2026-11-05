@@ -20,12 +20,12 @@ internal sealed class WindowsModeMenuCursor : IModeMenuCursor
     public WindowsModeMenuCursor(IModeMenuCursorApi? api=null) { this.api=api; }
     private string stage="none", actual="unknown", display="unknown";
     private Exception Diagnose(Exception e) => new IOException($"stage={stage} actual={actual} display={display} exception={e.GetType().FullName} win32={(e is Win32Exception w?w.NativeErrorCode:0)} message={e.Message}", e);
-    public MenuPlacement Capture()
+    public MenuPlacement Capture(int menuSizePercent = ModeBinding.MaxMenuSizePercent)
     {
         stage="capture";
         try {
         var p = Position();
-        var placement = MenuPlacement.Create(Area(p), p.X, p.Y);
+        var placement = MenuPlacement.Create(Area(p), p.X, p.Y, menuSizePercent);
         Validate(placement, p);
         return placement;
         } catch(Exception e) {throw Diagnose(e);}

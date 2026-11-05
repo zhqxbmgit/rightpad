@@ -30,6 +30,8 @@ internal static class ModeMenuTests
         ("Mode menu feedback send failure never replays or blocks recovery",FeedbackFailure),
         ("Mode menu manual close disconnect config and output failure boundaries",PulseLifecycle),
         ("Mode menu config equality draft unknown fields failed save old G compatibility",Settings),
+        ("Mode menu size legacy fallback and disk-first Save",MenuSizeSettings),
+        ("Mode menu size-only Save preserves open placement, contact, pulse, Toggle and fault latch",MenuSizeState),
         ("Mode menu gamepad modal neutral barrier preserves ordinary mapping",Gamepad),
         ("Mode menu mouse ownership cancels drag click and orphan exit events",Ownership),
         ("Mode menu safety release is logged separately from tap output",SafetyLog),
@@ -47,8 +49,9 @@ internal static class ModeMenuTests
         ,("Mode menu diagnostic metrics distinguish sampling from callback stalls without position output",PresentationMetrics)
     }.Select(t=>(t.Item1,(Func<Task>)(()=> {t.Item2();return Task.CompletedTask;})))
         .Append(("Mode menu WPF render ring at small and scaled viewports",()=>Sta(Render)))
+        .Append(("Mode menu size WPF render 100 70 50 percent, fixed neutral and DPI",()=>Sta(RenderSizes)))
         .Append(("Mode menu observed arrow hotspot and DIP size across origins DPI and small overlays",()=>Sta(CursorRenderCoordinates)))
-        .Append(("Mode menu arrow paints above ring and caption and clips without clamping",()=>Sta(CursorRenderLayers)))
+        .Append(("Mode menu hollow ring highlights and topmost arrow clips without clamping",()=>Sta(CursorRenderLayers)))
         .Append(("Mode menu preview ignores cursor position and absent snapshot draws nothing",()=>Sta(CursorRenderPreview)))
         .Append(("Mode menu retained arrow updates latest snapshot without rebuilding unchanged labels",()=>Sta(CursorRetainedUpdates)))
         .Append(("Mode menu hidden HWND uses software rendering only for overlay and preserves no-activation",()=>Sta(OverlaySoftwareRendering)))
@@ -69,7 +72,7 @@ internal static class ModeMenuTests
     private sealed class Cursor : IModeMenuCursor {
         public Point Position=new(500,400);
         public bool FailRead;public double Scale=1;
-        public MenuPlacement Capture() {if(FailRead)throw new IOException("cursor unavailable");return MenuPlacement.Create(new(0,0,1000,800,Scale),Position.X,Position.Y);}
+        public MenuPlacement Capture(int menuSizePercent) {if(FailRead)throw new IOException("cursor unavailable");return MenuPlacement.Create(new(0,0,1000,800,Scale),Position.X,Position.Y,menuSizePercent);}
         public Point Read(MenuPlacement placement) {if(FailRead)throw new IOException("cursor unavailable");return Position;}
     }
     private sealed class Mouse : IMouseOutput {
@@ -421,6 +424,84 @@ internal static class ModeMenuTests
         failing.Mode.Slot(1,ModeBindingKind.Gamepad,"RT");Check(!failing.SaveAsync().GetAwaiter().GetResult() && failing.HasUnsavedChanges && store.Current.ModeControl.Slots[1].Kind==ModeBindingKind.Unbound,"failed Save no publish and retains draft");
         Check(store.Current.ModeControl.Key=="G" && store.Current.ModeControl.Behavior==ModePressBehavior.Toggle,"single mode original retained");
     }
+    private static void MenuSizeSettings() {
+        string path=Path.Combine(Path.GetTempPath(),"rightpad-menu-size-"+Guid.NewGuid(),"settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var expected=Config() with {Purpose=ModePurpose.GestureBinding,
+            Gesture=new() {FirstWidthDp=15,SecondWidthDp=12.5,Second=new(Menu:true)}};
+        var options=new JsonSerializerOptions {PropertyNamingPolicy=JsonNamingPolicy.CamelCase,IgnoreReadOnlyProperties=true};
+        var root=JsonSerializer.SerializeToNode(RuntimeSettings.Default with {ModeControl=expected},options)!.AsObject();
+        var mode=root["modeControl"]!.AsObject();
+        mode["extension"]=19;
+        mode["slots"]!["top"]!["note"]="keep";
+        mode["gesture"]!["note"]="keep";
+        foreach(string literal in new[]{"70","70.0","7e1"}) {
+            mode["menuSizePercent"]=JsonNode.Parse(literal);
+            File.WriteAllText(path,root.ToJsonString());
+            Check(SettingsFileStore.Load(path).Settings.ModeControl==expected with {MenuSizePercent=70},"valid numeric 70%: "+literal);
+        }
+        foreach(string? literal in new string?[]{null,"null","true","\"70\"","{}","[]","49","105","73","70.5","999999999999"}) {
+            if(literal is null) mode.Remove("menuSizePercent"); else mode["menuSizePercent"]=JsonNode.Parse(literal);
+            string original=root.ToJsonString();
+            File.WriteAllText(path,original);
+            Check(SettingsFileStore.Load(path).Settings.ModeControl==expected,"size-only fallback for "+(literal??"absent"));
+            Check(File.ReadAllText(path)==original,"load never rewrites the field");
+        }
+        var store=new RuntimeSettingsStore(SettingsFileStore.Load(path).Settings);
+        var vm=new SettingsViewModel(store,new(path));
+        for(int i=0;i<6;i++) vm.Mode.StepMenuSize(-1);
+        Check(vm.Mode.Draft.MenuSizePercent==70 && store.Current.ModeControl==expected && vm.HasUnsavedChanges,"70% remains a draft");
+        bool diskFirst=false;
+        store.Published+=()=>diskFirst=SettingsFileStore.Load(path).Settings.ModeControl.MenuSizePercent==70;
+        Check(vm.SaveAsync().GetAwaiter().GetResult() && diskFirst && !vm.HasUnsavedChanges,"size-only Save is disk-first even before phone geometry is available");
+        Check(store.Current.ModeControl==expected with {MenuSizePercent=70},"saved size preserves the full binding");
+        var merged=JsonNode.Parse(File.ReadAllText(path))!["modeControl"]!;
+        Check(merged["extension"]!.GetValue<int>()==19 && merged["slots"]!["top"]!["note"]!.GetValue<string>()=="keep" &&
+            merged["gesture"]!["note"]!.GetValue<string>()=="keep","unknown Mode, slot and gesture fields survive merge");
+        var failing=new SettingsViewModel(store,new(Path.GetDirectoryName(path)!));
+        failing.Mode.StepMenuSize(-1);
+        Check(!failing.SaveAsync().GetAwaiter().GetResult() && failing.HasUnsavedChanges && failing.Mode.Draft.MenuSizePercent==65 &&
+            store.Current.ModeControl.MenuSizePercent==70 && failing.Notice.Contains("save failed"),"write failure retains committed size and current draft");
+    }
+    private static void MenuSizeState() {
+        static void SaveSize(Harness h,int percent) =>
+            h.Store.Publish(h.Store.Current with {ModeControl=h.Store.Current.ModeControl with {MenuSizePercent=percent}});
+        using var menu=new Harness();
+        menu.Down();
+        var open=menu.Mode.MenuSnapshot!;
+        SaveSize(menu,70);
+        Check(menu.Mode.MenuSnapshot==open && menu.Mode.Acknowledged==1 && menu.Mode.Generation==menu.Gen && menu.Boundaries==1,
+            "open Ring and admitted Mode contact survive the size Save");
+        menu.Up();
+        Check(menu.Mode.Acknowledged==2 && menu.Mode.MenuOpen,"old opening contact finishes normally");
+        menu.Down();menu.Up();
+        menu.Down();menu.Up();
+        Check(menu.Mode.MenuSnapshot?.Placement.Diameter==336 && menu.Mode.Generation==menu.Gen,"next standalone Ring adopts 70%");
+        menu.SetCursor(500,380);menu.Tap();
+        var pressed=menu.Mode.MenuSnapshot;
+        SaveSize(menu,50);
+        Check(menu.Mode.Held && menu.Mode.MenuSnapshot==pressed && menu.Feedbacks.Count==0,"size Save leaves an in-flight slot pulse alone");
+        menu.Advance(30);
+        Check(!menu.Mode.Held && !menu.Mode.MenuOpen && menu.Feedbacks.Count==1 &&
+            menu.Keyboard.Calls.SequenceEqual(new[]{("F13",true),("F13",false)}),"existing pulse completes once");
+        menu.Down();menu.Up();
+        Check(menu.Mode.MenuSnapshot?.Placement.Diameter==240,"next standalone Ring adopts 50%");
+        menu.Store.Publish(menu.Store.Current with {ModeControl=menu.Store.Current.ModeControl with {Slots=new()}});
+        Check(!menu.Mode.MenuOpen && menu.Mode.Generation!=menu.Gen,"real slot change still fences the Ring");
+
+        using var toggle=new Harness(new(ModeBindingKind.Keyboard,"G",ModePressBehavior.Toggle));
+        toggle.Down();
+        SaveSize(toggle,70);
+        toggle.Up();
+        Check(toggle.Mode.Held && toggle.Mode.Acknowledged==2 && toggle.Mode.Generation==toggle.Gen &&
+            toggle.Keyboard.Calls.SequenceEqual(new[]{("G",true)}),"held Toggle and Mode contact survive size-only Save");
+        toggle.Down();toggle.Up();
+        toggle.Keyboard.Fail=true;
+        toggle.Down();
+        var faultedGeneration=toggle.Mode.Generation;
+        SaveSize(toggle,50);
+        Check(toggle.Mode.Status.Contains("输出失败") && toggle.Mode.Generation==faultedGeneration,"output fault latch survives size-only Save");
+    }
     private static void Gamepad() {
         var states=new List<XboxGamepadState>();var g=new GamepadSessionProcessor(s=> {states.Add(s);return true;});g.UpdatePresence(new(7,0,true,"127.0.0.1"));long now=Stopwatch.GetTimestamp();
         void Send(uint seq,XboxGamepadState state)=>g.Process(new(7,seq,state),IPAddress.Loopback,now++);
@@ -525,8 +606,8 @@ internal static class ModeMenuTests
     }
     private static void CursorAuthority() {
         using var h=new Harness();h.Down();h.Up();var anchor=h.Mode.MenuSnapshot!.Placement;
-        h.SetCursor(500,380);
-        Check(h.Mode.MenuSnapshot!.Hovered==0 && h.Mode.MenuSnapshot.Placement==anchor,"short direction movement, fixed anchor");
+        h.SetCursor(anchor.CenterX,anchor.CenterY-anchor.NeutralRadius-1);
+        Check(h.Mode.MenuSnapshot!.Hovered==0 && h.Mode.MenuSnapshot.Placement==anchor,"one DIP beyond neutral selects inside the visual opening, with a fixed anchor");
         h.SetCursor(500,420);h.Tap();
         Check(h.States.SequenceEqual(new[]{new XboxGamepadState(LeftTrigger:255)}) && h.Keyboard.Calls.Count==0,"tap reads final system position rather than old highlight");
         h.Advance(25);
@@ -786,7 +867,22 @@ internal static class ModeMenuTests
                 var ids=nodes.OfType<DependencyObject>().Select(AutomationProperties.GetAutomationId).Where(id=>!string.IsNullOrEmpty(id)).ToList();
                 Check(ids.Contains("MenuAppearancePreview"),"fixed ring preview remains");
                 Check(!ids.Contains("MenuAppearance_Islands") && !ids.Contains("MenuAppearance_Ring"),"no appearance choice buttons");
-                Check(nodes.OfType<ModeMenuVisual>().Count()==1 && nodes.OfType<ModeMenuVisual>().Single().Preview,"preview is non-interactive");
+                var preview=nodes.OfType<ModeMenuVisual>().Single();
+                Check(preview.Preview,"preview is non-interactive");
+                var smaller=nodes.OfType<Button>().Single(b=>AutomationProperties.GetAutomationId(b)=="MenuSizeDecrease");
+                var larger=nodes.OfType<Button>().Single(b=>AutomationProperties.GetAutomationId(b)=="MenuSizeIncrease");
+                var percent=nodes.OfType<TextBlock>().Single(t=>AutomationProperties.GetAutomationId(t)=="MenuSizePercent");
+                double width=preview.ActualWidth,height=preview.ActualHeight;
+                void Click(Button button)=>button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Check(!larger.IsEnabled && smaller.IsEnabled && percent.Text=="100%" && preview.State?.Placement.Diameter==480,"100% default, plus disabled");
+                for(int i=0;i<6;i++) Click(smaller);
+                Check(larger.IsEnabled && percent.Text=="70%" && preview.State?.Placement.Diameter==336 &&
+                    model.CommittedSettings.ModeControl.MenuSizePercent==100,"70% immediately previews without saving");
+                for(int i=0;i<4;i++) Click(smaller);
+                Check(!smaller.IsEnabled && percent.Text=="50%" && preview.State?.Placement.Diameter==240 &&
+                    preview.ActualWidth==width && preview.ActualHeight==height,"50% floor, minus disabled, fixed viewport");
+                Click(larger);
+                Check(smaller.IsEnabled && percent.Text=="55%" && preview.State?.Placement.Diameter==264,"plus advances one five-point step");
                 Check(nodes.OfType<Button>().Count(b=>AutomationProperties.GetAutomationId(b).StartsWith("MenuSlot_"))==6,"six editable slots remain");
                 var text=nodes.SelectMany(n=>n switch {TextBlock t=>new[]{t.Text},Button b when b.Content is string s=>new[]{s},_=>Array.Empty<string>()});
                 Check(!text.Any(s=>s.Contains("Islands",StringComparison.OrdinalIgnoreCase) || s.Contains("六向独立大按钮")),"no retired appearance text");
@@ -795,7 +891,8 @@ internal static class ModeMenuTests
                 for(int i=0;i<6;i++) model.Mode.Slot(i,i%2==0?ModeBindingKind.Keyboard:ModeBindingKind.Gamepad,keys[i]);
                 Check(model.HasUnsavedChanges && model.SaveAsync().GetAwaiter().GetResult(),"six-slot draft uses common Save");
                 var loaded=SettingsFileStore.Load(path).Settings;
-                Check(loaded.ModeControl.Appearance==ModeMenuAppearance.Ring && loaded.ModeControl.Purpose==ModePurpose.ShortcutMenu,"Save keeps fixed ring menu");
+                Check(loaded.ModeControl.Appearance==ModeMenuAppearance.Ring && loaded.ModeControl.Purpose==ModePurpose.ShortcutMenu &&
+                    loaded.ModeControl.MenuSizePercent==55,"common Save keeps fixed Ring and writes its draft size");
                 for(int i=0;i<6;i++) Check(loaded.ModeControl.Slots[i].Key==keys[i],"slot "+i+" persisted");
             } finally { window.Close(); }
         } finally { Directory.Delete(root,true); }
@@ -833,6 +930,35 @@ internal static class ModeMenuTests
         int index=(y*width+x)*4;
         Check(pixels[index]==value && pixels[index+1]==value && pixels[index+2]==value && pixels[index+3]==255,message);
     }
+    private static void RenderSizes() {
+        foreach(var (percent,dip) in new[]{(100,480),(70,336),(50,240)}) {
+            foreach(double scale in new[]{1d,1.25,1.5,2,3}) {
+                var p=MenuPlacement.Create(new(-2000,200,2000,1800,scale),-1000,900,percent);
+                Check(p.Diameter==dip*scale && p.NeutralRadius==12*scale,"visual diameter and neutral radius scale independently");
+                Check(p.Select(p.CenterX,p.CenterY-12*scale)==-1 &&
+                    p.Select(p.CenterX,p.CenterY-13*scale)==0,"inclusive 12 DIP selection at each size and DPI");
+                var limited=MenuPlacement.Create(new(0,0,1000,220,scale),5,7,percent);
+                Check(limited.Diameter==220 && limited.CenterX==5 && limited.CenterY==7,"small display cap and fixed edge anchor");
+            }
+            // Render physical pixels on a simulated 200% display. The live
+            // arrow hotspot is just outside neutral and still in the opening.
+            const int frame=1040,center=520,cursorY=center-40;
+            var placement=MenuPlacement.Create(new(0,0,frame,frame,2),center,center,percent);
+            var config=Config() with {MenuSizePercent=percent};
+            var state=new ModeMenuSnapshot(placement,config,center,cursorY,placement.Select(center,cursorY),-1,1);
+            var pixels=RenderPixels(state,frame,frame,name:$"Ring-size-{percent}-dpi-200");
+            Pixel(pixels,frame,center,cursorY+4,0,"black outline starts at the observed position");
+            Pixel(pixels,frame,center+6,cursorY+20,255,"white arrow remains 20×27 DIP for every size");
+            Check(pixels[(center*frame+center-30)*4+3]==0,"hollow center remains transparent");
+            Check(pixels[((center+dip+2)*frame+center)*4+3]==0,"pixels outside the specified diameter remain transparent");
+            Check(pixels.AsSpan(((center-dip+5)*frame+center)*4,4).SequenceEqual(new byte[]{73,99,58,255}),"hover fill inside the specified diameter");
+            var labelY=(int)(placement.SlotCenter(0).Y-placement.Diameter*.035);
+            bool hasLabel=false;
+            for(int row=labelY-12;row<=labelY+12;row++)
+            for(int x=center-30;x<=center+30;x++) hasLabel|=pixels[(row*frame+x)*4]>210;
+            Check(hasLabel,"slot label is rendered at each size");
+        }
+    }
     private static void CursorRenderCoordinates() {
         foreach(var (x,y,scale,size) in new[]{(0d,0d,1d,640),(-2400d,-1200d,1.25,640),(1920d,300d,1.5,640),(-3840d,0d,2d,640),(0d,0d,3d,280)}) {
             // Screen pixels -> local DIP: (position - monitor origin) / DPI.
@@ -847,15 +973,33 @@ internal static class ModeMenuTests
         }
     }
     private static void CursorRenderLayers() {
-        var p=MenuPlacement.Create(new(0,0,640,640),320,270);
-        foreach(var (x,y,label) in new[]{(320d,100d,"tile"),(320d,543d,"caption"),(320d,270d,"neutral")}) {
+        const int size=640;
+        var p=MenuPlacement.Create(new(0,0,size,size),320,270);
+        void CheckFills(byte[] pixels,int hovered,int pressed) {
+            for(int i=0;i<6;i++) {
+                var center=p.SlotCenter(i);
+                int x=(int)(p.CenterX+(center.X-p.CenterX)*.45/.34);
+                int y=(int)(p.CenterY+(center.Y-p.CenterY)*.45/.34);
+                ReadOnlySpan<byte> expected=i==pressed?[96,133,88,255]:i==hovered?[73,99,58,255]:[44,54,34,255];
+                Check(pixels.AsSpan((y*size+x)*4,4).SequenceEqual(expected),"sector fill for slot "+i);
+            }
+        }
+        foreach(var (x,y,label) in new[]{(320d,100d,"over-tile"),(320d,250d,"selected"),(320d,270d,"neutral")}) {
             var s=new ModeMenuSnapshot(p,Config(),x,y,p.Select(x,y),-1,1);
-            var pixels=RenderPixels(s,640,640,name:"Cursor-topmost-"+label);
-            Pixel(pixels,640,(int)x,(int)y+2,0,"black border covers "+label);
-            Pixel(pixels,640,(int)x+3,(int)y+10,255,"white arrow covers "+label);
+            var pixels=RenderPixels(s,size,size,name:"Ring-"+label);
+            Pixel(pixels,size,(int)x,(int)y+2,0,"black arrow outline in "+label);
+            Pixel(pixels,size,(int)x+3,(int)y+10,255,"white arrow body in "+label);
+            for(int row=512;row<size;row++)
+                Check(pixels.AsSpan(row*size*4,size*4).IndexOfAnyExcept((byte)0)<0,"below the ring is transparent in "+label);
+            CheckFills(pixels,s.Hovered,s.Pressed);
         }
         var baseline=new ModeMenuSnapshot(p,Config(),1000,1000,-1,-1,1);
-        var outside=RenderPixels(baseline,640,640);
+        var outside=RenderPixels(baseline,size,size);
+        // The entire square lies inside the inner arcs and includes the old neutral marker.
+        for(int row=212;row<328;row++)
+            Check(outside.AsSpan((row*size+262)*4,116*4).IndexOfAnyExcept((byte)0)<0,"center is transparent without the arrow");
+        var pressed=RenderPixels(baseline with {Hovered=0,Pressed=0},size,size);
+        CheckFills(pressed,0,0);
         Check(outside.SequenceEqual(RenderPixels(baseline with {CursorX=641,CursorY=50},640,640)),"outside arrow is naturally clipped, never clamped onto ring or viewport");
         var crossing=RenderPixels(baseline with {CursorX=-5,CursorY=50},640,640,name:"Cursor-edge-clipped");
         Pixel(crossing,640,0,60,255,"visible part of an arrow whose hotspot is outside remains at true position");
@@ -865,6 +1009,7 @@ internal static class ModeMenuTests
         var s=new ModeMenuSnapshot(p,Config(),-1500,200,-1,-1,1);
         var preview=RenderPixels(s,480,480,true,name:"Cursor-static-preview");
         Check(preview.SequenceEqual(RenderPixels(s with {CursorX=20000,CursorY=-20000},480,480,true)),"preview pixels do not depend on observed cursor");
+        Check(preview.SequenceEqual(RenderPixels(s with {CursorX=20000,CursorY=-20000},480,480)),"static preview uses the same hollow Ring decoration");
         Check(RenderPixels(null,480,480).All(b=>b==0),"no menu snapshot means no marker or decoration");
     }
     private static void CursorRetainedUpdates() {
@@ -888,7 +1033,7 @@ internal static class ModeMenuTests
         var after=Glyphs(VisualTreeHelper.GetDrawing(v)).ToArray();
         Check(before.SequenceEqual(after),"cursor-only changes retain the already shaped Ring labels");
         v.State=s with {Hovered=1};v.UpdateLayout();
-        Check(!before.SequenceEqual(Glyphs(VisualTreeHelper.GetDrawing(v))),"selection change still updates Ring and caption");
+        Check(!before.SequenceEqual(Glyphs(VisualTreeHelper.GetDrawing(v))),"selection change still redraws the Ring");
         v.Preview=true;Check(arrow.Opacity==0,"preview transition hides the retained marker");
         v.Preview=false;Check(arrow.Opacity==1,"live view restores the current observed marker");
         v.State=null;v.UpdateLayout();
